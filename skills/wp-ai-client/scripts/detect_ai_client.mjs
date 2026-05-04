@@ -46,7 +46,7 @@ function parseArgs(argv) {
   return args;
 }
 
-function errorMessage(err) {
+function extractErrorMessage(err) {
   return err?.message || String(err);
 }
 
@@ -56,7 +56,7 @@ async function* walk(dir, seenDirs = new Set(), reportNote = () => {}) {
     realDir = await fs.realpath(dir);
   } catch (err) {
     if (err?.code !== "ENOENT") {
-      reportNote(`Unable to resolve directory ${dir} (${errorMessage(err)}). This directory will be skipped.`);
+      reportNote(`Unable to resolve directory ${dir} (${extractErrorMessage(err)}). This directory will be skipped.`);
     }
     return;
   }
@@ -68,7 +68,7 @@ async function* walk(dir, seenDirs = new Set(), reportNote = () => {}) {
     entries = await fs.readdir(dir, { withFileTypes: true });
   } catch (err) {
     if (err?.code !== "ENOENT") {
-      reportNote(`Unable to read directory ${dir} (${errorMessage(err)}). This directory will be skipped.`);
+      reportNote(`Unable to read directory ${dir} (${extractErrorMessage(err)}). This directory will be skipped.`);
     }
     return;
   }
@@ -133,7 +133,7 @@ async function main() {
   } catch (err) {
     if (err?.code !== "ENOENT") {
       result.notes.push(
-        `Unable to read composer.json (${errorMessage(err)}). Legacy AI Client package detection may be incomplete.`
+        `Unable to read composer.json (${extractErrorMessage(err)}). Legacy AI Client package detection may be incomplete.`
       );
     }
   }
