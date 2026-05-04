@@ -50,13 +50,13 @@ function errorMessage(err) {
   return err?.message || String(err);
 }
 
-async function* walk(dir, seenDirs = new Set(), notes = []) {
+async function* walk(dir, seenDirs = new Set(), reportNote = () => {}) {
   let realDir;
   try {
     realDir = await fs.realpath(dir);
   } catch (err) {
     if (err?.code !== "ENOENT") {
-      notes.push(`Unable to resolve directory ${dir} (${errorMessage(err)}). Some files may be skipped.`);
+      reportNote(`Unable to resolve directory ${dir} (${errorMessage(err)}). Some files may be skipped.`);
     }
     return;
   }
@@ -68,26 +68,26 @@ async function* walk(dir, seenDirs = new Set(), notes = []) {
     entries = await fs.readdir(dir, { withFileTypes: true });
   } catch (err) {
     if (err?.code !== "ENOENT") {
-      notes.push(`Unable to read directory ${dir} (${errorMessage(err)}). Some files may be skipped.`);
+      reportNote(`Unable to read directory ${dir} (${errorMessage(err)}). Some files may be skipped.`);
     }
     return;
   }
   for (const entry of entries) {
     if (IGNORED_DIRS.has(entry.name)) continue;
     const full = path.join(dir, entry.name);
-    let stats;
-    try {
-      stats = await fs.lstat(full);
-    } catch (err) {
-      if (err?.code !== "ENOENT") {
-        notes.push(`Unable to inspect ${full} (${errorMessage(err)}). This path may be skipped.`);
+    if (entry.isSymbolicLink()) {
+      try {
+        await fs.lstat(full);
+      } catch (err) {
+        if (err?.code !== "ENOENT") {
+          reportNote(`Unable to inspect symlink ${full} (${errorMessage(err)}). This path may be skipped.`);
+        }
       }
       continue;
     }
-    if (stats.isSymbolicLink()) continue;
-    if (stats.isDirectory()) {
-      yield* walk(full, seenDirs, notes);
-    } else if (stats.isFile()) {
+    if (entry.isDirectory()) {
+      yield* walk(full, seenDirs, reportNote);
+    } else if (entry.isFile()) {
       yield full;
     }
   }
@@ -148,7 +148,7 @@ async function main() {
   }
 
   // 2) Walk PHP files, gather signals.
-  for await (const file of walk(root, new Set(), result.notes)) {
+  for await (const file of walk(root, new Set(), (note) => result.notes.push(note))) {
     if (!file.endsWith(".php")) continue;
     let contents;
     try {

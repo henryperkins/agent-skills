@@ -87,14 +87,24 @@ function my_plugin_generate_featured_image( WP_REST_Request $request ) {
 
     // Persist via existing Media Library helpers.
     $data_uri = $image->getDataUri();
-    $data     = base64_decode( preg_replace( '#^data:image/\w+;base64,#i', '', $data_uri ) );
-    $upload   = wp_upload_bits( 'ai-' . wp_generate_uuid4() . '.png', null, $data );
+    if ( ! preg_match( '#^data:image/(png|jpeg|webp);base64,#i', $data_uri, $matches ) ) {
+        return new WP_Error( 'invalid_image', 'AI image response is not a supported data URI.', array( 'status' => 500 ) );
+    }
+
+    $data = base64_decode( substr( $data_uri, strpos( $data_uri, ',' ) + 1 ), true );
+    if ( false === $data || false === getimagesizefromstring( $data ) ) {
+        return new WP_Error( 'invalid_image', 'AI image response could not be decoded.', array( 'status' => 500 ) );
+    }
+
+    $extension = 'jpeg' === strtolower( $matches[1] ) ? 'jpg' : strtolower( $matches[1] );
+    $mime_type = 'image/' . strtolower( $matches[1] );
+    $upload    = wp_upload_bits( 'ai-' . wp_generate_uuid4() . '.' . $extension, null, $data );
     if ( ! empty( $upload['error'] ) ) {
         return new WP_Error( 'upload_failed', $upload['error'], array( 'status' => 500 ) );
     }
 
     $attachment_id = wp_insert_attachment( array(
-        'post_mime_type' => 'image/png',
+        'post_mime_type' => $mime_type,
         'post_title'     => sanitize_text_field( $prompt ),
         'post_status'    => 'inherit',
     ), $upload['file'] );
