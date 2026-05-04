@@ -50,13 +50,13 @@ function extractErrorMessage(err) {
   return err?.message || String(err);
 }
 
-async function* walk(dir, seenDirs = new Set(), reportNote = () => {}) {
+async function* walk(dir, seenDirs = new Set(), addNote = () => {}) {
   let realDir;
   try {
     realDir = await fs.realpath(dir);
   } catch (err) {
     if (err?.code !== "ENOENT") {
-      reportNote(`Unable to resolve directory ${dir} (${extractErrorMessage(err)}). This directory will be skipped.`);
+      addNote(`Unable to resolve directory ${dir} (${extractErrorMessage(err)}). This directory will be skipped.`);
     }
     return;
   }
@@ -68,7 +68,7 @@ async function* walk(dir, seenDirs = new Set(), reportNote = () => {}) {
     entries = await fs.readdir(dir, { withFileTypes: true });
   } catch (err) {
     if (err?.code !== "ENOENT") {
-      reportNote(`Unable to read directory ${dir} (${extractErrorMessage(err)}). This directory will be skipped.`);
+      addNote(`Unable to read directory ${dir} (${extractErrorMessage(err)}). This directory will be skipped.`);
     }
     return;
   }
@@ -77,7 +77,7 @@ async function* walk(dir, seenDirs = new Set(), reportNote = () => {}) {
     const full = path.join(dir, entry.name);
     if (entry.isSymbolicLink()) continue;
     if (entry.isDirectory()) {
-      yield* walk(full, seenDirs, reportNote);
+      yield* walk(full, seenDirs, addNote);
     } else if (entry.isFile()) {
       yield full;
     }

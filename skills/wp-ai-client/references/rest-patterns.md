@@ -91,9 +91,16 @@ function my_plugin_generate_featured_image( WP_REST_Request $request ) {
         return new WP_Error( 'invalid_image', 'AI image response is not a supported data URI.', array( 'status' => 500 ) );
     }
 
+    if ( strlen( $matches['payload'] ) > 10 * MB_IN_BYTES ) {
+        return new WP_Error( 'image_too_large', 'AI image response is too large to store.', array( 'status' => 500 ) );
+    }
+
     $data = base64_decode( $matches['payload'], true );
-    if ( false === $data || false === getimagesizefromstring( $data ) ) {
+    if ( false === $data ) {
         return new WP_Error( 'invalid_image', 'AI image response could not be decoded.', array( 'status' => 500 ) );
+    }
+    if ( false === getimagesizefromstring( $data ) ) {
+        return new WP_Error( 'invalid_image', 'AI image response is not a valid image.', array( 'status' => 500 ) );
     }
 
     $subtype   = strtolower( $matches['subtype'] );
