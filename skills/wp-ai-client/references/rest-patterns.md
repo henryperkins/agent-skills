@@ -96,8 +96,9 @@ function my_plugin_generate_featured_image( WP_REST_Request $request ) {
         return new WP_Error( 'invalid_image', 'AI image response could not be decoded.', array( 'status' => 500 ) );
     }
 
-    $extension = 'jpeg' === strtolower( $matches[1] ) ? 'jpg' : strtolower( $matches[1] );
-    $mime_type = 'image/' . strtolower( $matches[1] );
+    $subtype   = strtolower( $matches[1] );
+    $extension = 'jpeg' === $subtype ? 'jpg' : $subtype;
+    $mime_type = 'image/' . $subtype;
     $upload    = wp_upload_bits( 'ai-' . wp_generate_uuid4() . '.' . $extension, null, $data );
     if ( ! empty( $upload['error'] ) ) {
         return new WP_Error( 'upload_failed', $upload['error'], array( 'status' => 500 ) );
