@@ -91,16 +91,12 @@ function my_plugin_generate_featured_image( WP_REST_Request $request ) {
         return new WP_Error( 'invalid_image', 'AI image response is not a supported data URI.', array( 'status' => 500 ) );
     }
 
-    if ( strlen( $matches['payload'] ) > 10 * MB_IN_BYTES ) {
-        return new WP_Error( 'image_too_large', 'AI image response is too large to store.', array( 'status' => 500 ) );
-    }
-
     $data = base64_decode( $matches['payload'], true );
     if ( false === $data ) {
         return new WP_Error( 'invalid_image', 'AI image response could not be decoded.', array( 'status' => 500 ) );
     }
-    if ( false === getimagesizefromstring( $data ) ) {
-        return new WP_Error( 'invalid_image', 'AI image response is not a valid image.', array( 'status' => 500 ) );
+    if ( strlen( $data ) > 10 * MB_IN_BYTES ) {
+        return new WP_Error( 'image_too_large', 'AI image response is too large to store.', array( 'status' => 500 ) );
     }
 
     $subtype   = strtolower( $matches['subtype'] );
@@ -119,6 +115,10 @@ function my_plugin_generate_featured_image( WP_REST_Request $request ) {
     $upload    = wp_upload_bits( 'ai-' . wp_generate_uuid4() . '.' . $extension, null, $data );
     if ( ! empty( $upload['error'] ) ) {
         return new WP_Error( 'upload_failed', $upload['error'], array( 'status' => 500 ) );
+    }
+    if ( wp_get_image_mime( $upload['file'] ) !== $mime_type ) {
+        wp_delete_file( $upload['file'] );
+        return new WP_Error( 'invalid_image', 'AI image response is not a valid ' . $subtype . ' image.', array( 'status' => 500 ) );
     }
 
     $attachment_id = wp_insert_attachment( array(
