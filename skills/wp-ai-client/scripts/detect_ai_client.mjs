@@ -73,12 +73,21 @@ async function* walk(dir, seenDirs = new Set(), notes = []) {
     return;
   }
   for (const entry of entries) {
-    if (entry.isSymbolicLink()) continue;
     if (IGNORED_DIRS.has(entry.name)) continue;
     const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
+    let stats;
+    try {
+      stats = await fs.lstat(full);
+    } catch (err) {
+      if (err?.code !== "ENOENT") {
+        notes.push(`Unable to inspect ${full} (${errorMessage(err)}). This path may be skipped.`);
+      }
+      continue;
+    }
+    if (stats.isSymbolicLink()) continue;
+    if (stats.isDirectory()) {
       yield* walk(full, seenDirs, notes);
-    } else if (entry.isFile()) {
+    } else if (stats.isFile()) {
       yield full;
     }
   }
