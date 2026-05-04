@@ -46,6 +46,12 @@ function parseArgs(argv) {
   return args;
 }
 
+/**
+ * Safely extracts a readable message from Error objects and non-Error throws.
+ *
+ * @param {*} err Error-like value.
+ * @returns {string} Human-readable error message.
+ */
 function extractErrorMessage(err) {
   return err?.message || String(err);
 }

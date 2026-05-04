@@ -86,7 +86,12 @@ function my_plugin_generate_featured_image( WP_REST_Request $request ) {
     }
 
     // Persist via existing Media Library helpers.
-    $data_uri = $image->getDataUri();
+    $data_uri        = $image->getDataUri();
+    $max_image_bytes = (int) apply_filters( 'my_plugin_ai_image_max_bytes', 10 * MB_IN_BYTES );
+    if ( strlen( $data_uri ) > 2 * $max_image_bytes ) {
+        return new WP_Error( 'image_too_large', 'AI image response is too large to store.', array( 'status' => 500 ) );
+    }
+
     if ( ! preg_match( '#^data:image/(?<subtype>png|jpeg|webp);base64,(?<payload>[A-Za-z0-9+/=]+)$#', $data_uri, $matches ) ) {
         return new WP_Error( 'invalid_image', 'AI image response is not a supported data URI.', array( 'status' => 500 ) );
     }
@@ -95,7 +100,6 @@ function my_plugin_generate_featured_image( WP_REST_Request $request ) {
     if ( false === $data ) {
         return new WP_Error( 'invalid_image', 'AI image response could not be decoded.', array( 'status' => 500 ) );
     }
-    $max_image_bytes = 10 * MB_IN_BYTES;
     if ( strlen( $data ) > $max_image_bytes ) {
         return new WP_Error( 'image_too_large', 'AI image response is too large to store.', array( 'status' => 500 ) );
     }
