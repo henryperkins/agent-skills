@@ -86,7 +86,9 @@ function my_plugin_generate_featured_image( WP_REST_Request $request ) {
     }
 
     // Persist via existing Media Library helpers.
-    $upload = wp_upload_bits( 'ai-' . wp_generate_uuid4() . '.png', null, base64_decode( /* extract from data URI */ ) );
+    $data_uri = $image->getDataUri();
+    $data     = base64_decode( preg_replace( '#^data:image/\w+;base64,#i', '', $data_uri ) );
+    $upload   = wp_upload_bits( 'ai-' . wp_generate_uuid4() . '.png', null, $data );
     if ( ! empty( $upload['error'] ) ) {
         return new WP_Error( 'upload_failed', $upload['error'], array( 'status' => 500 ) );
     }

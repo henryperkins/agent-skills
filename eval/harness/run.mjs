@@ -2,6 +2,19 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
+const COMPAT_BASELINES = [
+  {
+    wpLabel: "WordPress 6.9",
+    phpLabel: "PHP 7.2.24",
+    message: "WP 6.9 + PHP 7.2.24+",
+  },
+  {
+    wpLabel: "WordPress 7.0",
+    phpLabel: "PHP 7.4",
+    message: "WP 7.0 + PHP 7.4+",
+  },
+];
+
 function readUtf8(filePath) {
   return fs.readFileSync(filePath, "utf8");
 }
@@ -111,13 +124,13 @@ function main() {
       compatibility.length <= 500,
       `Compatibility too long in ${path.relative(repoRoot, skillPath)} (${compatibility.length} chars)`
     );
-    const matchesLegacyBaseline =
-      compatibility.includes("WordPress 6.9") && compatibility.includes("PHP 7.2.24");
-    const matchesAiEraBaseline =
-      compatibility.includes("WordPress 7.0") && compatibility.includes("PHP 7.4");
+    const matchesBaseline = COMPAT_BASELINES.some(
+      ({ wpLabel, phpLabel }) => compatibility.includes(wpLabel) && compatibility.includes(phpLabel)
+    );
+    const expectedBaselineMessage = COMPAT_BASELINES.map(({ message }) => message).join(" or ");
     assert(
-      matchesLegacyBaseline || matchesAiEraBaseline,
-      `Compatibility contract mismatch in ${path.relative(repoRoot, skillPath)} (expected WP 6.9 + PHP 7.2.24+ or WP 7.0 + PHP 7.4+)`
+      matchesBaseline,
+      `Compatibility contract mismatch in ${path.relative(repoRoot, skillPath)} (expected ${expectedBaselineMessage})`
     );
   }
 

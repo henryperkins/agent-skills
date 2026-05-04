@@ -46,7 +46,16 @@ function parseArgs(argv) {
   return args;
 }
 
-async function* walk(dir) {
+async function* walk(dir, seenDirs = new Set()) {
+  let realDir;
+  try {
+    realDir = await fs.realpath(dir);
+  } catch {
+    return;
+  }
+  if (seenDirs.has(realDir)) return;
+  seenDirs.add(realDir);
+
   let entries;
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
@@ -54,10 +63,11 @@ async function* walk(dir) {
     return;
   }
   for (const entry of entries) {
+    if (entry.isSymbolicLink()) continue;
     if (IGNORED_DIRS.has(entry.name)) continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      yield* walk(full);
+      yield* walk(full, seenDirs);
     } else if (entry.isFile()) {
       yield full;
     }
@@ -110,8 +120,12 @@ async function main() {
         "Detected legacy Composer dep on wordpress/php-ai-client or wordpress/wp-ai-client. On WP 7.0+, php-ai-client is in core; conditional autoloading is required to avoid duplicate-class errors. See references/prompt-builder.md#migration."
       );
     }
-  } catch {
-    // No composer.json; fine.
+  } catch (err) {
+    if (err?.code !== "ENOENT") {
+      result.notes.push(
+        `Unable to read composer.json (${err.message}). Legacy AI Client package detection may be incomplete.`
+      );
+    }
   }
 
   // 2) Walk PHP files, gather signals.
@@ -175,6 +189,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  process.stderr.write(`detect_ai_client error: ${err.message}\n`);
+  process.stderr.write(`detect_ai_client error: ${err?.stack || String(err)}\n`);
   process.exit(1);
 });
