@@ -46,11 +46,18 @@ function parseArgs(argv) {
   return args;
 }
 
-async function* walk(dir, seenDirs = new Set()) {
+function errorMessage(err) {
+  return err?.message || String(err);
+}
+
+async function* walk(dir, seenDirs = new Set(), notes = []) {
   let realDir;
   try {
     realDir = await fs.realpath(dir);
-  } catch {
+  } catch (err) {
+    if (err?.code !== "ENOENT") {
+      notes.push(`Unable to resolve directory ${dir} (${errorMessage(err)}). Some files may be skipped.`);
+    }
     return;
   }
   if (seenDirs.has(realDir)) return;
@@ -59,7 +66,10 @@ async function* walk(dir, seenDirs = new Set()) {
   let entries;
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
-  } catch {
+  } catch (err) {
+    if (err?.code !== "ENOENT") {
+      notes.push(`Unable to read directory ${dir} (${errorMessage(err)}). Some files may be skipped.`);
+    }
     return;
   }
   for (const entry of entries) {
@@ -67,7 +77,7 @@ async function* walk(dir, seenDirs = new Set()) {
     if (IGNORED_DIRS.has(entry.name)) continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      yield* walk(full, seenDirs);
+      yield* walk(full, seenDirs, notes);
     } else if (entry.isFile()) {
       yield full;
     }
@@ -123,13 +133,13 @@ async function main() {
   } catch (err) {
     if (err?.code !== "ENOENT") {
       result.notes.push(
-        `Unable to read composer.json (${err.message}). Legacy AI Client package detection may be incomplete.`
+        `Unable to read composer.json (${errorMessage(err)}). Legacy AI Client package detection may be incomplete.`
       );
     }
   }
 
   // 2) Walk PHP files, gather signals.
-  for await (const file of walk(root)) {
+  for await (const file of walk(root, new Set(), result.notes)) {
     if (!file.endsWith(".php")) continue;
     let contents;
     try {
