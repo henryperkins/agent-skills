@@ -56,7 +56,7 @@ async function* walk(dir, seenDirs = new Set(), reportNote = () => {}) {
     realDir = await fs.realpath(dir);
   } catch (err) {
     if (err?.code !== "ENOENT") {
-      reportNote(`Unable to resolve directory ${dir} (${errorMessage(err)}). Some files may be skipped.`);
+      reportNote(`Unable to resolve directory ${dir} (${errorMessage(err)}). This directory will be skipped.`);
     }
     return;
   }
@@ -68,7 +68,7 @@ async function* walk(dir, seenDirs = new Set(), reportNote = () => {}) {
     entries = await fs.readdir(dir, { withFileTypes: true });
   } catch (err) {
     if (err?.code !== "ENOENT") {
-      reportNote(`Unable to read directory ${dir} (${errorMessage(err)}). Some files may be skipped.`);
+      reportNote(`Unable to read directory ${dir} (${errorMessage(err)}). This directory will be skipped.`);
     }
     return;
   }
