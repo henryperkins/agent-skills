@@ -75,17 +75,7 @@ async function* walk(dir, seenDirs = new Set(), reportNote = () => {}) {
   for (const entry of entries) {
     if (IGNORED_DIRS.has(entry.name)) continue;
     const full = path.join(dir, entry.name);
-    if (entry.isSymbolicLink()) {
-      try {
-        const stats = await fs.lstat(full);
-        if (stats.isSymbolicLink()) continue;
-      } catch (err) {
-        if (err?.code !== "ENOENT") {
-          reportNote(`Unable to inspect symlink ${full} (${errorMessage(err)}). This path may be skipped.`);
-        }
-        continue;
-      }
-    }
+    if (entry.isSymbolicLink()) continue;
     if (entry.isDirectory()) {
       yield* walk(full, seenDirs, reportNote);
     } else if (entry.isFile()) {

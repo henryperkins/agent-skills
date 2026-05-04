@@ -87,17 +87,17 @@ function my_plugin_generate_featured_image( WP_REST_Request $request ) {
 
     // Persist via existing Media Library helpers.
     $data_uri = $image->getDataUri();
-    if ( ! preg_match( '#^data:image/(png|jpeg|webp);base64,#i', $data_uri, $matches ) ) {
+    if ( ! preg_match( '#^data:image/(?<subtype>png|jpeg|webp);base64,(?<payload>[A-Za-z0-9+/=\r\n]+)$#i', $data_uri, $matches ) ) {
         return new WP_Error( 'invalid_image', 'AI image response is not a supported data URI.', array( 'status' => 500 ) );
     }
 
-    $data = base64_decode( substr( $data_uri, strpos( $data_uri, ',' ) + 1 ), true );
+    $data = base64_decode( $matches['payload'], true );
     if ( false === $data || false === getimagesizefromstring( $data ) ) {
         return new WP_Error( 'invalid_image', 'AI image response could not be decoded.', array( 'status' => 500 ) );
     }
 
-    $subtype   = strtolower( $matches[1] );
-    $extension = 'jpeg' === $subtype ? 'jpg' : $subtype;
+    $subtype   = strtolower( $matches['subtype'] );
+    $extension = array( 'jpeg' => 'jpg', 'png' => 'png', 'webp' => 'webp' )[ $subtype ];
     $mime_type = 'image/' . $subtype;
     $upload    = wp_upload_bits( 'ai-' . wp_generate_uuid4() . '.' . $extension, null, $data );
     if ( ! empty( $upload['error'] ) ) {
