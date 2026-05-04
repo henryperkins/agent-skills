@@ -75,6 +75,7 @@ async function* walk(dir, seenDirs = new Set(), addNote = () => {}) {
   for (const entry of entries) {
     if (IGNORED_DIRS.has(entry.name)) continue;
     const full = path.join(dir, entry.name);
+    // Skip symlinks so arbitrary project scans cannot recurse into cycles or unexpected trees.
     if (entry.isSymbolicLink()) continue;
     if (entry.isDirectory()) {
       yield* walk(full, seenDirs, addNote);

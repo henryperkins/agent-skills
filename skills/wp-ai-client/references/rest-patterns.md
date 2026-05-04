@@ -95,7 +95,8 @@ function my_plugin_generate_featured_image( WP_REST_Request $request ) {
     if ( false === $data ) {
         return new WP_Error( 'invalid_image', 'AI image response could not be decoded.', array( 'status' => 500 ) );
     }
-    if ( strlen( $data ) > 10 * MB_IN_BYTES ) {
+    $max_image_bytes = 10 * MB_IN_BYTES;
+    if ( strlen( $data ) > $max_image_bytes ) {
         return new WP_Error( 'image_too_large', 'AI image response is too large to store.', array( 'status' => 500 ) );
     }
 
