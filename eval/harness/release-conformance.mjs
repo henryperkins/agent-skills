@@ -77,6 +77,18 @@ export function runReleaseConformance(repoRoot) {
     "WP/Gutenberg map must include WordPress 7.0.X → Gutenberg 22.6"
   );
 
+  requireIncludes(repoRoot, "README.md", [
+    "--targets=antigravity",
+    ".agents/skills/",
+    "--targets=antigravity-global",
+    "~/.gemini/antigravity/skills/",
+  ]);
+  requireIncludes(repoRoot, "docs/packaging.md", [
+    "dist/antigravity/.agents/skills/*",
+    "--targets=antigravity",
+    "--targets=antigravity-global",
+  ]);
+
   requireIncludes(repoRoot, "skills/blueprint/SKILL.md", [
     '"version": 2',
     '"blueprintMeta"',
@@ -211,6 +223,41 @@ export function runReleaseConformance(repoRoot) {
   requireExcludes(repoRoot, "skills/wp-block-themes/references/theme-json.md", [
     "**Button pseudo-classes:**",
     "Style Button block hover and focus states directly in theme.json.",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-block-themes/references/theme-json.md", [
+    "## Slug normalisation gotcha",
+    "_wp_to_kebab_case()",
+    "slug `3xl` becomes `--wp--preset--font-size--3-xl`",
+    "var\\(\\s*--wp--(?:preset|custom)--[a-z-]+--\\d+[a-z]",
+    "`styles.elements.textInput`",
+    "email, number, password, search, text, tel, url",
+    "There is no `input`, `checkbox`, `radio`, or `label` element key.",
+  ]);
+  requireExcludes(repoRoot, "skills/wp-block-themes/references/theme-json.md", [
+    "`styles.elements.input`",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-block-themes/references/debugging.md", [
+    "the slug is likely un-normalised",
+    "Slug normalisation gotcha",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-patterns/SKILL.md", [
+    "name: wp-patterns",
+    "license: GPL-2.0-or-later",
+    "WordPress 7.0+ (PHP 7.4.0+)",
+    "No inline `<style>` tags",
+    "Always escape",
+    "Prefer presets over hardcoded values",
+    "references/pattern-registration.md",
+    "references/block-markup-reference.md",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-patterns/references/pattern-registration.md", [
+    "Auto-Registration via `/patterns/` Directory",
+    "register_block_pattern()",
+    "esc_html_e()",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-patterns/references/design-with-tokens.md", [
+    "theme.json",
+    "Preset",
   ]);
   requireIncludes(repoRoot, "skills/wp-interactivity-api/SKILL.md", [
     "watch()",

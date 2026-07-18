@@ -24,6 +24,7 @@ Agent Skills solve this by giving AI assistants **expert-level WordPress knowled
 | **wp-project-triage** | Detects project type, tooling, and versions automatically |
 | **wp-block-development** | Gutenberg blocks: `block.json`, attributes, rendering, deprecations |
 | **wp-block-themes** | Block themes: `theme.json`, templates, patterns, style variations |
+| **wp-patterns** | Block patterns: registration, markup, design tokens, accessibility, and i18n |
 | **wp-plugin-development** | Plugin architecture, hooks, settings API, security |
 | **wp-rest-api** | REST API routes/endpoints, schema, auth, and response shaping |
 | **wp-interactivity-api** | Frontend interactivity with `data-wp-*` directives and stores |
@@ -159,6 +160,15 @@ This copies skills into:
 - `.claude/skills/` for Claude Code (project-level)
 - `.cursor/skills/` for Cursor (project-level)
 
+Antigravity is opt-in when building skillpacks because it uses the shared `.agents/skills/` convention:
+
+```bash
+node shared/scripts/skillpack-build.mjs --clean --targets=antigravity
+node shared/scripts/skillpack-install.mjs --dest=../your-wp-project --targets=antigravity
+```
+
+This copies skills into `.agents/skills/` for Google Antigravity.
+
 ### Install globally for Cursor
 
 ```bash
@@ -166,6 +176,15 @@ node shared/scripts/skillpack-install.mjs --targets=cursor-global
 ```
 
 This installs skills to `~/.cursor/skills/` where Cursor will discover them.
+
+### Install globally for Antigravity
+
+```bash
+node shared/scripts/skillpack-build.mjs --clean --targets=antigravity
+node shared/scripts/skillpack-install.mjs --targets=antigravity-global
+```
+
+This installs skills to `~/.gemini/antigravity/skills/`.
 
 ### Available options
 
