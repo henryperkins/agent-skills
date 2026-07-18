@@ -37,7 +37,9 @@ Route by intent even if repo kind is broad (like `wp-site`):
   - Route → `wp-playground`.
 - **Blocks / block.json / registerBlockType / attributes / save serialization**
   - Route → `wp-block-development`.
-- **theme.json / Global Styles / templates/*.html / patterns/**
+- **Block patterns / patterns/*.php / register_block_pattern / starter page or template patterns**
+  - Route → `wp-patterns`.
+- **theme.json / Global Styles / templates/*.html / template parts / style variations**
   - Route → `wp-block-themes`.
 - **Plugins / hooks / activation hook / uninstall / Settings API / admin pages**
   - Route → `wp-plugin-development`.

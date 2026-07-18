@@ -68,6 +68,62 @@ function runScenarioKindContract() {
   );
 }
 
+function runSkillpackTargetContract(repoRoot) {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "wordpress-skillpack-target-"));
+  const outDir = path.join(tempRoot, "dist");
+  const defaultOutDir = path.join(tempRoot, "default-dist");
+  const destDir = path.join(tempRoot, "project");
+  const buildScript = path.join(repoRoot, "shared", "scripts", "skillpack-build.mjs");
+  const installScript = path.join(repoRoot, "shared", "scripts", "skillpack-install.mjs");
+
+  try {
+    const defaultBuild = spawnSync(
+      process.execPath,
+      [buildScript, `--out=${defaultOutDir}`, "--skills=blueprint", "--clean"],
+      { cwd: repoRoot, encoding: "utf8" }
+    );
+    assert(defaultBuild.status === 0, `Default target build failed: ${defaultBuild.stderr || defaultBuild.stdout}`);
+    for (const target of ["codex", "vscode", "claude", "cursor"]) {
+      assert(fs.existsSync(path.join(defaultOutDir, target)), `Default build must keep the ${target} target`);
+    }
+    assert(!fs.existsSync(path.join(defaultOutDir, "antigravity")), "Antigravity must remain an opt-in build target");
+
+    const build = spawnSync(
+      process.execPath,
+      [buildScript, `--out=${outDir}`, "--targets=antigravity", "--skills=blueprint", "--clean"],
+      { cwd: repoRoot, encoding: "utf8" }
+    );
+    assert(build.status === 0, `Antigravity build failed: ${build.stderr || build.stdout}`);
+
+    const builtSkill = path.join(outDir, "antigravity", ".agents", "skills", "blueprint", "SKILL.md");
+    assert(fs.existsSync(builtSkill), "Antigravity build must emit .agents/skills/blueprint/SKILL.md");
+
+    const install = spawnSync(
+      process.execPath,
+      [installScript, `--from=${outDir}`, `--dest=${destDir}`, "--targets=antigravity", "--skills=blueprint"],
+      { cwd: repoRoot, encoding: "utf8" }
+    );
+    assert(install.status === 0, `Antigravity project install failed: ${install.stderr || install.stdout}`);
+    assert(
+      fs.existsSync(path.join(destDir, ".agents", "skills", "blueprint", "SKILL.md")),
+      "Antigravity project install must copy to .agents/skills/"
+    );
+
+    const globalDryRun = spawnSync(
+      process.execPath,
+      [installScript, `--from=${outDir}`, "--targets=antigravity-global", "--skills=blueprint", "--dry-run"],
+      { cwd: repoRoot, encoding: "utf8" }
+    );
+    assert(globalDryRun.status === 0, `Antigravity global dry run failed: ${globalDryRun.stderr || globalDryRun.stdout}`);
+    assert(
+      globalDryRun.stdout.includes(path.join(".gemini", "antigravity", "skills")),
+      "Antigravity global install must target ~/.gemini/antigravity/skills/"
+    );
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
 function isNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
@@ -164,6 +220,7 @@ export function validateScenario(scenario, scenarioPath, skillNames) {
 export function runSkillQuality(repoRoot) {
   runSkillBoundaryContract();
   runScenarioKindContract();
+  runSkillpackTargetContract(repoRoot);
   runBehavioralEvidenceContract(repoRoot);
   const scenariosRoot = path.join(repoRoot, "eval", "scenarios");
   const skillsRoot = path.join(repoRoot, "skills");

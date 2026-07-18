@@ -36,6 +36,11 @@ Outputs:
 - `dist/vscode/.github/skills/*` (VS Code / Copilot repo layout)
 - `dist/claude/.claude/skills/*` (Claude Code repo layout)
 - `dist/cursor/.cursor/skills/*` (Cursor repo layout)
+- `dist/antigravity/.agents/skills/*` (Google Antigravity repo layout; opt-in)
+
+Antigravity is not part of the default target set. Build it explicitly:
+
+- `node shared/scripts/skillpack-build.mjs --clean --targets=antigravity`
 
 ## Install into another repo
 
@@ -44,5 +49,16 @@ Outputs:
 
 - `node shared/scripts/skillpack-install.mjs --dest=../some-repo --targets=codex,vscode,claude,cursor`
 
-By default, install mode is `replace` (it replaces only the skill directories it installs).
+To include the opt-in Antigravity layout:
 
+- `node shared/scripts/skillpack-build.mjs --clean --targets=antigravity`
+- `node shared/scripts/skillpack-install.mjs --dest=../some-repo --targets=antigravity`
+
+For a user-level Antigravity installation, build its skillpack and use the global target:
+
+- `node shared/scripts/skillpack-build.mjs --clean --targets=antigravity`
+- `node shared/scripts/skillpack-install.mjs --targets=antigravity-global`
+
+The global target installs to `~/.gemini/antigravity/skills/`.
+
+By default, install mode is `replace` (it replaces only the skill directories it installs).
