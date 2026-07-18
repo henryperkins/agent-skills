@@ -243,7 +243,7 @@ export function runReleaseConformance(repoRoot) {
   requireIncludes(repoRoot, "skills/wp-patterns/SKILL.md", [
     "name: wp-patterns",
     "license: GPL-2.0-or-later",
-    "WordPress 7.0+ (PHP 7.4.0+)",
+    "WordPress 6.9 with PHP 7.2.24 or later",
     "No inline `<style>` tags",
     "Always escape",
     "Prefer presets over hardcoded values",

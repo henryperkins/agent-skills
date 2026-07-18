@@ -1,7 +1,7 @@
 ---
 name: wp-patterns
 description: "Use when creating, reviewing, or improving WordPress block patterns, starter page patterns, template patterns, or template-part patterns with correct PHP headers, block markup, theme.json tokens, accessibility, and i18n."
-compatibility: "Targets WordPress 7.0+ (PHP 7.4.0+). Requires 6.0+ for auto-registration, 6.7+ for full preset support. Patterns use block markup (HTML comments with JSON), PHP file headers, and theme.json presets."
+compatibility: "WordPress 6.9 with PHP 7.2.24 or later. Requires 6.0+ for auto-registration, 6.7+ for full preset support. Patterns use block markup (HTML comments with JSON), PHP file headers, and theme.json presets."
 license: GPL-2.0-or-later
 ---
 
@@ -62,9 +62,9 @@ Reference: `references/block-markup-reference.md` for syntax, `references/anti-p
 ### 0) Triage and locate the pattern target
 
 1. Run triage when working in a repository:
-   - `node skills/wp-project-triage/scripts/detect_wp_project.mjs`
+   - `node ../wp-project-triage/scripts/detect_wp_project.mjs` when the `wp-project-triage` skill is installed alongside; otherwise classify the project manually.
 2. For block themes, locate the target theme root:
-   - `node skills/wp-block-themes/scripts/detect_block_themes.mjs`
+   - `node ../wp-block-themes/scripts/detect_block_themes.mjs` when the `wp-block-themes` skill is installed alongside; otherwise locate `theme.json` manually.
 3. Confirm the pattern belongs in a theme `patterns/` directory or needs manual plugin registration.
 4. If multiple themes/plugins exist, scope all changes to the requested target.
 

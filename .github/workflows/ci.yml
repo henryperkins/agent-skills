@@ -41,6 +41,7 @@ jobs:
           skills-ref validate skills/wp-project-triage
           skills-ref validate skills/wp-block-development
           skills-ref validate skills/wp-block-themes
+          skills-ref validate skills/wp-patterns
           skills-ref validate skills/wp-plugin-development
           skills-ref validate skills/wp-interactivity-api
           skills-ref validate skills/wp-abilities-api
