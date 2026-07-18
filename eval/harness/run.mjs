@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { runSkillQuality, validateSkillBounds } from "./skill-quality.mjs";
+import { runReleaseConformance } from "./release-conformance.mjs";
 
 function readUtf8(filePath) {
   return fs.readFileSync(filePath, "utf8");
@@ -91,6 +93,17 @@ function runJsonCommand(command, args, cwd) {
 
 function main() {
   const repoRoot = process.cwd();
+  const upstreamIndexLib = path.join(
+    repoRoot,
+    "shared",
+    "scripts",
+    "upstream-index-lib.mjs"
+  );
+  assert(
+    fs.existsSync(upstreamIndexLib),
+    "Missing shared/scripts/upstream-index-lib.mjs"
+  );
+  runReleaseConformance(repoRoot);
 
   const skillDirs = listSkillDirs(repoRoot);
   assert(skillDirs.length > 0, "No skills found under ./skills");
@@ -112,11 +125,12 @@ function main() {
 
     const nameError = validateSkillName(fm.name);
     assert(!nameError, `Invalid skill name in ${path.relative(repoRoot, skillPath)}: ${nameError}`);
-    assert(
-      fm.description.length <= 1024,
-      `Description too long in ${path.relative(repoRoot, skillPath)} (${fm.description.length} chars)`
-    );
     validatePortableTriageCommand({ repoRoot, skillPath, expectedName, markdown: md });
+    assert(
+      fm.description.startsWith("Use when"),
+      `Description must begin with 'Use when' in ${path.relative(repoRoot, skillPath)}`
+    );
+    validateSkillBounds(fm.description, md, skillPath, repoRoot);
 
     const compatibility = fm._raw.compatibility;
     assert(compatibility, `Missing frontmatter 'compatibility' in: ${path.relative(repoRoot, skillPath)}`);
@@ -143,7 +157,21 @@ function main() {
   assert(report?.signals?.paths?.repoRoot, "Triage report missing signals.paths.repoRoot");
   assert(report?.tooling?.php && report?.tooling?.node && report?.tooling?.tests, "Triage report missing tooling blocks");
 
-  process.stdout.write("OK: skills frontmatter and triage report sanity checks passed.\n");
+  // Offline drift check: committed upstream indices vs the canonical release
+  // each skill declares. Turns red when the Upstream Sync workflow lands a
+  // newer release than a skill documents.
+  const driftScript = path.join(repoRoot, "shared", "scripts", "check-upstream-drift.mjs");
+  if (fs.existsSync(driftScript)) {
+    const drift = spawnSync("node", [driftScript], { cwd: repoRoot, encoding: "utf8" });
+    assert(
+      drift.status === 0,
+      `Upstream drift check failed:\n${(drift.stderr || drift.stdout || "").trim()}`
+    );
+  }
+
+  runSkillQuality(repoRoot);
+
+  process.stdout.write("OK: skills frontmatter, triage report, drift, and quality checks passed.\n");
 }
 
 main();

@@ -1,6 +1,6 @@
 # Experiments framework
 
-The conceptual model and lifecycle for AI plugin Experiments, anchored to `WordPress/ai` v1.1.0 source.
+The conceptual model and lifecycle for AI plugin Experiments, anchored to `WordPress/ai` v1.2.0 source.
 
 ## What an Experiment is
 
@@ -27,7 +27,7 @@ From `includes/Abstracts/Abstract_Feature.php`:
 - **`public function get_settings_fields(): array`** — optional override. Return field definitions for the DataForm UI on the AI settings page.
 - **`final public static function get_field_option_name( string $option_name ): string`** — generates `wpai_feature_{$id}_field_{$option_name}`. Use for namespaced option storage.
 
-The interface (`Contracts\Feature`) lists twelve public methods (unchanged as of v1.1.0): `get_id` (static), `get_label`, `get_description`, `get_category`, `get_stability`, `register`, `is_globally_enabled` (added v1.0.1), `is_individually_enabled` (added v1.0.1), `is_enabled`, `get_settings_fields_metadata` (added v0.7.0), `get_image` (added v0.8.0), and `get_capability` (added v0.9.0).
+The interface (`Contracts\Feature`) lists twelve public methods (unchanged as of v1.2.0): `get_id` (static), `get_label`, `get_description`, `get_category`, `get_stability`, `register`, `is_globally_enabled` (added v1.0.1), `is_individually_enabled` (added v1.0.1), `is_enabled`, `get_settings_fields_metadata` (added v0.7.0), `get_image` (added v0.8.0), and `get_capability` (added v0.9.0).
 
 ## The canonical example
 
@@ -72,26 +72,33 @@ Use this action when you need custom construction (dependency injection, factory
 
 ### Built-in Experiments
 
-The plugin's own Experiments are registered via `Experiments::register_default_experiment_classes()` hooked to `wpai_default_feature_classes` at priority 9. The current list (v1.1.0, from `Experiments::EXPERIMENT_CLASSES`):
+The plugin's own Experiments are registered via `Experiments::register_default_experiment_classes()` hooked to `wpai_default_feature_classes` at priority 9. The current 1.2.0 inventory (from `Experiments::EXPERIMENT_CLASSES`) has sixteen entries:
 
 ```
 Abilities_Explorer, Connector_Approval, AI_Request_Logging,
 Content_Classification, Content_Resizing, Excerpt_Generation,
 Alt_Text_Generation, Meta_Description, Editorial_Notes, Editorial_Updates,
 Summarization, Title_Generation, Type_Ahead, Comment_Moderation,
-Key_Encryption
+Key_Encryption, Suggest_Reply
 ```
 
 Plus the internal `Image_Generation` Feature (registered separately as a stable Feature in `Loader::get_default_features()`).
 
-Two Experiments were added in v1.1.0:
+### Built-in Abilities
 
-- **`Type_Ahead`** (`type-ahead`, `Experiment_Category::EDITOR`) — ghost-text suggestions at the end of paragraphs in the block editor, with a paired `Type_Ahead` Ability; supports provider/model overrides and Guidelines (#151, #776).
-- **`Key_Encryption`** (`key-encryption`, `Experiment_Category::ADMIN`) — opt-in encryption of `connectors_ai_*_api_key` options at rest via a bundled libsodium-backed secrets API (`Secrets_Bridge`); keys are migrated on opt-in and restored to plaintext on opt-out or plugin deactivation (#560).
+Before registering another read capability, inspect the core read-only `core/read-content` and `core/read-users` Abilities. Their exposed post types and settings depend on `show_in_abilities`; do not assume every post type or setting is exposed, and do not re-register these IDs blindly.
 
-v1.1.0 also adds a standalone `core/read-settings` Ability (`includes/Abilities/Settings/Settings.php`, registered by `Main` and overriding any core-provided copy) that returns REST-exposed WordPress settings as a read-only key/value map (#691, #806).
+### Advanced feature settings
 
-Also since v1.1.0, content-dependent Experiments (Summarization, Content Resizing, Content Classification, etc.) are gated in the editor until the post reaches a minimum content length — character-based, default 250, filterable per feature via `wpai_min_content_length` (helper `WordPress\AI\get_min_content_length()`).
+Features supply advanced settings through their own metadata and settings-field methods. Use the documented `wpai_settings_feature_groups`, `wpai_settings_feature_metadata`, and `wpai_feature_{$id}_settings` filters to extend that existing metadata. There is no separate public registry for advanced settings to invent.
+
+### Added in v1.2.0
+
+- **`Suggest_Reply`** (`suggest-reply`, `Experiment_Category::ADMIN`) — adds a "Suggest reply" action to the Comments screen row actions and the Activity dashboard widget so moderators can generate a reply to a comment; registers the paired `ai/suggest-reply` Ability (#724).
+- Two new **read-only Abilities**, registered by `Main` and kept almost identical to the proposed WordPress core classes so the implementations stay in sync:
+  - **`core/read-content`** (`includes/Abilities/Content/Content.php`, category `content`) — fetch a single readable post by ID or by post type + slug, or query multiple posts filtered by post type, status, author, parent, or included IDs. Only post types flagged with `show_in_abilities` are eligible; raw fields are returned only for posts the current user can edit (#739).
+  - **`core/read-users`** (`includes/Abilities/Users/Users.php`, category `user`) — fetch a single readable user by ID, email, username, or slug, or a paginated collection filtered by roles, published-post authorship, or included IDs; field-level access is enforced per user (#774).
+- The `show_in_abilities` polyfill (`includes/Abilities/Show_In_Abilities.php`) now also marks curated **post types** (previously only settings), so `core/read-content` returns data on a stock site until WordPress core ships the flag natively — after which core owns it, like `show_in_rest`.
 
 ## The enabled-state model
 
