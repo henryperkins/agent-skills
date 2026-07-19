@@ -3,8 +3,8 @@
   "skills": ["wpds"],
   "query": "Build a WordPress admin settings form with current WordPress components and tokens, but the WPDS MCP server is not installed in this session.",
   "expected_behavior": [
-    "Check for WPDS MCP resources before depending on them",
-    "State that MCP-only pages, component records, and token lists could not be queried",
+    "Check for the get_components, get_component_details, and get_design_tokens WPDS MCP tools before depending on them",
+    "State that MCP-only component records and token lists could not be queried",
     "Continue with official Component Reference, Gutenberg Storybook, @wordpress/components, and @wordpress/ui sources",
     "Verify each used prop or token against an official page or installed package source",
     "Do not invent a component API or token name",
