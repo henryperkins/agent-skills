@@ -297,9 +297,13 @@ export function runReleaseConformance(repoRoot) {
     "developer.wordpress.org/block-editor/reference-guides/components",
     "@wordpress/components",
     "@wordpress/ui",
+    "get_components",
+    "get_component_details",
+    "get_design_tokens",
   ]);
   requireExcludes(repoRoot, "skills/wpds/SKILL.md", [
     "Requires WPDS MCP server configured and running",
     "DO NOT search the web",
+    "wpds://",
   ]);
 }

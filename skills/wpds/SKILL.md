@@ -1,7 +1,7 @@
 ---
 name: wpds
 description: "Use when building UIs leveraging the WordPress Design System (WPDS) and its components, tokens, patterns, etc."
-compatibility: "Targets WordPress 6.9+ (PHP 7.2.24+). WPDS MCP is preferred when available; official WordPress component/package sources are the fallback."
+compatibility: "Targets WordPress 6.9+ (PHP 7.2.24+). The bundled WPDS MCP requires Node.js 20.10.0+; official WordPress component/package sources are the fallback."
 license: GPL-2.0-or-later
 ---
 
@@ -9,7 +9,7 @@ license: GPL-2.0-or-later
 
 ## Prerequisites
 
-This skill works best with the **WPDS MCP server** installed. The MCP provides access to WordPress Design System documentation and resources, such as components and DS token lists.
+This skill works best with the **WordPress Design System MCP server** (`@wordpress/design-system-mcp`) installed. The repository's `.mcp.json` configures it for plugin clients that support local stdio servers. It requires Node.js 20.10.0 or newer and provides tools for component documentation and design tokens.
 
 The following terms should be treated as synonyms:
 - "WordPress" and "WP";
@@ -29,12 +29,12 @@ Use this skill when the user mentions:
 
 ### Check the WPDS MCP server before choosing sources
 
-1. Check whether the WPDS MCP resources (`wpds://pages`, `wpds://components`, `wpds://design-tokens`) are available.
+1. Check whether the WPDS MCP tools `get_components`, `get_component_details`, and `get_design_tokens` are available.
 2. If available, use them as the canonical component/token source:
-  - reference site (`wpds://pages`)
-  - list of available components (`wpds://components`) and specific component information (`wpds://components/:name`)
-  - list of available tokens (`wpds://design-tokens`)
-3. If the WPDS MCP server is unavailable, state that MCP-only resources could not be queried (including pages, component records, and token lists) and use only official WordPress sources:
+   - call `get_components` to discover available components;
+   - call `get_component_details` for every component under consideration before using its API;
+   - call `get_design_tokens` before selecting design values.
+3. If the WPDS MCP server is unavailable, state that MCP-only component records and token lists could not be queried and use only official WordPress sources:
    - [Component Reference](https://developer.wordpress.org/block-editor/reference-guides/components/)
    - [`@wordpress/components` package reference](https://developer.wordpress.org/block-editor/reference-guides/packages/packages-components/)
    - [Gutenberg Storybook](https://wordpress.github.io/gutenberg/)
@@ -45,7 +45,7 @@ For version-specific fallback evidence, use the source tag that matches the inst
 
 ### Required documentation
 
-Before working on any WPDS-related task, follow the source decision above and read the relevant available documentation. When MCP is available, its resources take precedence; otherwise, disclose the narrower MCP-only evidence and rely on the listed official fallback sources.
+Before working on any WPDS-related task, follow the source decision above and read the relevant available documentation. When MCP is available, its tool results take precedence; otherwise, disclose the narrower MCP-only evidence and rely on the listed official fallback sources.
 
 ### Boundaries
 
@@ -62,9 +62,9 @@ Before working on any WPDS-related task, follow the source decision above and re
 
 ## Verification
 
-- Every component used exists in the WPDS component list (`wpds://components`); no invented or deprecated components.
-- Design values reference WPDS tokens (`wpds://design-tokens`) rather than hard-coded colors, spacing, or font sizes.
-- The proposed solution was checked against the reference site (`wpds://pages`) documentation for the components involved.
+- Every component used was returned by `get_components`; no invented or deprecated components.
+- Every component API was checked with `get_component_details`.
+- Design values reference tokens returned by `get_design_tokens` rather than hard-coded colors, spacing, or font sizes.
 - Accessibility affordances (labels, roles, keyboard handling) follow each component's documented guidance.
 - If the local project provides lint scripts, they pass on the proposed code.
 
