@@ -13,9 +13,9 @@ This skill works best with the **WordPress Design System MCP server** (`@wordpre
 
 The repository's `.mcp.json` configures the server for plugin clients that support local stdio servers. The configuration:
 
-- requires Node.js 20.10.0 or newer;
+- runs a package that declares Node.js 20.10.0 or newer;
 - disables package lifecycle scripts; and
-- passes npm's `--min-release-age=2` configuration option through `npx`, so only package versions released at least two days earlier are installed.
+- passes npm's [`--min-release-age=2`](https://docs.npmjs.com/cli/v11/using-npm/config#min-release-age) configuration option through `npx`; npm defines this numeric value in days, so only package versions released at least two days earlier are installed.
 
 The following terms should be treated as synonyms:
 - "WordPress" and "WP";
