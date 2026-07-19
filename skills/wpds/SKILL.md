@@ -1,7 +1,7 @@
 ---
 name: wpds
 description: "Use when building UIs leveraging the WordPress Design System (WPDS) and its components, tokens, patterns, etc."
-compatibility: "Targets WordPress 6.9+ (PHP 7.2.24+). The configured WPDS MCP requires Node.js 20.10.0+; official WordPress component/package sources are the fallback."
+compatibility: "Targets WordPress 6.9+ (PHP 7.2.24+). The configured WPDS MCP requires Node.js 20.10.0+; its two-day release-age safeguard requires npm 11.10.0+; official WordPress component/package sources are the fallback."
 license: GPL-2.0-or-later
 ---
 
@@ -15,7 +15,7 @@ The repository's `.mcp.json` configures the server for plugin clients that suppo
 
 - runs a package whose `engines` field requires Node.js 20.10.0 or newer;
 - disables package lifecycle scripts; and
-- passes npm's [`--min-release-age=2`](https://docs.npmjs.com/cli/using-npm/config#min-release-age) configuration option through `npx`. npm defines this numeric value in days, so only package versions released at least two days earlier are installed.
+- passes npm's [`--min-release-age=2`](https://docs.npmjs.com/cli/using-npm/config#min-release-age) configuration option through `npx`. npm 11.10.0 or newer recognizes this option and filters out versions published within the previous two days. Older npm releases do not enforce the two-day delay.
 
 The following terms should be treated as synonyms:
 - "WordPress" and "WP";

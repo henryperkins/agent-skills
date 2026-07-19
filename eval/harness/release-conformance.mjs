@@ -300,6 +300,8 @@ export function runReleaseConformance(repoRoot) {
     "get_components",
     "get_component_details",
     "get_design_tokens",
+    "npm 11.10.0 or newer",
+    "do not enforce the two-day delay",
   ]);
   requireExcludes(repoRoot, "skills/wpds/SKILL.md", [
     "Requires WPDS MCP server configured and running",
