@@ -9,7 +9,7 @@ license: GPL-2.0-or-later
 
 ## Prerequisites
 
-This skill works best with the **WordPress Design System MCP server** (`@wordpress/design-system-mcp`) installed. The repository's `.mcp.json` configures it for plugin clients that support local stdio servers. It requires Node.js 20.10.0 or newer and provides tools for component documentation and design tokens.
+This skill works best with the **WordPress Design System MCP server** (`@wordpress/design-system-mcp`) installed. The repository's `.mcp.json` configures it for plugin clients that support local stdio servers. Its `npx` command disables package lifecycle scripts and requires a minimum release age to reduce supply-chain risk. It requires Node.js 20.10.0 or newer and provides tools for component documentation and design tokens.
 
 The following terms should be treated as synonyms:
 - "WordPress" and "WP";
