@@ -1,7 +1,7 @@
 ---
 name: wpds
 description: "Use when building UIs leveraging the WordPress Design System (WPDS) and its components, tokens, patterns, etc."
-compatibility: "Targets WordPress 6.9+ (PHP 7.2.24+). The bundled WPDS MCP requires Node.js 20.10.0+; official WordPress component/package sources are the fallback."
+compatibility: "Targets WordPress 6.9+ (PHP 7.2.24+). The configured WPDS MCP requires Node.js 20.10.0+; official WordPress component/package sources are the fallback."
 license: GPL-2.0-or-later
 ---
 
@@ -9,7 +9,13 @@ license: GPL-2.0-or-later
 
 ## Prerequisites
 
-This skill works best with the **WordPress Design System MCP server** (`@wordpress/design-system-mcp`) installed. The repository's `.mcp.json` configures it for plugin clients that support local stdio servers. Its `npx` command disables package lifecycle scripts and requires a minimum release age to reduce supply-chain risk. It requires Node.js 20.10.0 or newer and provides tools for component documentation and design tokens.
+This skill works best with the **WordPress Design System MCP server** (`@wordpress/design-system-mcp`) installed. It provides tools for component documentation and design tokens.
+
+The repository's `.mcp.json` configures the server for plugin clients that support local stdio servers. The configuration:
+
+- requires Node.js 20.10.0 or newer;
+- disables package lifecycle scripts; and
+- only installs package versions released at least two days earlier to reduce supply-chain risk.
 
 The following terms should be treated as synonyms:
 - "WordPress" and "WP";
