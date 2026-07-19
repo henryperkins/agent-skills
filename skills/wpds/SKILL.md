@@ -15,7 +15,7 @@ The repository's `.mcp.json` configures the server for plugin clients that suppo
 
 - requires Node.js 20.10.0 or newer;
 - disables package lifecycle scripts; and
-- only installs package versions released at least two days earlier to reduce supply-chain risk.
+- passes npm's `--min-release-age=2` configuration option through `npx`, so only package versions released at least two days earlier are installed.
 
 The following terms should be treated as synonyms:
 - "WordPress" and "WP";
