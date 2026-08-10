@@ -118,7 +118,8 @@ export function runReleaseConformance(repoRoot) {
 
   for (const file of [
     "skills/wp-playground/SKILL.md",
-    "skills/wp-playground/references/cli-commands.md",
+    "skills/wp-playground/references/cli.md",
+    "skills/wp-playground/references/website.md",
     "skills/wp-playground/references/debugging.md",
   ]) {
     requireExcludes(repoRoot, file, [
@@ -127,13 +128,18 @@ export function runReleaseConformance(repoRoot) {
       "--skip-wordpress-setup",
     ]);
   }
-  requireIncludes(repoRoot, "skills/wp-playground/references/cli-commands.md", [
+  requireIncludes(repoRoot, "skills/wp-playground/references/cli.md", [
     "3.1.45",
     "@wp-playground/cli@3.1.45 start",
     "--xdebug",
     "--workers=auto",
     "--wordpress-install-mode=install-from-existing-files-if-needed",
     '"8.5"',
+  ]);
+  requireIncludes(repoRoot, "skills/wp-playground/SKILL.md", [
+    "references/cli.md",
+    "references/website.md",
+    "references/debugging.md",
   ]);
 
   requireIncludes(repoRoot, "skills/wp-abilities-api/references/mcp-exposure.md", [

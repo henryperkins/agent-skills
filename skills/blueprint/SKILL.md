@@ -1,6 +1,6 @@
 ---
 name: blueprint
-description: Use when creating, editing, or reviewing WordPress Playground Blueprint JSON files.
+description: Use when creating, editing, reviewing, or validating WordPress Playground Blueprint JSON files or Blueprint bundles. For only running or sharing a Playground environment, use wp-playground.
 compatibility: "WordPress 6.9+, PHP 7.2.24+. Optionally Playground CLI or a browser"
 license: GPL-2.0-or-later
 ---
@@ -62,5 +62,9 @@ The V1 resource and step catalog is intentionally isolated in
 those V1 forms into a V2 Blueprint.
 
 Local directory bundles need `--blueprint-may-read-adjacent-files` through the CLI; ZIP bundles are self-contained. Before handoff, run the Blueprint and confirm expected plugins, options, network policy, and login state.
+
+## Sharing a Blueprint as a URL
+
+Minify the JSON, encode it once with `encodeURIComponent()`, and append it to `https://playground.wordpress.net/#`. Encoding is required: an unencoded Blueprint silently breaks on any reserved character. Very large Blueprints can exceed browser URL length limits — host the JSON and pass its URL, or use the CLI instead. For share-link mechanics, see [wp-playground/references/website.md](../wp-playground/references/website.md).
 
 See the [Blueprint schema](https://playground.wordpress.net/blueprint-schema.json) and [Playground Blueprint documentation](https://wordpress.github.io/wordpress-playground/blueprints).
