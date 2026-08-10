@@ -11,12 +11,13 @@
     "Step 6: Subclass WordPress\\AI\\Abstracts\\Abstract_Feature (NOT WP\\AI\\Features\\Abstract_Feature — that namespace is wrong)",
     "Step 7: Implement the three abstract methods: public static get_id(), protected load_metadata() returning [label, description, category, optional stability], public register()",
     "Step 8: Use Experiment_Category::EDITOR (since post-editor surface) for the category",
-    "Step 9: Register the Experiment via the wpai_default_feature_classes filter (preferred) OR wpai_register_features action — both documented in includes/Features/Loader.php",
+    "Step 9: Register a downstream Experiment through the documented wpai_register_features action by default; use wpai_default_feature_classes when intentionally adding, removing, or replacing pre-instantiation class strings",
     "Step 10: Inside the Experiment's register() method, hook wp_abilities_api_init to call wp_register_ability('ai/internal-links', [label, description, ability_class => Internal_Links_Ability::class])",
     "Step 11: Create a paired Internal_Links_Ability extending WordPress\\AI\\Abstracts\\Abstract_Ability with input_schema, output_schema, execute_callback, permission_callback, meta",
     "Step 12: Override guideline_categories() on the Ability to return ['site', 'copy'] — Abstract_Ability handles the Guidelines integration automatically via load_system_instruction_from_file()",
     "Step 13: Test: Settings → AI shows the Experiment; toggle persists; with AI plugin disabled, downstream code no-ops cleanly",
-    "Step 14: Check current 1.2.0 capabilities before adding duplicates: sixteen built-in Experiments, core/read-content, core/read-users, advanced feature settings, and wpai_default_request_timeout"
+    "Step 14: Check current 1.2.0 capabilities before adding duplicates: sixteen built-in Experiments; core/read-content, core/read-settings, core/read-users, ai/get-post-details, and ai/get-post-terms; conditional Feature/Experiment Abilities; advanced feature settings; and wpai_default_request_timeout",
+    "Step 15: Keep release boundaries honest: the generic wpai_system_instruction filter ships in 1.2.0, while ability-scoped system-instruction, prompt, and prompt-builder filters are develop-only until released"
   ],
   "success_criteria": [
     "Routes to wp-ai-plugin (and wp-abilities-api for the Ability step)",
@@ -31,7 +32,8 @@
     "Knows the WPAI_* constant names: WPAI_VERSION, WPAI_PLUGIN_FILE, WPAI_PLUGIN_DIR, WPAI_PLUGIN_URL (NOT WPAI_FILE/WPAI_PATH/WPAI_URL — those are wrong)",
     "Acknowledges that there is no AI-plugin-specific dashboard widgets framework — uses standard wp_add_dashboard_widget() if needed",
     "Recognizes Type_Ahead, Key_Encryption, and Suggest_Reply as current built-in Experiments",
-    "Recognizes core/read-content and core/read-users and does not re-register them blindly",
-    "Uses wpai_default_request_timeout and documented settings filters rather than inventing extension hooks"
+    "Recognizes the five always-registered utility/read Abilities (core/read-content, core/read-settings, core/read-users, ai/get-post-details, ai/get-post-terms), distinguishes conditional Feature/Experiment Abilities, and does not re-register shipped IDs blindly",
+    "Uses wpai_default_request_timeout and documented settings filters rather than inventing extension hooks",
+    "Presents wpai_system_instruction as released in 1.2.0 but does not present the post-1.2.0 ability-scoped filters as released"
   ]
 }

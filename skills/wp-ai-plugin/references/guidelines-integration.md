@@ -47,7 +47,7 @@ When the Ability runs:
 1. `get_system_instruction()` calls `load_system_instruction_from_file()` to load the base instruction from `system-instruction.php` (or `prompt.php`).
 2. If `guideline_categories()` returns non-empty AND `Guidelines::is_available()` is true, `get_system_instruction()` calls `get_guidelines_for_prompt( $block_name )`.
 3. The result is appended after a fixed preamble: *"The following guidelines represent the site's editorial standards. Apply them where relevant. Do not fabricate content to satisfy guidelines. If guidelines conflict with the input, prioritize accuracy."*
-4. The full instruction (base + preamble + `<guidelines>...</guidelines>` block) is passed to the model — `get_system_instruction()` also runs the result through the `wpai_system_instruction` filter.
+4. The full instruction (base + preamble + `<guidelines>...</guidelines>` block) passes through the global `wpai_system_instruction` filter before reaching the model; that hook ships in v1.2.0. On `develop` after v1.2.0, `get_system_instruction()` also runs the result through the Ability-scoped `wpai_{$ability_slug}_system_instruction` filter.
 
 Returning an empty array (the default) skips Guidelines entirely.
 

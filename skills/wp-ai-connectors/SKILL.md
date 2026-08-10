@@ -1,7 +1,7 @@
 ---
 name: wp-ai-connectors
-description: "Use when building a WordPress AI provider plugin that registers with the in-core AI Client (WP 7.0+) so it shows up in Settings → Connectors and becomes available to every plugin using `wp_ai_client_prompt()`. Covers the PHP AI Client provider registry, the Connectors API auto-discovery flow, the `wp_connectors_init` override hook, API key sources (env / constant / database), and the connector array shape. Use this — not `wp-ai-client` — when the user wants to integrate a new AI service (Anthropic, OpenAI, Google, OpenRouter, Ollama, Mistral, custom) at the *provider* level rather than build a feature on top."
-compatibility: "Targets WordPress 7.0+ (PHP 7.4+). Filesystem-based agent with bash + node. Some workflows require WP-CLI."
+description: "Use when building or debugging a WordPress AI provider plugin, registering an AI service with the PHP AI Client, exposing it through Settings → Connectors, declaring model capabilities/options, or adding text, media, function-calling, or embedding support at the provider layer."
+compatibility: "Targets WordPress 7.0+ (PHP 7.4+). Embedding-provider guidance requires PHP AI Client 1.4+ in standalone use or a Core build verified to bundle it. Filesystem-based agent with bash + node. Some workflows require WP-CLI."
 license: GPL-2.0-or-later
 ---
 
@@ -12,6 +12,7 @@ license: GPL-2.0-or-later
 Use this skill when the task involves:
 
 - writing a plugin that integrates a new AI provider (commercial API, self-hosted Ollama, OpenRouter, Mistral, etc.) with the WordPress AI Client,
+- adding or correcting embedding models, dimension support, input modalities, or other model metadata in a PHP AI Client 1.4+ provider,
 - overriding metadata for a built-in connector (Anthropic, Google, OpenAI) — for example, customizing the description or pre-filling the credentials URL for an internal deployment,
 - diagnosing "my provider plugin is installed but doesn't appear in Settings → Connectors,"
 - understanding why a provider's API key is being read from the wrong source (env vs constant vs database).
@@ -22,7 +23,7 @@ If the task is to *consume* AI features (build a summarization endpoint, add ima
 
 - Repo root (run `wordpress-router` and `wp-project-triage` first).
 - Provider being integrated: name, ID slug (must match `/^[a-z0-9_-]+$/` — lowercase alphanumeric, hyphens, underscores), authentication method (`api_key` or `none`).
-- Models the provider exposes and the modalities each supports.
+- Models the provider exposes, their generation capabilities, supported options, input/output modalities, and any embedding-dimension constraints.
 - Public credentials URL (where users go to get an API key) and a logo URL if you have one.
 
 ## Procedure
@@ -73,7 +74,15 @@ Notes:
 
 The provider class itself (`AnthropicProvider` in this example) implements the SDK's provider interface and lives in your plugin's `src/` directory. See `references/provider-registration.md` for the full annotated pattern and where to look in the SDK source for the current interface contract.
 
-### 2) Let auto-discovery handle the connector
+### 2) Declare capabilities and options from the exact SDK version
+
+`ModelMetadata` keeps two different axes. `CapabilityEnum` contains generation kinds plus chat history; configuration features belong in `SupportedOption` entries keyed by `OptionEnum`. For example, embedding support in PHP AI Client 1.4 is `CapabilityEnum::embeddingGeneration()`, while caller-selectable dimensions are `OptionEnum::dimensions()`. Structured output, system instructions, function declarations, and modalities are options, not invented `CapabilityEnum` cases.
+
+An embedding model must implement both `ModelInterface` and `EmbeddingGenerationModelInterface`; the latter adds `generateEmbeddingResult( array $inputs ): EmbeddingResult` but does not itself extend `ModelInterface`. Declare `OptionEnum::inputModalities()` so automatic resolution can match the actual text/file inputs, and declare `OptionEnum::dimensions()` only when the model accepts caller-selected dimensions. Return exactly one vector per input in input order.
+
+This is a 1.4-only surface. Before applying it inside WordPress, verify the Core build actually bundles PHP AI Client 1.4+; the standalone package release does not establish Core availability. Read `references/capabilities-declaration.md` for the exact enum, metadata, and model contract.
+
+### 3) Let auto-discovery handle the connector
 
 Once your provider is in `AiClient::defaultRegistry()`, the Connectors API discovers it automatically and creates the connector entry with the right metadata. **You do not need to call `register()` on the connector registry yourself.** The flow:
 
@@ -84,7 +93,7 @@ Once your provider is in `AiClient::defaultRegistry()`, the Connectors API disco
 
 If your provider used `api_key` auth, the database setting `connectors_ai_{your_id}_api_key` is created automatically and the env var / constant pattern `{YOUR_ID}_API_KEY` (uppercased) is wired up.
 
-### 3) Override metadata only when needed
+### 4) Override metadata only when needed
 
 Use `wp_connectors_init` if you need to change an existing connector's display data — for example, an agency overriding the Anthropic connector description for a white-label install:
 
@@ -105,7 +114,7 @@ Notes:
 - IDs must match `/^[a-z0-9_-]+$/` (lowercase alphanumeric, hyphens, underscores). Hyphens are normalized to underscores when Core derives the setting / env var / constant names.
 - Outside the `wp_connectors_init` callback, query through `wp_get_connector()` / `wp_get_connectors()` — do not access the registry directly.
 
-### 4) Confirm the API key source order
+### 5) Confirm the API key source order
 
 For `api_key` connectors, the AI Client looks up the key in this order. Document this in your provider plugin's readme so admins know:
 
@@ -123,7 +132,7 @@ Database storage is unencrypted by default but masked in the UI. The canonical A
 
 Typical use is non-AI connector types like `content_source` (remote WordPress) rather than `ai_provider`. A complete registration example ships as Gutenberg's e2e fixture `packages/e2e-tests/plugins/connectors-application-password.php`. This is a post-7.0 evolution carried by the Gutenberg plugin — on stock core without Gutenberg 23.6+, verify the method and UI exist before building on them.
 
-### 5) Verify the connector card appears
+### 6) Verify the connector card appears
 
 Check Settings → Connectors. You should see a card with your provider's name, description, logo, a "Get API key" link pointing at `authentication.credentials_url`, and a status indicator showing where the key is being read from (or "not configured").
 
@@ -141,6 +150,7 @@ If the connector isn't showing up:
 - The connector card renders on Settings → Connectors with the correct logo, description, and credentials link.
 - Setting an API key via env var, constant, and database (in turn) shows the right source on the card.
 - A feature plugin calling `wp_ai_client_prompt()->is_supported_for_text_generation()` returns `true` once your provider is configured.
+- For every advertised PHP AI Client 1.4 embedding model, `AiClient::input( ... )->usingDimensions( ... )->isSupported()` and generation succeed with one correctly sized vector per input.
 
 ## Failure modes / debugging
 
@@ -149,6 +159,8 @@ If the connector isn't showing up:
 - **Override not taking effect**: hooked too late, or hooked outside `wp_connectors_init`. Setting the registry instance outside `init` triggers `_doing_it_wrong()`.
 - **Duplicate-ID error during `register()`**: another plugin already registered that ID. Use `is_registered()` first; if you need to override, follow the unregister-modify-register pattern.
 - **Provider works locally but not on a managed host**: the host may have set `MY_PROVIDER_API_KEY` as a sealed env var. Env beats constant beats database — that's the intended priority and the host's value will win.
+- **Embedding model never resolves**: metadata is missing `CapabilityEnum::embeddingGeneration()`, the exact `OptionEnum::inputModalities()` combination, or `OptionEnum::dimensions()` for the requested value; do not substitute made-up capability names.
+- **Embedding generation resolves but fails at runtime**: the concrete model does not also implement `ModelInterface`, returned a different vector count than input count, or reported dimensions that do not match every vector.
 
 ## Escalation
 
@@ -157,6 +169,9 @@ For canonical detail before inventing patterns:
 - Connectors API dev note: https://make.wordpress.org/core/2026/03/18/introducing-the-connectors-api-in-wordpress-7-0/
 - AI Client dev note (architecture and provider plugin list): https://make.wordpress.org/core/2026/03/24/introducing-the-ai-client-in-wordpress-7-0/
 - PHP AI Client source (registry contract): https://github.com/WordPress/php-ai-client
+  - `src/Providers/Contracts/ProviderInterface.php` and `src/Providers/AbstractProvider.php`
+  - `src/Providers/Models/Enums/CapabilityEnum.php` and `OptionEnum.php`
+  - `src/Providers/Models/EmbeddingGeneration/Contracts/EmbeddingGenerationModelInterface.php`
 - Reference provider plugins:
   - https://wordpress.org/plugins/ai-provider-for-anthropic/
   - https://wordpress.org/plugins/ai-provider-for-google/

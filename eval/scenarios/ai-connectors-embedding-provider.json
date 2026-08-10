@@ -1,0 +1,24 @@
+{
+  "name": "Declare embedding support in a PHP AI Client 1.4 provider",
+  "skills": ["wordpress-router", "wp-project-triage", "wp-ai-connectors"],
+  "query": "I am updating a WordPress AI provider plugin for wordpress/php-ai-client 1.4. What must its provider and model metadata implement so embeddings with configurable dimensions resolve correctly, and how are capabilities different from options?",
+  "expected_behavior": [
+    "Step 1: Route provider-level work to wp-ai-connectors and confirm the standalone or Core-bundled SDK version before using 1.4-only APIs",
+    "Step 2: Use the all-static ProviderInterface contract and prefer AbstractProvider or ApiBasedImplementation/AbstractApiProvider rather than inventing instance registration methods",
+    "Step 3: Keep generation kinds in CapabilityEnum and declare embedding_generation with CapabilityEnum::embeddingGeneration()",
+    "Step 4: Keep configuration knobs in SupportedOption values keyed by OptionEnum; do not invent json_response, system_instruction, function_calling, or streaming CapabilityEnum cases",
+    "Step 5: Declare OptionEnum::dimensions() when the embedding model accepts caller-selected vector dimensions",
+    "Step 6: Return a model implementing EmbeddingGenerationModelInterface::generateEmbeddingResult(array $inputs): EmbeddingResult",
+    "Step 7: Preserve one output embedding per input and input order, because EmbeddingBuilder validates the count",
+    "Step 8: Smoke-test model metadata resolution through AiClient::input(...)->usingDimensions(...)->isSupported() and generation"
+  ],
+  "success_criteria": [
+    "Names the exact ProviderInterface static methods or the matching AbstractProvider create methods",
+    "Separates CapabilityEnum generation/history values from OptionEnum configuration values",
+    "Uses embeddingGeneration and dimensions with their exact verified names",
+    "Names EmbeddingGenerationModelInterface and its generateEmbeddingResult signature",
+    "Explains the positional output-count invariant",
+    "Does not invent SDK enum cases or treat input/output modalities as generation capabilities",
+    "Version-gates embedding provider guidance to PHP AI Client 1.4 or a Core version that bundles it"
+  ]
+}

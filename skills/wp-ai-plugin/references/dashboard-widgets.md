@@ -11,6 +11,8 @@ The AI plugin ships two dashboard widgets (since v0.8.0; still two as of v1.2.0)
 
 Both are constructed with the `Registry` instance and rendered via standard dashboard widget callbacks. Styles are enqueued via `Asset_Loader::enqueue_style( 'dashboard-widgets', 'admin/dashboard' )`.
 
+A Feature registered in the shared registry automatically participates in the AI Status widget's stable/experimental lists; no widget-specific registration is needed. The stable `wpai_is_{$connector_slug}_connector_configured` filter lets a connector correct the widget's detected configured state when API-key/OAuth heuristics are insufficient.
+
 ## How to add your own widget
 
 Standard WordPress. There's no AI-plugin-specific registration hook to use:

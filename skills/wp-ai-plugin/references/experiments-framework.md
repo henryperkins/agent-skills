@@ -45,6 +45,8 @@ Read it before writing your own; that's what it's there for.
 
 From `includes/Features/Loader.php`. The Loader runs via `Loader::init()`, called by `Main::initialize_features()` on the **`init` hook at priority 15** — `init()` calls `register_features()` then `initialize_features()`. The `wpai_default_feature_classes` filter is applied inside `register_features()`'s helper `get_default_features()`; the `wpai_register_features` action fires in `register_features()` directly. So both run during the AI plugin's `init` priority-15 handler — attach your callbacks by `plugins_loaded`, or on `init` before priority 15.
 
+For downstream extensions, the project documentation presents the `wpai_register_features` action as the primary registration path. Use the filter when you deliberately need to alter the pre-instantiation class list.
+
 ### `wpai_default_feature_classes` filter
 
 ```php
@@ -58,7 +60,7 @@ Filter receives an array of `[ feature_id => fully_qualified_class_string ]`. Th
 3. Instantiates with `new $class()` inside try/catch (skips with `_doing_it_wrong` if construction throws),
 4. Adds the resulting instance to the registry.
 
-Use this filter when you can register by class string alone.
+Use this filter to add, remove, or replace class strings before instantiation.
 
 ### `wpai_register_features` action
 
@@ -68,29 +70,39 @@ do_action( 'wpai_register_features', $this->registry );
 
 Action receives the `Registry` instance. Call `$registry->register_feature( $instance )` with an already-instantiated Feature. Returns `false` if the ID is already registered.
 
-Use this action when you need custom construction (dependency injection, factory pattern, conditional registration based on runtime state).
+Use this action for normal downstream registration as well as custom construction (dependency injection, factory pattern, or conditional registration based on runtime state).
 
 ### Built-in Experiments
 
-The plugin's own Experiments are registered via `Experiments::register_default_experiment_classes()` hooked to `wpai_default_feature_classes` at priority 9. The current 1.2.0 inventory (from `Experiments::EXPERIMENT_CLASSES`) has sixteen entries:
+The plugin's own Experiments are registered via `Experiments::register_default_experiment_classes()` hooked to `wpai_default_feature_classes` at priority 9. `Experiments::EXPERIMENT_CLASSES` on `develop` has seventeen entries:
 
 ```
 Abilities_Explorer, Connector_Approval, AI_Request_Logging,
-Content_Classification, Content_Resizing, Excerpt_Generation,
-Alt_Text_Generation, Meta_Description, Editorial_Notes, Editorial_Updates,
-Summarization, Title_Generation, Type_Ahead, Comment_Moderation,
-Key_Encryption, Suggest_Reply
+Content_Classification, Content_Resizing, Content_Translation,
+Excerpt_Generation, Alt_Text_Generation, Meta_Description,
+Editorial_Notes, Editorial_Updates, Summarization, Title_Generation,
+Type_Ahead, Comment_Moderation, Key_Encryption, Suggest_Reply
 ```
+
+Sixteen of those shipped in 1.2.0; `Content_Translation` landed after the tag (see below). `Example_Experiment` exists in the tree as an authoring template and is deliberately not registered.
 
 Plus the internal `Image_Generation` Feature (registered separately as a stable Feature in `Loader::get_default_features()`).
 
 ### Built-in Abilities
 
-Before registering another read capability, inspect the core read-only `core/read-content` and `core/read-users` Abilities. Their exposed post types and settings depend on `show_in_abilities`; do not assume every post type or setting is exposed, and do not re-register these IDs blindly.
+The v1.2.0 plugin directly registers five non-Experiment utility/read Abilities:
+
+- `core/read-content`
+- `core/read-settings`
+- `core/read-users`
+- `ai/get-post-details`
+- `ai/get-post-terms`
+
+Feature and Experiment Abilities, including the three Image Generation Abilities, are conditional on those Features being enabled. Resolve an Ability with `wp_get_ability()` on or after `wp_abilities_api_init`; do not assume a conditional ID exists. The exposed post types and settings used by the read Abilities depend on `show_in_abilities`, so do not assume every object is exposed or re-register these IDs blindly.
 
 ### Advanced feature settings
 
-Features supply advanced settings through their own metadata and settings-field methods. Use the documented `wpai_settings_feature_groups`, `wpai_settings_feature_metadata`, and `wpai_feature_{$id}_settings` filters to extend that existing metadata. There is no separate public registry for advanced settings to invent.
+Features supply advanced settings through their own metadata and settings-field methods. Use the documented `wpai_settings_feature_groups` and `wpai_settings_feature_metadata` filters to extend that existing metadata. `wpai_feature_{$id}_settings` is only available when a specific Feature applies it (Type Ahead does in v1.2.0); it is not a universal framework filter. There is no separate public registry for advanced settings to invent.
 
 ### Added in v1.2.0
 
@@ -99,6 +111,30 @@ Features supply advanced settings through their own metadata and settings-field 
   - **`core/read-content`** (`includes/Abilities/Content/Content.php`, category `content`) — fetch a single readable post by ID or by post type + slug, or query multiple posts filtered by post type, status, author, parent, or included IDs. Only post types flagged with `show_in_abilities` are eligible; raw fields are returned only for posts the current user can edit (#739).
   - **`core/read-users`** (`includes/Abilities/Users/Users.php`, category `user`) — fetch a single readable user by ID, email, username, or slug, or a paginated collection filtered by roles, published-post authorship, or included IDs; field-level access is enforced per user (#774).
 - The `show_in_abilities` polyfill (`includes/Abilities/Show_In_Abilities.php`) now also marks curated **post types** (previously only settings), so `core/read-content` returns data on a stock site until WordPress core ships the flag natively — after which core owns it, like `show_in_rest`.
+
+### Added after v1.2.0 (unreleased on `develop`)
+
+- **`Content_Translation`** (`content-translation`, `Experiment_Category::EDITOR`) — translates paragraph and heading blocks into a different language, and registers the paired `ai/content-translation` Ability (#747, merged 2026-07-29). Requires a connector with text-generation support.
+
+  Target languages come from `Languages.php` and are filterable:
+
+  ```php
+  add_filter( 'wpai_content_translation_languages', function ( array $languages ): array {
+      $languages['cy'] = __( 'Welsh', 'my-plugin' );
+      return $languages;
+  } );
+  ```
+
+  Codes are normalised with `sanitize_key()`, entries with a non-string or empty label are discarded, and a non-array return value is ignored entirely so the language picker and the ability schema keep working. The filtered list feeds the ability's input schema, so adding a language your provider cannot handle produces runtime failures rather than a validation error.
+
+  The class carries `@since x.x.x` placeholders — it is on `develop` but not in any tagged release, and the CHANGELOG's `[Unreleased]` section has not been updated to mention it. Treat it as unavailable when targeting 1.2.0.
+
+- **Ability-scoped prompt hooks** — `wpai_{$ability_slug}_system_instruction`, `wpai_{$ability_slug}_prompt`, and `wpai_{$ability_slug}_prompt_builder`. The global `wpai_system_instruction` hook is already released in v1.2.0; only the scoped family is new on `develop`.
+- **Settings import/export** — authenticated `GET /ai/v1/settings/export` and `POST /ai/v1/settings/import` endpoints, both gated by `manage_options`, using schema version 1 and excluding credential-like settings.
+- **Site Health integration** — an AI Plugin debug section and a direct credential-status test that does not expose secrets.
+- **Content Classification controls** — available-term, minimum-confidence, and candidate-pool-size filters plus richer taxonomy descriptors.
+
+The `develop` branch still declares plugin version `1.2.0`, and these additions carry `@since x.x.x` placeholders. Do not infer a future release number; keep them behind release or capability detection until tagged.
 
 ## The enabled-state model
 
@@ -143,7 +179,7 @@ The `ability_class` key is the AI plugin's convention — it points to a class e
 - `category(): string` (defaults to `WPAI_DEFAULT_ABILITY_CATEGORY`)
 - `guideline_categories(): array` (optional, for Guidelines integration)
 
-The Ability is what the Abilities API exposes — reachable via REST when its `meta` sets `show_in_rest => true` (as the canonical abilities do). MCP exposure is **not** automatic: the MCP Adapter only surfaces abilities whose `meta.mcp.public` is `true`, which the canonical abilities don't set. The Experiment is the Settings → AI surface.
+The Ability is what the Abilities API exposes — reachable via REST when its `meta` sets `show_in_rest => true` (as the canonical abilities do). MCP exposure is separate from REST visibility but is not determined solely by the nested MCP flag: MCP Adapter 0.5.0 uses explicit `meta.mcp.public` when present and otherwise inherits high-level `meta.public`. Set `meta.mcp.public => false` when a public Ability must remain unavailable through the default MCP server. The Experiment is the Settings → AI surface.
 
 ## Promotion path
 
@@ -159,6 +195,6 @@ If you're building an Experiment with the explicit goal of seeing it graduate, w
 ## Where to put your Experiment
 
 - **Upstream contribution to `WordPress/ai`**: PR adding `includes/Experiments/My_Experiment/My_Experiment.php` and `includes/Abilities/My_Experiment/My_Experiment.php`. Follow the contributor guide (`CONTRIBUTING.md`); AI-authored code requires explicit disclosure per the AI Authorship guidelines.
-- **Downstream plugin extending the AI plugin**: your own plugin hooks `wpai_default_feature_classes` to add your class. Faster to ship, good for testing demand. Treat the AI plugin as an optional dependency; gate every entry point.
+- **Downstream plugin extending the AI plugin**: your own plugin normally registers an instance on `wpai_register_features`; use `wpai_default_feature_classes` when class-list mutation is the requirement. Treat the AI plugin as an optional dependency and gate every entry point.
 
 The downstream pattern is what most agencies and hosts will use. Upstream contribution is for Experiments general enough to belong in the canonical plugin.

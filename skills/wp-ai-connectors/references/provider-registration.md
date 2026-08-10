@@ -81,7 +81,7 @@ The PHP interface lives in `wordpress/php-ai-client`. It may evolve as the SDK m
   - `model( string $modelId, ?ModelConfig $config = null ): ModelInterface` — resolve a model instance.
   - `availability(): ProviderAvailabilityInterface` — whether the provider is configured/reachable.
   - `modelMetadataDirectory(): ModelMetadataDirectoryInterface` — the catalog of models and their capabilities (modalities, context window, pricing, recency).
-- The flagship providers don't implement `ProviderInterface` directly — they extend the SDK's `AbstractApiProvider` (under `src/Providers/`) and supply `createProviderMetadata()` / `createModel()` / `createProviderAvailability()` / `createModelMetadataDirectory()`. Copy that shape.
+- Provider implementations normally extend `src/Providers/AbstractProvider.php`; API-backed providers can extend `src/Providers/ApiBasedImplementation/AbstractApiProvider.php`. They inherit the four public methods as final and supply `createProviderMetadata()`, `createModel( ModelMetadata $modelMetadata, ProviderMetadata $providerMetadata )`, `createProviderAvailability()`, and `createModelMetadataDirectory()`. `createModel()` does not receive `ModelConfig`; the inherited public `model()` method applies a non-null config after construction.
 - The provider translates between the SDK's normalized request/response shape and the upstream API.
 - Source: https://github.com/WordPress/php-ai-client (`src/Providers/`).
 

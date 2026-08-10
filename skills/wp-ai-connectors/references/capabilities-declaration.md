@@ -1,6 +1,6 @@
 # Declaring model capabilities
 
-A provider plugin's job is to make its models *describable*. The AI Client uses those descriptions to decide which model can fulfill a request — your declarations are what `is_supported_for_*()` and `using_model_preference()` check against.
+A provider plugin's job is to make its models *describable*. The PHP AI Client uses `ModelMetadata` to resolve a compatible model before generation. Keep operation capabilities separate from supported configuration options.
 
 ## What gets declared
 
@@ -8,45 +8,74 @@ For each model the provider exposes:
 
 - **Model ID** — stable string. Site owners and feature plugins reference models by ID, so renaming is a breaking change.
 - **Display name** — for the Settings → Connectors UI and any admin model picker.
-- **Modalities supported** — text, image, speech (TTS), speech (STT), video. Inputs and outputs may differ (e.g., a vision model takes image input but outputs text).
-- **Capabilities** — structured output (JSON schema), system instructions, multi-turn (history), function calling, streaming, etc. The exact capability enum is defined in the PHP AI Client SDK.
-- **Limits** — context window size, max output tokens, max input file size.
-- **Recency hint** — whether this is a current-generation model, a legacy one, or a preview. Used to sort the model list so newer models appear first.
+- **`supportedCapabilities`** — `CapabilityEnum` values for generation kinds and chat history.
+- **`supportedOptions`** — `SupportedOption` objects keyed by `OptionEnum` for modalities, structured output, system instructions, function declarations, dimensions, token limits, and other configuration.
 
 The exact PHP shape is in the SDK source — the existing flagship providers are the canonical examples. The shape may evolve, so always read against the current SDK version.
 
 ## Why ordering matters
 
-`using_model_preference()` is a *preference*, not a constraint. If none of the preferred models are available on the site, the AI Client falls back to "the first compatible model in the registered order." That means **your provider's model ordering directly affects which model handles a request when no preference matches.**
+`using_model_preference()` / standalone `usingModelPreference()` are preferences, not hard constraints. If none match, resolution falls back to the first compatible model in registry order. Provider model ordering therefore affects the fallback.
 
 The convention (followed by the three flagship providers): list newer models before older ones within a family. So `gpt-5.4` before `gpt-5.0` before `gpt-4.5-turbo`. A feature plugin that says "give me your best Anthropic model" gets `claude-opus-4-7` instead of a 2-year-old Claude 3. (Model IDs throughout this skill are illustrative — use the IDs your provider actually advertises.)
 
-## Modality declarations
+## CapabilityEnum is not an option list
 
-A model can declare itself as supporting:
+At PHP AI Client 1.4.0, `CapabilityEnum` contains exactly:
 
-- **Text input** (almost all models)
-- **Text output** (most generative models)
-- **Image input** (vision models)
-- **Image output** (image generation models — `gpt-image-2`, `imagen-4`, etc.)
-- **Audio input** (speech-to-text)
-- **Audio output** (text-to-speech, native speech generation)
-- **Video output** (video generation models)
-- **Multimodal output** — at least two output modalities for a single request
+- `textGeneration()`
+- `imageGeneration()`
+- `textToSpeechConversion()`
+- `speechGeneration()`
+- `musicGeneration()`
+- `videoGeneration()`
+- `embeddingGeneration()`
+- `chatHistory()`
 
-Be honest in declarations. A model that *technically* accepts image input but produces unreliable results should not declare image input support — site owners will configure features around it and end up with a broken UX.
+Names such as `json_response`, `system_instruction`, `function_calling`, and `streaming` are not `CapabilityEnum` cases. Structured output uses `OptionEnum::outputSchema()`, system instructions use `OptionEnum::systemInstruction()`, and function calling uses `OptionEnum::functionDeclarations()`. Input/output modalities are also options.
 
-## Capability declarations
+## SupportedOption and modalities
 
-The SDK defines a set of optional capabilities each model can opt into. Common ones:
+`SupportedOption` pairs an `OptionEnum` with either unrestricted support (`null`) or a list of exact supported values:
 
-- **`json_response`** — model can reliably return JSON matching a provided schema.
-- **`system_instruction`** — model honors a separate system prompt.
-- **`history`** — multi-turn conversation supported.
-- **`function_calling`** — tool/function invocation supported (relevant for agentic workflows but not exposed via the WP wrapper directly yet).
-- **`streaming`** — supports streaming responses (the WP wrapper doesn't currently expose streaming, but providers should still declare it for future use).
+```php
+new SupportedOption( OptionEnum::dimensions() );
+new SupportedOption( OptionEnum::dimensions(), array( 256, 512, 1024 ) );
+```
 
-Feature plugins use these declarations indirectly — `is_supported_for_text_generation()` returns `false` if the builder requested a JSON schema and no available model declares `json_response`. Mis-declaring a capability cascades into hard-to-diagnose failures for downstream features.
+Declare input modalities with `OptionEnum::inputModalities()` and output modalities with `OptionEnum::outputModalities()`. Supported input values are lists of exact modality combinations. A model supporting text-only, image-only, and mixed text/image input must list all three combinations; the mixed combination does not imply either single-modality combination. Use unrestricted support only when the provider genuinely accepts every combination.
+
+## Embedding provider contract (PHP AI Client 1.4+)
+
+An automatically discoverable text embedding model with configurable dimensions needs metadata shaped like:
+
+```php
+new ModelMetadata(
+    'acme-embed',
+    'Acme Embed',
+    array( CapabilityEnum::embeddingGeneration() ),
+    array(
+        new SupportedOption(
+            OptionEnum::inputModalities(),
+            array( array( ModalityEnum::text() ) )
+        ),
+        new SupportedOption( OptionEnum::dimensions() ),
+    )
+);
+```
+
+`ModelRequirements::fromEmbeddingData()` requires `embeddingGeneration()`, the exact input-modality combination, and `dimensions()` whenever the caller used `usingDimensions()`.
+
+The concrete model must satisfy `ModelInterface` and `EmbeddingGenerationModelInterface`. The embedding interface does not extend `ModelInterface`; it only adds:
+
+```php
+/** @param list<MessagePart> $inputs */
+public function generateEmbeddingResult( array $inputs ): EmbeddingResult;
+```
+
+Read `$this->getConfig()->getDimensions()`, forward it when present, preserve input order, and return exactly one numeric vector per input. `EmbeddingResult` must contain at least one vector, a positive concrete dimension count, and vectors whose lengths match that count. `EmbeddingBuilder` separately rejects a result count that differs from the input count.
+
+There is no implemented `EmbeddingOperation` or `EmbeddingGenerationOperationModelInterface` in 1.4.0; use the synchronous interface above.
 
 ## Logo and brand assets
 
@@ -66,4 +95,4 @@ Models change. New ones launch, old ones get deprecated, capabilities expand. Tw
 
 ## Cross-checking with feature detection
 
-Build a small smoke test in your provider plugin that exercises every declared capability against a configured key, and surface results in your provider plugin's settings or admin notice. This catches declaration drift early — when a provider quietly removes a capability and your plugin still claims to support it, the smoke test catches it before site owners do.
+Build a small smoke test in your provider plugin that exercises every declared capability/option against a configured key. For embeddings, include `AiClient::input( ... )->usingDimensions( ... )->isSupported()` and a real single/batch generation check. Verify the output count, order, and dimensions instead of trusting metadata alone.

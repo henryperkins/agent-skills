@@ -23,11 +23,11 @@ Route by intent even if repo kind is broad (like `wp-site`):
 
 - **Interactivity API / data-wp-* directives / @wordpress/interactivity / viewScriptModule**
   - Route → `wp-interactivity-api`.
-- **AI Client / wp_ai_client_prompt / WP_AI_Client_Prompt_Builder / generate_text_result / using_model_preference / WP 7.0 AI**
+- **AI Client / wp_ai_client_prompt / WP_AI_Client_Prompt_Builder / AiClient::input / EmbeddingBuilder / generate_text_result / using_model_preference / embeddings / semantic search / WP 7.0 AI**
   - Route → `wp-ai-client`.
-- **AI provider plugin / Connectors API / Settings → Connectors / wp_connectors_init / WP_Connector_Registry / wp_get_connector / connectors_ai_*_api_key / `_ai_` prefix**
+- **AI provider plugin / Connectors API / Settings → Connectors / CapabilityEnum / SupportedOption / EmbeddingGenerationModelInterface / wp_connectors_init / WP_Connector_Registry / wp_get_connector / connectors_ai_*_api_key / `_ai_` prefix**
   - Route → `wp-ai-connectors`.
-- **AI plugin (canonical) / WordPress/ai / Abstract_Feature / Experiments framework / WPAI_* / wp_supports_ai / Refine from Notes / dashboard AI widgets / Guidelines integration / ai-wp-admin**
+- **AI plugin (canonical) / WordPress/ai / Abstract_Feature / Experiments framework / WPAI_* / wp_supports_ai / Editorial Updates / Content Translation / dashboard AI widgets / Guidelines integration / ai-wp-admin**
   - Route → `wp-ai-plugin`.
 - **Abilities API / wp_register_ability / wp-abilities/v1 / @wordpress/abilities / @wordpress/core-abilities / executeAbility / core/abilities store**
   - Route → `wp-abilities-api`.

@@ -1,6 +1,6 @@
 ---
 name: wp-ai-client
-description: "Use when building AI features in a WordPress plugin or theme on WordPress 7.0+ using the in-core AI Client (`wp_ai_client_prompt()`, `WP_AI_Client_Prompt_Builder`). Covers prompt construction, model preferences, REST endpoint patterns for exposing AI features to JS, error handling, and feature detection. Use this — not direct provider SDKs — when the user asks to add text/image/speech/video generation to a WordPress site."
+description: "Use when building provider-agnostic AI features in a WordPress plugin or theme with the WP 7.0+ AI Client, or when a task involves standalone `wordpress/php-ai-client` 1.4+ embeddings. Triggers include text/image/speech/video generation, vector embeddings, semantic search, prompt builders, model preferences, feature detection, REST endpoints, and AI Client ability function calling."
 compatibility: "Targets WordPress 7.0+ (PHP 7.4+). Filesystem-based agent with bash + node. Some workflows require WP-CLI."
 license: GPL-2.0-or-later
 ---
@@ -12,6 +12,7 @@ license: GPL-2.0-or-later
 Use this skill when the task involves:
 
 - adding an AI-powered feature (text, image, speech, video generation) to a plugin or theme on WP 7.0+,
+- building embeddings for semantic search, clustering, or similarity with standalone `wordpress/php-ai-client` 1.4+ while respecting the Core-bundled version boundary,
 - replacing direct calls to OpenAI/Anthropic/Google SDKs with the provider-agnostic in-core API,
 - migrating from the standalone `wordpress/php-ai-client` or `wordpress/wp-ai-client` Composer packages now that 7.0 bundles them,
 - exposing an AI feature to the block editor or custom JS via a REST endpoint,
@@ -24,7 +25,7 @@ If the task is to write a *provider plugin* (e.g., adding a new AI service), rou
 - Repo root (run `wordpress-router` and `wp-project-triage` first).
 - Target WP version: this skill is **WP 7.0+ only**. If the project must support 6.x, see the migration section in `references/prompt-builder.md`.
 - Whether the feature runs server-side (PHP only), client-side (JS), or both.
-- Which modality is needed (text / image / speech / video).
+- Which modality is needed (text / image / speech / video / embedding), and whether the code runs through WordPress Core or the standalone SDK.
 
 ## Procedure
 
@@ -130,6 +131,26 @@ $result = wp_ai_client_prompt( 'Summarize the latest 5 posts.' )
 
 Abilities you pass must already be registered server-side via `wp_register_ability()`. Their `permission_callback` runs every time the model attempts to invoke them.
 
+### 7) Use the Core resolver and timeout APIs when working below `using_abilities()`
+
+`using_abilities()` is the normal high-level path. For low-level function-call handling, Core exposes `WP_AI_Client_Ability_Function_Resolver`. Its static conversion helpers round-trip an Ability ID to the AI-safe function name, and an instance allow-lists the Abilities it may execute:
+
+```php
+$function_name = WP_AI_Client_Ability_Function_Resolver::ability_name_to_function_name( 'my-plugin/lookup' );
+$ability_name  = WP_AI_Client_Ability_Function_Resolver::function_name_to_ability_name( $function_name );
+
+$resolver = new WP_AI_Client_Ability_Function_Resolver( 'my-plugin/lookup' );
+$payload  = $resolver->execute_ability( $function_call )->getResponse();
+```
+
+For builders created after a global timeout policy is installed, use Core's real filter rather than a plugin-specific lookalike:
+
+```php
+add_filter( 'wp_ai_client_default_request_timeout', static fn(): float => 45.0 );
+```
+
+The filter fires during builder construction. Scope or remove it when the timeout should not remain process-wide.
+
 ## Verification
 
 - `is_supported_for_*()` returns `true` in your test environment with at least one configured provider.
@@ -149,6 +170,25 @@ Abilities you pass must already be registered server-side via `wp_register_abili
 
 WordPress 7.0.2 bundles PHP AI Client 1.3.1. Composer's standalone latest is PHP AI Client 1.4.0. Treat the Core-bundled version as the compatibility boundary: an API added only in the standalone package cannot be assumed available through Core until WordPress updates its bundled dependency.
 
+**What 1.4.0 added, and therefore what Core does not yet expose:** embedding generation. Embeddings use a dedicated `EmbeddingBuilder` (`withInput()`, `usingDimensions()`, `generateEmbedding()`, `generateEmbeddings()`, `generateEmbeddingResult()`, `isSupported()`) plus the static `AiClient::generateEmbedding()`, `AiClient::generateEmbeddings()`, and `AiClient::generateEmbeddingResult()` entry points. The builder shares `usingModel()`, `usingModelPreference()`, `usingModelConfig()`, `usingProvider()`, and `usingRequestOptions()` with the prompt builder through `ModelResolutionTrait`. It returns concrete `Embedding` / `EmbeddingResult` DTOs and dispatches `BeforeGenerateEmbeddingEvent` / `AfterGenerateEmbeddingEvent` when a PSR event dispatcher is configured. `EmbeddingList` is a PHPStan alias for `list<float|int>`, not a value-object class. Inputs are message parts — strings, `File`s, or parts — not conversations, matching how providers treat embeddings as a separate API.
+
+If a task calls for embeddings (semantic search, clustering, similarity), you cannot reach them through `wp_ai_client_prompt()` on WP 7.0.2. Do not load an unprefixed standalone `wordpress/php-ai-client` 1.4 beside Core's 1.3.1 copy; the duplicate namespaces are not a supported override path. Wait for Core to bump, isolate/prefix the newer dependency, or move embedding work to a separate service. In a standalone PHP application where Core is not loading the SDK, the entry point is `AiClient::input()`:
+
+```php
+use WordPress\AiClient\AiClient;
+
+$builder = AiClient::input( 'PHP powers a large part of the web.' );
+if ( ! $builder->isSupported() ) {
+    throw new RuntimeException( 'No embedding model is available.' );
+}
+
+$values = $builder->generateEmbedding()->getValues();
+```
+
+Do not invent a `wp_ai_client_embedding()` wrapper — no such Core function exists. See `references/embedding-builder.md` for the complete standalone boundary and method contract.
+
+Watch for this trap: `is_supported_for_embedding_generation()` shipped on the prompt builder back in 1.3.1, so it *is* reachable through Core and will happily return `true`. In 1.3.1 there is no corresponding generation method anywhere — not on the prompt builder, not on the client. The probe answers "this provider does embeddings", not "you can call them from here". Probe support and generate through the same package version.
+
 ## Escalation
 
 For canonical detail before inventing patterns:
@@ -160,5 +200,6 @@ For canonical detail before inventing patterns:
 
 References:
 - `references/prompt-builder.md`
+- `references/embedding-builder.md`
 - `references/rest-patterns.md`
 - `references/error-handling.md`

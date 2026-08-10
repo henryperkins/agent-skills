@@ -1,0 +1,23 @@
+{
+  "name": "Use the low-level AI Client Ability resolver and default timeout filter",
+  "skills": ["wordpress-router", "wp-project-triage", "wp-ai-client", "wp-abilities-api"],
+  "query": "On WordPress 7.0 I need to translate an Ability ID to the AI-safe function name, execute incoming function calls through an allow-list containing only my-plugin/lookup, and make subsequently created AI prompt builders use a 45-second default timeout. Which Core APIs should I use?",
+  "expected_behavior": [
+    "Step 1: Route to wp-ai-client with wp-abilities-api as the registration and permission reference",
+    "Step 2: Prefer using_abilities() for ordinary prompt-driven function calling, while recognizing this request needs the lower-level resolver",
+    "Step 3: Use WP_AI_Client_Ability_Function_Resolver::ability_name_to_function_name() and function_name_to_ability_name() for conversion",
+    "Step 4: Construct new WP_AI_Client_Ability_Function_Resolver('my-plugin/lookup') so only that Ability is allowed",
+    "Step 5: Call execute_ability($function_call)->getResponse() and preserve the Ability permission path",
+    "Step 6: Install wp_ai_client_default_request_timeout with add_filter before constructing the prompt builders that should inherit 45 seconds",
+    "Step 7: Do not confuse the Core timeout filter with the AI plugin's wpai_default_request_timeout filter"
+  ],
+  "success_criteria": [
+    "Uses both verified static conversion helper names",
+    "Uses the verified resolver constructor and execute_ability method",
+    "Allow-lists only my-plugin/lookup",
+    "Uses wp_ai_client_default_request_timeout for Core builders",
+    "Explains that the timeout filter is read during builder construction",
+    "Keeps target Ability permission checks in the execution path",
+    "Does not invent resolver or timeout APIs"
+  ]
+}

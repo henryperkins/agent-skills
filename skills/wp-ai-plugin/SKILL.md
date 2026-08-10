@@ -1,7 +1,7 @@
 ---
 name: wp-ai-plugin
-description: "Use when extending the canonical WordPress AI plugin (`wordpress.org/plugins/ai`, repo `WordPress/ai`, v1.0+) — adding a downstream Experiment via the `wpai_default_feature_classes` filter or `wpai_register_features` action, registering a paired Ability that consumes Guidelines automatically, customizing prompts/responses through documented filters, or respecting `wp_supports_ai()` and the `WPAI_*` constants. Use this — not `wp-ai-client` — when the user wants to add a feature *to the AI plugin itself* rather than build an independent AI feature in their own plugin."
-compatibility: "Targets WordPress 7.0+ (PHP 7.4+) and the AI plugin v0.6.0+ (Abstract_Feature); v0.8.0+ adds wp_supports_ai, Guidelines, and dashboard widgets (current canonical release: v1.2.0). Filesystem-based agent with bash + node. Some workflows require WP-CLI."
+description: "Use when extending or troubleshooting the canonical WordPress AI plugin (`wordpress.org/plugins/ai`, repo `WordPress/ai`): Experiments, paired Abilities, Guidelines, feature registration, Settings -> AI integration, dashboard status, or `wpai_*` hooks."
+compatibility: "Targets WordPress 7.0+ (PHP 7.4+) and the AI plugin v0.6.0+ (Abstract_Feature); v0.8.0+ adds Guidelines and dashboard widgets and starts gating on core's wp_supports_ai() (current canonical release: v1.2.0). Filesystem-based agent with bash + node. Some workflows require WP-CLI."
 license: GPL-2.0-or-later
 ---
 
@@ -12,7 +12,7 @@ license: GPL-2.0-or-later
 Use this skill when the task involves:
 
 - adding a new Experiment to the canonical AI plugin (a content-classification experiment, a new editorial workflow, a custom suggestion type),
-- pairing the Experiment with a registered Ability so it's reachable via the Abilities API and REST (and, if you opt in with `meta.mcp.public = true`, via the MCP Adapter),
+- pairing the Experiment with a registered Ability so it's reachable via the Abilities API and REST, and deliberately controlling effective MCP exposure (explicit `meta.mcp.public` wins; otherwise MCP Adapter 0.5.0 inherits `meta.public`),
 - opting into Guidelines so the Experiment respects site editorial standards,
 - customizing the AI plugin's behavior in your own plugin via its hooks/filters (prompt overrides, response filtering, feature visibility),
 - diagnosing "my Experiment doesn't appear in Settings → AI" or "the plugin works but my filter never fires".
@@ -22,7 +22,7 @@ If the task is to build an AI feature in your own plugin without involving the c
 ## Inputs required
 
 - Repo root (run `wordpress-router` and `wp-project-triage` first).
-- Confirmation that the canonical AI plugin (`WordPress/ai`, slug `ai`) is installed and active. v0.6.0+ exposes `Abstract_Feature` and the `WPAI_*` constants. v0.8.0+ adds `wp_supports_ai()`, the Guidelines service, and the AI Status / AI Capabilities dashboard widgets.
+- Confirmation that the canonical AI plugin (`WordPress/ai`, slug `ai`) is installed and active. v0.6.0+ exposes `Abstract_Feature` and the `WPAI_*` constants. v0.8.0+ adds Guidelines and the AI Status / AI Capabilities dashboard widgets, and starts requiring Core's `wp_supports_ai()` gate.
 - Whether you're extending *upstream* (PR to `WordPress/ai`) or *downstream* (your own plugin that hooks into the AI plugin). The patterns differ.
 - Target AI plugin version (current canonical release: v1.2.0). The 0.x cycle had renames, and the 1.x line keeps adding Experiments and Abilities each release; the source is the canonical reference.
 
@@ -36,13 +36,13 @@ If the task is to build an AI feature in your own plugin without involving the c
    - The plugin slug `ai` in `wp-content/plugins/ai/`.
    - `Main` singleton at `WordPress\AI\Main::get_instance()`.
 3. The canonical "copy this" reference is `includes/Experiments/Example_Experiment/Example_Experiment.php` in the AI plugin's source. Open it before writing your own.
-4. At 1.2.0, check the built-in inventory before adding anything: sixteen Experiments and the read-only `core/read-content` / `core/read-users` Abilities. Do not duplicate a shipped capability.
+4. At 1.2.0, check the built-in inventory before adding anything: sixteen Experiments plus the utility/read Abilities `core/read-content`, `core/read-settings`, `core/read-users`, `ai/get-post-details`, and `ai/get-post-terms`. Feature and Experiment Abilities are registered conditionally. Do not duplicate a shipped capability.
 
 If the project is the AI plugin itself, you're working *upstream*. Otherwise you're working *downstream* and your code should treat the AI plugin as an optional dependency — degrade gracefully if it's not active.
 
 ### 1) Gate on `wp_supports_ai()`
 
-Any code that depends on the AI plugin should guard with `wp_supports_ai()`. The function is provided by Core (WP 7.0) or the bundled SDK — not by the AI plugin itself — so use `function_exists()`:
+Any code that depends on the AI plugin should guard with `wp_supports_ai()`. The function is provided by WordPress Core (WP 7.0), not by the AI plugin or the standalone SDK, so use `function_exists()`:
 
 ```php
 if ( ! function_exists( 'wp_supports_ai' ) || ! wp_supports_ai() ) {
@@ -91,9 +91,22 @@ Categories: `Experiment_Category::EDITOR` (`'editor'`), `Experiment_Category::AD
 
 ### 3) Register the Experiment with the AI plugin
 
-Two extension points exist; pick one. Both are documented in `includes/Features/Loader.php`.
+Two extension points exist. Both are documented in `includes/Features/Loader.php`.
 
-**Filter (preferred for class-string registration):**
+**Action (recommended for downstream registration):**
+
+```php
+add_action( 'wpai_register_features', function ( $registry ) {
+    if ( ! class_exists( '\\WordPress\\AI\\Abstracts\\Abstract_Feature' ) ) {
+        return;
+    }
+    $registry->register_feature( new My_Experiment() );
+} );
+```
+
+The action receives the `WordPress\AI\Features\Registry` instance. `register_feature()` returns `false` if the ID is already registered. This is the primary third-party entry point documented by the project.
+
+**Filter (when you need to alter the pre-instantiation class list):**
 
 ```php
 add_filter( 'wpai_default_feature_classes', function ( array $classes ): array {
@@ -105,20 +118,7 @@ add_filter( 'wpai_default_feature_classes', function ( array $classes ): array {
 } );
 ```
 
-The Loader instantiates the class for you (`new $class()`), validates that it implements `WordPress\AI\Contracts\Feature`, and adds it to the registry.
-
-**Action (when you need custom instantiation):**
-
-```php
-add_action( 'wpai_register_features', function ( $registry ) {
-    if ( ! class_exists( '\\WordPress\\AI\\Abstracts\\Abstract_Feature' ) ) {
-        return;
-    }
-    $registry->register_feature( new My_Experiment( /* injected dependencies */ ) );
-} );
-```
-
-The action receives the `WordPress\AI\Features\Registry` instance. `register_feature()` returns `false` if the ID is already registered (idempotent).
+Use `wpai_default_feature_classes` when you specifically need to add, remove, or replace class strings before the Loader instantiates them. The Loader validates the `Feature` contract and constructs each class with `new $class()`.
 
 ### 4) Pair with an Ability (recommended)
 
@@ -201,12 +201,17 @@ The plugin exposes filters at several layers. The most useful ones, by need:
 - **Adjust the minimum content threshold** (v1.1.0+): `wpai_min_content_length` (default 250 characters, per feature). Content-dependent Experiments (Summarization, Content Resizing, Content Classification, etc.) are disabled in the editor until the post reaches this character count. The legacy `wpai_summarization_min_content_length` filter was deprecated in 1.1.0 in favor of this one.
 - **Claim Image Generation support** (v1.1.0+): `wpai_has_image_generation_support` — lets a third party declare image-generation support when it can't be auto-detected (e.g., a connector authenticating without an API key, such as OAuth).
 - **Tune the default request timeout** (v1.2.0+): `wpai_default_request_timeout` — filters the per-request timeout as `( int $default_timeout, string $feature_id )`; the plugin uses it for the image-generation request (`includes/helpers.php`). ⚠️ The 1.2.0 changelog and `readme.txt` call this `wp_ai_client_default_request_timeout`, but that name appears in *no* PHP in the plugin — the applied filter is `wpai_default_request_timeout`. (`wp_ai_client_default_request_timeout` is most likely the core AI Client's own timeout filter; verify against the installed core version before using it.)
-- **Extend Settings → AI feature groups or metadata**: `wpai_settings_feature_groups` and `wpai_settings_feature_metadata`; use `wpai_feature_{$id}_settings` for a single feature's settings.
-- **Modify a system instruction before sending**: filters fire inside each Ability's `load_system_instruction_from_file()`. Search source for `apply_filters` near the Ability's `system-instruction.php` file.
+- **Extend Settings → AI feature groups or metadata**: `wpai_settings_feature_groups` and `wpai_settings_feature_metadata`. `wpai_feature_{$id}_settings` is not a universal framework hook; only rely on it when the target Feature actually applies it (v1.2.0's Type Ahead Feature does).
+- **Modify every Ability's system instruction (v1.2.0+)**: `wpai_system_instruction` filters the final instruction and receives the Ability name and input data.
+- **Modify one Ability on `develop` after v1.2.0**: `wpai_{$ability_slug}_system_instruction`, `wpai_{$ability_slug}_prompt`, and `wpai_{$ability_slug}_prompt_builder` are currently unreleased. Version- or capability-gate downstream use until a tagged release includes them. Individual Abilities may expose other released filters.
 
 Advanced settings are feature-provided metadata on the existing Settings → AI surface, not a separate public settings registry. Check the current feature metadata and documented filters before creating custom UI or extension hooks.
 
 For the full filter list at the version you're targeting, grep the source — see `references/hooks-and-filters.md`.
+
+### 8) Keep `develop` preparation separate from the released baseline
+
+The current `develop` branch still declares plugin version `1.2.0`, while new APIs use `@since x.x.x`; do not infer a future version number. Relative to the 1.2.0 tag, `develop` adds Content Translation and `ai/content-translation`, the scoped Ability hooks above, settings import/export REST endpoints, Site Health integration, and richer Content Classification controls. Treat these as optional, capability-detected preparation until they appear in a tagged release. See `references/experiments-framework.md` and `references/hooks-and-filters.md` for the exact boundary.
 
 ## Verification
 

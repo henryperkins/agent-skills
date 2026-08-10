@@ -1,6 +1,6 @@
 # Hooks, filters, constants, and gates
 
-The public extension surface of the AI plugin v1.2.0. Anchored to source — the source is canonical.
+The public extension surface of the AI plugin v1.2.0, plus additions explicitly marked as unreleased on `develop`. Anchored to source — the source is canonical.
 
 ## Constants (v0.6.0+)
 
@@ -74,7 +74,7 @@ These are namespaced functions in `WordPress\AI`. Import as `use function WordPr
 | `wpai_default_request_timeout` (v1.2.0+) | `includes/helpers.php` | Per-request timeout, filtered as `( int $default_timeout, string $feature_id )`; used for the image-generation request. ⚠️ The 1.2.0 changelog/`readme.txt` call this `wp_ai_client_default_request_timeout` — that name is in *no* plugin PHP (most likely the core AI Client's own filter); the plugin applies `wpai_default_request_timeout`. |
 | `wpai_settings_feature_groups` | Settings → AI feature metadata | Extend or adjust feature groups |
 | `wpai_settings_feature_metadata` | Settings → AI feature metadata | Extend metadata supplied by Features |
-| `wpai_feature_{$id}_settings` | A feature's settings metadata | Adjust settings for one Feature |
+| `wpai_feature_{$id}_settings` | A Feature that explicitly applies the hook | Adjust that Feature's settings; this is not a universal framework hook (v1.2.0's Type Ahead Feature applies it) |
 
 Advanced settings are Feature-provided metadata on the existing Settings → AI surface. These filters extend that data; they do not establish a separate public settings registry.
 
@@ -91,18 +91,31 @@ Advanced settings are Feature-provided metadata on the existing Settings → AI 
 | --- | --- | --- | --- |
 | `wpai_min_content_length` | `WordPress\AI\get_min_content_length()` | `250` (chars) | Per-feature minimum character count before content-dependent features enable; replaces the deprecated `wpai_summarization_min_content_length` |
 | `wpai_has_image_generation_support` | `WordPress\AI\has_image_generation_support()` | auto-detected bool | Claim Image Generation support when auto-detection misses it (e.g., connectors authenticating without an API key, such as OAuth) |
+| `wpai_is_{$connector_slug}_connector_configured` | AI Status dashboard widget | connector's detected bool | Correct dashboard status for connectors whose configuration cannot be inferred from API-key/OAuth data |
 | `wpai_comment_moderation_moderate_guests` | Comment Moderation experiment | setting value (default yes) | Override whether guest comments are auto-moderated |
+| `wpai_content_translation_languages` | `Content_Translation/Languages.php` | built-in language map | Add or remove target languages for Content Translation. Codes pass through `sanitize_key()`; entries with a non-string or empty label are dropped; a non-array return is ignored. `develop` only — not in 1.2.0 |
 
+### Global Ability system instruction (v1.2.0+)
 
-### Ability system-instruction filter
-
-Every Ability's `get_system_instruction()` fires one shared filter — `wpai_system_instruction` — over the final instruction string:
+The global `wpai_system_instruction` hook ships in v1.2.0. It runs after Guidelines are appended and filters the final system instruction for every `Abstract_Ability`:
 
 ```php
 apply_filters( 'wpai_system_instruction', string $instruction, string $name, array $data );
 ```
 
-It is **not** ability-id-scoped; the `$name` / `$data` arguments identify which Ability is running. Individual Abilities may also add their own `apply_filters()` calls — grep to find them:
+It is not Ability-ID-scoped; inspect `$name` and `$data` when a change should apply selectively.
+
+### Ability-scoped prompt filters (`develop`, unreleased after v1.2.0)
+
+Commit `1aabfe3` / PR #770 added uniform Ability-scoped prompt extension points to `Abstract_Ability` after the v1.2.0 tag. Do not recommend these scoped hooks for a site pinned to v1.2.0.
+
+| Filter | Filtered value | Additional arguments |
+| --- | --- | --- |
+| `wpai_{$ability_slug}_system_instruction` | Ability-scoped system-instruction string | Data array |
+| `wpai_{$ability_slug}_prompt` | Ability-scoped prompt string | Ability-defined context arguments |
+| `wpai_{$ability_slug}_prompt_builder` | Configured prompt builder | Same ability-defined context arguments |
+
+The slug strips `ai/` and replaces hyphens with underscores; `ai/title-generation` becomes `title_generation`. The prompt-builder filter runs after model preference configuration and must return the builder object it receives; invalid returns fall back to the original builder. Individual Abilities may also add their own `apply_filters()` calls — grep to find them:
 
 ```bash
 grep -rn "apply_filters" wp-content/plugins/ai/includes/Abilities/
@@ -114,7 +127,7 @@ That gives you every Ability-level filter with file/line context.
 
 | Action | Where | Use |
 | --- | --- | --- |
-| `wpai_register_features` | `Loader::register_features()` | Register a Feature instance into the registry (alternative to the filter pattern) |
+| `wpai_register_features` | `Loader::register_features()` | Primary downstream entry point: register a Feature instance into the registry |
 | `wpai_features_initialized` | `Loader::initialize_features()` | Fires after every enabled Feature's `register()` has run; safe to assume features are wired up |
 
 The plugin also fires the standard WordPress activation hook via `register_activation_hook( WPAI_PLUGIN_FILE, ... )`, which downstream code generally shouldn't depend on (use your own activation hook for your own plugin).

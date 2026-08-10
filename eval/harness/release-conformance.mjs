@@ -184,6 +184,13 @@ export function runReleaseConformance(repoRoot) {
     "get_error_message()",
     "PHP AI Client 1.3.1",
     "PHP AI Client 1.4.0",
+    "AiClient::generateEmbeddingResult()",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-ai-client/references/embedding-builder.md", [
+    "usingModelPreference()",
+    "AiClient::generateEmbeddings()",
+    "BeforeGenerateEmbeddingEvent",
+    "AfterGenerateEmbeddingEvent",
   ]);
   requireExcludes(repoRoot, "skills/wp-ai-client/SKILL.md", [
     "Pull `getProviderMetadata()` off the result",
@@ -209,6 +216,22 @@ export function runReleaseConformance(repoRoot) {
     "wpai_default_request_timeout",
     "wpai_settings_feature_groups",
     "wpai_settings_feature_metadata",
+    "The global `wpai_system_instruction` hook ships in v1.2.0",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-ai-plugin/references/guidelines-integration.md", [
+    "that hook ships in v1.2.0",
+    "wpai_{$ability_slug}_system_instruction",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-ai-connectors/references/capabilities-declaration.md", [
+    "CapabilityEnum::embeddingGeneration()",
+    "OptionEnum::dimensions()",
+    "EmbeddingGenerationModelInterface",
+    "supportedOptions",
+  ]);
+  requireIncludes(repoRoot, "skills/wordpress-router/references/decision-tree.md", [
+    "EmbeddingBuilder",
+    "EmbeddingGenerationModelInterface",
+    "Content Translation",
   ]);
 
   for (const file of [

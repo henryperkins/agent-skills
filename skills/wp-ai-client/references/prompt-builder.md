@@ -143,7 +143,7 @@ These methods are synchronous, deterministic, and free — they match the builde
 - `is_supported_for_speech_generation()`
 - `is_supported_for_video_generation()`
 - `is_supported_for_music_generation()`
-- `is_supported_for_embedding_generation()`
+- `is_supported_for_embedding_generation()` — **probe only on Core.** WP 7.0.2 bundles PHP AI Client 1.3.1, which has this method but no embedding generation path at all; generation arrived in standalone 1.4.0 as a separate `EmbeddingBuilder`. A `true` here does not mean you can generate an embedding through `wp_ai_client_prompt()`.
 - `is_supported( ?CapabilityEnum $capability = null )` — general form, takes any capability enum
 
 ```php
@@ -176,6 +176,8 @@ The AI Client is two layers:
 2. **`WP_AI_Client_Prompt_Builder`** — Core's WordPress wrapper. snake_case methods, returns `WP_Error`, integrates with WordPress HTTP, the Connectors API, and the hooks system.
 
 `wp_ai_client_prompt()` is the recommended entry point. It returns the wrapper, which catches SDK exceptions and converts them to `WP_Error` for you.
+
+Embedding generation is not a prompt-builder operation. Standalone PHP AI Client 1.4 uses `AiClient::input()` and `EmbeddingBuilder`; see `embedding-builder.md`. Do not assume that standalone-only API is available from Core's bundled SDK.
 
 **Argument-typing caveat.** The wrapper forwards your arguments to the SDK method unchanged and its `__call` only `catch`es `Exception`. Passing a wrong *type* — e.g. an `array` to `using_stop_sequences( string ...$sequences )` or `with_history( Message ...$messages )` — raises a PHP `TypeError`, which extends `Error`, **not** `Exception`, so it is *not* converted to `WP_Error` and will fatal. Match the signatures in the table above (the variadic methods take spread arguments / DTO objects, not arrays). By contrast, `using_model_preference( ...$models )` is tolerant of value *shape* — each argument may be a model-ID string, a `ModelInterface` instance, or a `[ provider_id, model_id ]` tuple; a malformed tuple raises `InvalidArgumentException` (an `Exception`, so it *is* converted to `WP_Error`), not a `TypeError`. The wrapper also defers errors: once any call in a chain throws, the instance enters an error state and later non-generating calls become no-ops; the `WP_Error` surfaces only when a generating method is called.
 
