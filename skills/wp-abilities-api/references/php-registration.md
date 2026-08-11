@@ -79,6 +79,8 @@ These two meta keys answer different questions and do not imply each other:
 
 A plugin can set both, either, or neither. If you want the ability discoverable to agents through MCP, set `mcp.public => true`. If you also want it on the abilities REST namespace (for tooling that talks to `wp-abilities/v1` directly), set `show_in_rest => true`. The two surfaces are independent.
 
+Set `mcp.public` explicitly rather than relying on any higher-level flag. Released adapter 0.5.0 consults no other key, and `meta.public` is not a key the core Abilities API defines — see `mcp-exposure.md` for the version detail.
+
 ## Recommended patterns
 
 - Namespace ability IDs as `<plugin-slug>/<verb-noun>` (e.g., `my-plugin/get-info`, `my-plugin/update-thing`). Slash-separated.

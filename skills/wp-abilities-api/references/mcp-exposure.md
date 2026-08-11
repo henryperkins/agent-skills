@@ -46,6 +46,17 @@ Mark an ability public for the default-server flow only after reviewing it for e
 
 `meta.mcp.public` controls default-server discovery, not authorization. A well-shaped ability still needs a namespaced ID, label, description, schemas, permission callback, and accurate annotations.
 
+**Set `meta.mcp.public` explicitly — do not rely on a fallback.** In released 0.5.0 this key is the only input to the decision:
+
+```php
+// McpAbilityHelperTrait::is_ability_mcp_public(), v0.5.0
+return (bool) ( $meta['mcp']['public'] ?? false );
+```
+
+There is no inheritance from any higher-level flag, and `meta.public` is not a key the core Abilities API defines. An ability that omits `meta.mcp.public` is registered but invisible to MCP clients through the default server.
+
+Unreleased adapter trunk moves this decision into `McpAbilityExposure::is_public()`, where an explicit `meta.mcp.public` still wins but an absent one falls back to a high-level `meta.public` flag (malformed `meta.mcp` fails closed). That class is tagged `@since n.e.x.t` and ships in no release as of 0.5.0. Writing `meta.mcp.public` explicitly is correct under both, which is why it is the guidance here.
+
 ## Default server vs custom server
 
 On activation, the adapter registers a default MCP server (`mcp-adapter-default-server`) with three core abilities for inspection and execution:
@@ -56,7 +67,17 @@ On activation, the adapter registers a default MCP server (`mcp-adapter-default-
 
 (Ability names follow the `namespace/ability` convention — slash, not hyphen, between the two parts. They register inside the `mcp-adapter` ability namespace.)
 
-This is enough for most use cases when the abilities intended for agent access are explicitly marked public. The default server's discovery, get, and execute flow excludes every other registered ability.
+This is enough for most use cases when the abilities intended for agent access are explicitly marked `meta.mcp.public => true`. The default server's discovery, get, and execute flow excludes every other registered ability.
+
+Each of the three requires a logged-in user and then a capability that also defaults to `'read'`:
+
+| Ability | Capability filter | Default |
+|---|---|---|
+| `mcp-adapter/discover-abilities` | `mcp_adapter_discover_abilities_capability` | `read` |
+| `mcp-adapter/get-ability-info` | `mcp_adapter_get_ability_info_capability` | `read` |
+| `mcp-adapter/execute-ability` | `mcp_adapter_execute_ability_capability` | `read` |
+
+So on a stock install a Subscriber can enumerate every effectively MCP-public ability and attempt to execute it. Each target ability's own `permission_callback` is the final operation-specific authorization check. Raise these baseline capabilities before relying on the default server anywhere but a local site.
 
 For finer control (exposing only a subset, separating tool/resource/prompt categorization, server-level metadata), register a custom server. **`create_server()` has 13 parameters in current source (v0.5.0+); the 7th is required and takes an array of transport class names, not a config array.** The signature and convention follow what `DefaultServerFactory::create()` does internally:
 
@@ -84,10 +105,24 @@ add_action( 'mcp_adapter_init', function ( McpAdapter $adapter ) {
         ),
         array(),                                      // resources (ability names)
         array(),                                      // prompts (ability names)
-        null                                          // transport_permission_callback (defaults to is_user_logged_in)
+        null                                          // transport_permission_callback (see below — null is NOT is_user_logged_in)
     );
 } );
 ```
+
+**Do not read `null` here as "any logged-in user".** The `create_server()` docblock in current source says the callback "defaults to `is_user_logged_in()`", but that docblock is stale. `HttpTransport::check_permission()` actually runs `current_user_can( 'read' )`, with the capability filtered since 0.3.0:
+
+```php
+$user_capability = apply_filters( 'mcp_adapter_default_transport_permission_user_capability', 'read', $context );
+```
+
+`'read'` is held by every role down to Subscriber, so passing `null` exposes the transport to the entire logged-in user base. Pass an explicit callback, or raise the floor:
+
+```php
+add_filter( 'mcp_adapter_default_transport_permission_user_capability', fn() => 'edit_posts' );
+```
+
+A custom callback that throws or returns `WP_Error` fails closed — the transport logs and denies.
 
 `create_server()` enforces that it can only be called inside the `mcp_adapter_init` action — calling it elsewhere triggers `_doing_it_wrong()`. The function returns either an `McpAdapter` instance or a `WP_Error`.
 
@@ -141,13 +176,50 @@ For self-hosted scenarios with stricter requirements, the adapter supports JWT a
 
 ## STDIO transport
 
-For local development and CLI integration, the adapter ships a STDIO transport. WP-CLI commands wrap it. This is the right transport for:
+For local development and CLI integration, the adapter ships a STDIO transport, wrapped by two WP-CLI commands:
+
+```bash
+wp mcp-adapter serve [--server=<server-id>] [--user=<id|login|email>]
+wp mcp-adapter list [--format=<format>]
+```
+
+`serve` runs the named server (default server when omitted) over STDIO — point an MCP client's STDIO config at it. `--user` sets the WordPress user the session runs as; without it the session is unauthenticated and capability-gated abilities will fail. `list` enumerates registered servers.
+
+STDIO is enabled by default and can be switched off:
+
+```php
+add_filter( 'mcp_adapter_enable_stdio_transport', '__return_false' );
+```
+
+With it disabled, `serve` throws a `RuntimeException` rather than starting.
+
+This is the right transport for:
 
 - Local Claude Code / Claude Desktop integration via the standard MCP STDIO config
 - Testing abilities without setting up auth
 - Scripted agent runs against a local site
 
 HTTP transport is the right choice for production, remote sites, and any case where the AI client and the WordPress site aren't on the same machine.
+
+## Protocol version negotiation
+
+`McpVersionNegotiator::SUPPORTED_PROTOCOL_VERSIONS` accepts `2025-11-25`, `2025-06-18`, and `2024-11-05`, in that preference order. A client requesting a supported version gets it; anything else is negotiated down to `2025-11-25`. Pin nothing client-side unless a specific version is required.
+
+## Sessions and request interception
+
+HTTP transport sessions are managed by `SessionManager` and tuned with three filters:
+
+| Filter | Default |
+|---|---|
+| `mcp_adapter_session_max_per_user` | `32` |
+| `mcp_adapter_session_inactivity_timeout` | `DAY_IN_SECONDS` |
+| `mcp_adapter_session_activity_update_interval` | `60` (clamped below the inactivity timeout) |
+
+For auditing, rate limiting, or policy enforcement, hook the request lifecycle rather than wrapping abilities. `mcp_adapter_pre_tool_call` receives `( $args, $tool_name, $mcp_tool, $mcp )` and short-circuits execution by returning a `WP_Error`; `mcp_adapter_tool_call_result` filters the outcome. Equivalents exist for resources (`mcp_adapter_pre_resource_read`, `mcp_adapter_resource_read_result`) and prompts (`mcp_adapter_pre_prompt_get`, `mcp_adapter_prompt_get_result`).
+
+`mcp_adapter_validation_enabled` receives `( false, $server_id, $server )` and is **off** by default. It is not an untrusted-input control. It gates deeper MCP component/DTO compliance checks on the *definitions* you register (`McpToolValidator::validate_tool_dto()`, run while the tool is constructed). `McpTool::execute()` passes arguments to the ability or handler on the same path either way. Enable it to catch malformed tool definitions in development; do not enable it expecting argument validation.
+
+Validate untrusted arguments at the ability boundary instead. `WP_Ability::execute()` normalizes input, validates it against the ability's `input_schema` via `rest_validate_value_from_schema()`, runs `check_permissions()`, and validates the result against `output_schema` — which is why every ability that accepts input needs an `input_schema`. That check is what the adapter is relying on when it defaults validation off. A custom server registered with a raw `handler` callback rather than an ability gets none of it: `call_user_func( $this->handler, $args )` receives whatever the client sent, so such a handler must validate its own arguments.
 
 ## Verifying the server
 
@@ -164,6 +236,7 @@ For a more thorough check, connect an MCP client (Claude Desktop, MCP Inspector,
 MCP clients act as authenticated WordPress users. An overly permissive ability is the same risk as giving an external service the user's credentials.
 
 - **Default-deny.** Don't expose abilities you haven't reviewed for safety. Use a custom server with an explicit allow-list rather than the default server in production.
+- **Raise the transport and built-in-ability capabilities.** Both default to `'read'`, which every role has. An MCP server left on defaults is reachable by any Subscriber.
 - **Discipline `permission_callback`.** Every write or destructive ability needs one. Read-only abilities should still have one if they expose anything sensitive.
 - **Mark annotations honestly.** `readonly: true` on an ability that actually mutates state misleads both human reviewers and the MCP client's safety logic.
 - **Test with an unprivileged user.** If you've been testing as administrator, your permission callbacks are probably under-tested. Create an editor or author user, regenerate an Application Password for them, and verify the client only sees what they're allowed to do.
