@@ -10,6 +10,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history: the harness compares skills/ against the commit that
+          # last bumped the plugin version, which a shallow clone cannot see.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:

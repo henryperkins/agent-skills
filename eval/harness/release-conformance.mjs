@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { parseWpGutenbergMapFromHtml } from "../../shared/scripts/upstream-index-lib.mjs";
 
 function assert(condition, message) {
@@ -35,7 +36,51 @@ export function requireNoMatch(repoRoot, relativePath, pattern, message) {
   assert(!pattern.test(content), `${relativePath} ${message}`);
 }
 
+const PLUGIN_MANIFEST = ".claude-plugin/plugin.json";
+
+function git(repoRoot, args) {
+  const result = spawnSync("git", args, { cwd: repoRoot, encoding: "utf8" });
+  if (result.status !== 0) return null;
+  return result.stdout.trim();
+}
+
+/**
+ * Marketplace consumers only receive an update when the resolved plugin version
+ * changes. Because `plugin.json` declares an explicit `version`, that string is
+ * the update signal — pushing commits without bumping it leaves every installed
+ * copy pinned, and `/plugin update` reports "already at the latest version".
+ *
+ * Fail when `skills/` has moved since the commit that last changed the version,
+ * so the bump lands in the same change as the content it ships.
+ *
+ * https://code.claude.com/docs/en/plugins-reference#version-management
+ */
+export function assertPluginVersionFresh(repoRoot) {
+  // Requires real history: shallow clones and source tarballs cannot answer this.
+  if (git(repoRoot, ["rev-parse", "--is-inside-work-tree"]) !== "true") return;
+  if (git(repoRoot, ["rev-parse", "--is-shallow-repository"]) === "true") return;
+
+  // -G, not -S: -S counts occurrences of the string, so changing "1.1.0" to
+  // "1.2.0" leaves the count of `"version"` at one and the bump goes unseen.
+  const lastBump = git(repoRoot, ["log", "-1", "--format=%H", "-G", '"version":', "--", PLUGIN_MANIFEST]);
+  if (!lastBump) return;
+
+  const changed = git(repoRoot, ["diff", "--name-only", `${lastBump}..HEAD`, "--", "skills/"]);
+  if (changed === null || changed === "") return;
+
+  const files = changed.split("\n").filter(Boolean);
+  throw new Error(
+    [
+      `${files.length} file(s) under skills/ changed since the last ${PLUGIN_MANIFEST} version bump (${lastBump.slice(0, 7)}).`,
+      `Marketplace users stay pinned to the current version and will not receive them.`,
+      `Bump "version" in ${PLUGIN_MANIFEST} and .claude-plugin/marketplace.json in this change.`,
+      `Changed: ${files.slice(0, 5).join(", ")}${files.length > 5 ? `, +${files.length - 5} more` : ""}`,
+    ].join(" ")
+  );
+}
+
 export function runReleaseConformance(repoRoot) {
+  assertPluginVersionFresh(repoRoot);
   assert(
     IMMEDIATE_UNWATCH_PATTERN.test("const unwatch = watch( () => { return cleanup; } );\n// Dispose later.\nunwatch();"),
     "Immediate-unwatch regression fixture must exercise the structural check"
