@@ -121,9 +121,9 @@ The manifest must use the existing plugin identity:
 
 The description should communicate that this is expert WordPress development guidance for ChatGPT and Codex, covering the current skill set without trying to enumerate every future skill.
 
-The interface may advertise `Interactive`, `Read`, and `Write` capabilities in the same sense as current OpenAI development-workflow plugins: these describe the kinds of workflows the plugin supports when the host runtime supplies those abilities. They must not be documented as permissions granted by installation.
+The interface advertises `Interactive`, `Read`, and `Write` capabilities, matching current OpenAI development-workflow plugin convention. These describe the kinds of workflows the plugin supports when the host runtime supplies those abilities. They must not be documented as permissions granted by installation.
 
-Initial default prompts should cover distinct high-value entry points, for example:
+Initial default prompts cover distinct high-value entry points:
 
 - building or refactoring a WordPress plugin
 - reviewing a Gutenberg block implementation
@@ -205,7 +205,7 @@ The conformance rule is:
 
 1. The Claude and OpenAI plugin versions must always be equal.
 2. A release-relevant change under `skills/` must make stale plugin metadata fail CI rather than silently ship under the previous version.
-3. The OpenAI marketplace entry, if it carries a version field, must match the two plugin manifests.
+3. If the current OpenAI marketplace schema carries a plugin version, it must equal the two plugin manifests. If the schema does not carry a version, no third version field is invented.
 4. Version checking remains deterministic and offline in normal CI.
 
 Do not create an independent `chatgptVersion`, `codexVersion`, or similar release number.
@@ -214,7 +214,7 @@ Do not create an independent `chatgptVersion`, `codexVersion`, or similar releas
 
 Extend the existing evaluation/conformance system rather than building a second OpenAI-only harness.
 
-A focused packaging-conformance module may be added under `eval/harness/` and invoked from the existing `eval/harness/run.mjs` flow. Exact module naming is an implementation detail, but the following checks are required.
+Add `eval/harness/plugin-packaging-conformance.mjs` and invoke it from the existing `eval/harness/run.mjs` flow. It owns cross-wrapper packaging and version invariants; existing release-conformance and skill-quality modules keep their current responsibilities.
 
 ### Manifest conformance
 
@@ -271,7 +271,7 @@ Expected work:
 
 - add `.codex-plugin/plugin.json`
 - add `.agents/plugins/marketplace.json`
-- extend packaging/version conformance checks
+- add `eval/harness/plugin-packaging-conformance.mjs` and wire it into the existing harness
 - add cross-product portability scenarios
 - update `README.md` and `docs/packaging.md`
 - make only narrowly justified canonical skill edits if portability tests reveal a real defect
