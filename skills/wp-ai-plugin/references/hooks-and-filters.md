@@ -60,6 +60,12 @@ These are namespaced functions in `WordPress\AI`. Import as `use function WordPr
 | `wpai_feature_{$id}_enabled` | `Abstract_Feature::is_enabled()` | option value | Per-feature override (force on/off in code) |
 | `ai_experiments_experiment_{$id}_enabled` | `Abstract_Feature::is_enabled()` | option value | Deprecated, kept via `apply_filters_deprecated` for legacy compat |
 
+### The rest of the deprecated `ai_experiments_*` surface
+
+The per-feature toggle above is the one you meet in `Abstract_Feature`, but it isn't the only survivor. `includes/Deprecated.php` shims seven more, all `apply_filters_deprecated( ..., '0.6.0' )` and still firing in v1.2.0: `ai_experiments_pre_normalize_content`, `ai_experiments_normalize_content`, `ai_experiments_preferred_models_for_text_generation`, `ai_experiments_preferred_image_models`, `ai_experiments_preferred_vision_models`, `ai_experiments_pre_has_valid_credentials_check`, and `ai_experiments_enabled`. `wpai_summarization_min_content_length` is separately shimmed in `Summarization.php`.
+
+These fire a deprecation notice and are not a migration target — they exist so pre-0.6.0 code keeps working. Read them only when debugging why an old filter still appears to have an effect.
+
 ### Guidelines
 
 | Filter | Where | Default | Use |
@@ -94,6 +100,15 @@ Advanced settings are Feature-provided metadata on the existing Settings → AI 
 | `wpai_is_{$connector_slug}_connector_configured` | AI Status dashboard widget | connector's detected bool | Correct dashboard status for connectors whose configuration cannot be inferred from API-key/OAuth data |
 | `wpai_comment_moderation_moderate_guests` | Comment Moderation experiment | setting value (default yes) | Override whether guest comments are auto-moderated |
 | `wpai_content_translation_languages` | `Content_Translation/Languages.php` | built-in language map | Add or remove target languages for Content Translation. Codes pass through `sanitize_key()`; entries with a non-string or empty label are dropped; a non-array return is ignored. `develop` only — not in 1.2.0 |
+
+### Other `develop`-only hooks (unreleased after v1.2.0)
+
+| Filter | Where | Use |
+| --- | --- | --- |
+| `wpai_gated_abilities` | `Abilities\Gated\Gated_Abilities::get_all()` | Add an `Abstract_Gated_Ability` to the set that registers when the `custom-abilities` Experiment is on. This is also the hook that makes the read/utility Abilities conditional — see `references/experiments-framework.md` |
+| `wpai_remove_data_on_uninstall` | uninstall routine | Opt in/out of deleting plugin data on uninstall |
+| `wpai_slug_generation_number_of_suggestions` | Slug Generation experiment | How many slug suggestions to request |
+| `wpai_content_classification_candidate_pool_size` | Content Classification experiment | Size of the candidate term pool before ranking |
 
 ### Global Ability system instruction (v1.2.0+)
 

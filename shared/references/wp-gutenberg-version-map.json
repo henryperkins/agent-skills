@@ -3,6 +3,10 @@
   "note": null,
   "rows": [
     {
+      "wordpress": "7.1.X",
+      "gutenberg": "23.6"
+    },
+    {
       "wordpress": "7.0.X",
       "gutenberg": "22.6"
     },

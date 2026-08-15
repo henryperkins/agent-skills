@@ -20,7 +20,7 @@ From `includes/Abstracts/Abstract_Feature.php`:
 
 - **`final public function __construct()`** — do not override. Calls `static::get_id()` and `$this->load_metadata()` to populate properties.
 - **`abstract public static function get_id(): string`** — return a unique slug-style ID. Called statically.
-- **`abstract protected function load_metadata(): array`** — return `['label', 'description', 'category', 'stability'?, 'image'?]`. `label` and `description` are required; missing them throws `InvalidArgumentException`. `category` defaults to `Feature_Category::OTHER` if empty. `stability` defaults to `'experimental'`.
+- **`abstract protected function load_metadata(): array`** — return `['label', 'description', 'category', 'stability'?, 'image'?, 'capability'?]`. `label` and `description` are required; missing them throws `InvalidArgumentException`. `category` defaults to `Feature_Category::OTHER` if empty, `stability` to `'experimental'`, `image` to `''`, and **`capability` to `'text_generation'`** — the last is a live default, not an inert one: it is surfaced through `get_capability()` into the Settings → AI screen, so a Feature that needs no model should declare `'capability' => 'none'`. Values used in the 1.2.0 tree: `'none'`, `'vision'`, `'image_generation'`, `'text_generation'`.
 - **`abstract public function register(): void`** — set up hooks. Called by `Loader::initialize_features()` only if `is_enabled()` returns true.
 - **`final public function is_enabled(): bool`** — returns `is_globally_enabled() && is_individually_enabled()`, cached on the instance; cannot be overridden. The per-feature logic lives in `is_individually_enabled()` (added 1.0.1): it reads the `wpai_feature_{$id}_enabled` option and runs the `wpai_feature_{$id}_enabled` filter (plus the deprecated legacy filter). `is_globally_enabled()` (added 1.0.1) checks the global features toggle.
 - **`public function register_settings(): void`** — optional override. Use `register_setting()` for custom feature settings.
@@ -74,17 +74,17 @@ Use this action for normal downstream registration as well as custom constructio
 
 ### Built-in Experiments
 
-The plugin's own Experiments are registered via `Experiments::register_default_experiment_classes()` hooked to `wpai_default_feature_classes` at priority 9. `Experiments::EXPERIMENT_CLASSES` on `develop` has seventeen entries:
+The plugin's own Experiments are registered via `Experiments::register_default_experiment_classes()` hooked to `wpai_default_feature_classes` at priority 9. `Experiments::EXPERIMENT_CLASSES` at the **v1.2.0 tag** has sixteen entries:
 
 ```
 Abilities_Explorer, Connector_Approval, AI_Request_Logging,
-Content_Classification, Content_Resizing, Content_Translation,
-Excerpt_Generation, Alt_Text_Generation, Meta_Description,
-Editorial_Notes, Editorial_Updates, Summarization, Title_Generation,
-Type_Ahead, Comment_Moderation, Key_Encryption, Suggest_Reply
+Content_Classification, Content_Resizing, Excerpt_Generation,
+Alt_Text_Generation, Meta_Description, Editorial_Notes,
+Editorial_Updates, Summarization, Title_Generation, Type_Ahead,
+Comment_Moderation, Key_Encryption, Suggest_Reply
 ```
 
-Sixteen of those shipped in 1.2.0; `Content_Translation` landed after the tag (see below). `Example_Experiment` exists in the tree as an authoring template and is deliberately not registered.
+On `develop` the list is **nineteen** — the same sixteen plus `Content_Translation`, `Slug_Generation`, and `Custom_Abilities` — and has been reordered so admin-category Experiments lead. `Example_Experiment` exists in the tree as an authoring template and is deliberately not registered.
 
 Plus the internal `Image_Generation` Feature (registered separately as a stable Feature in `Loader::get_default_features()`).
 
@@ -98,7 +98,9 @@ The v1.2.0 plugin directly registers five non-Experiment utility/read Abilities:
 - `ai/get-post-details`
 - `ai/get-post-terms`
 
-Feature and Experiment Abilities, including the three Image Generation Abilities, are conditional on those Features being enabled. Resolve an Ability with `wp_get_ability()` on or after `wp_abilities_api_init`; do not assume a conditional ID exists. The exposed post types and settings used by the read Abilities depend on `show_in_abilities`, so do not assume every object is exposed or re-register these IDs blindly.
+Feature and Experiment Abilities, including the three Image Generation Abilities (`ai/image-generation`, `ai/image-import`, `ai/image-prompt-generation`) and `ai/comment-analysis`, are conditional on those Features being enabled. Resolve an Ability with `wp_get_ability()` on or after `wp_abilities_api_init`; do not assume a conditional ID exists. The exposed post types and settings used by the read Abilities depend on `show_in_abilities`, so do not assume every object is exposed or re-register these IDs blindly.
+
+On `develop` even the five above become conditional — see "Added after v1.2.0" below.
 
 ### Advanced feature settings
 
@@ -128,6 +130,12 @@ Features supply advanced settings through their own metadata and settings-field 
   Codes are normalised with `sanitize_key()`, entries with a non-string or empty label are discarded, and a non-array return value is ignored entirely so the language picker and the ability schema keep working. The filtered list feeds the ability's input schema, so adding a language your provider cannot handle produces runtime failures rather than a validation error.
 
   The class carries `@since x.x.x` placeholders — it is on `develop` but not in any tagged release, and the CHANGELOG's `[Unreleased]` section has not been updated to mention it. Treat it as unavailable when targeting 1.2.0.
+
+- **`Custom_Abilities`** (`custom-abilities`, `Experiment_Category::ADMIN`, `capability` `'none'`) — a single toggle that gates *all* of the plugin's custom Abilities. Its `register()` pulls `Gated_Abilities::get_all()` and registers each one, running the `Show_In_Abilities` polyfill first when any gated ability needs core objects exposed. `Gated_Abilities::GATED_ABILITY_CLASSES` currently holds `Post_Utilities`, `Read_Settings`, `Read_Users`, `Read_Content` — i.e. exactly the five IDs that 1.2.0 registers unconditionally (`core/read-content`, `core/read-settings`, `core/read-users`, `ai/get-post-details`, `ai/get-post-terms`). Third parties add their own via the `wpai_gated_abilities` filter.
+
+  This is a behavioral inversion, not an addition: if it ships, those Ability IDs are absent until a site admin enables the Experiment, and the `show_in_abilities` polyfill goes with them. Any downstream code that resolves `core/read-content` must handle null, and anything relying on the polyfill to expose curated core objects must not assume it ran.
+
+- **`Slug_Generation`** — generates post-slug suggestions; `wpai_slug_generation_number_of_suggestions` filters how many.
 
 - **Ability-scoped prompt hooks** — `wpai_{$ability_slug}_system_instruction`, `wpai_{$ability_slug}_prompt`, and `wpai_{$ability_slug}_prompt_builder`. The global `wpai_system_instruction` hook is already released in v1.2.0; only the scoped family is new on `develop`.
 - **Settings import/export** — authenticated `GET /ai/v1/settings/export` and `POST /ai/v1/settings/import` endpoints, both gated by `manage_options`, using schema version 1 and excluding credential-like settings.

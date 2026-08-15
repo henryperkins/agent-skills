@@ -87,7 +87,22 @@ class Example_Experiment extends Abstract_Feature {
 }
 ```
 
-Categories: `Experiment_Category::EDITOR` (`'editor'`), `Experiment_Category::ADMIN` (`'admin'`), or `Feature_Category::OTHER` (`'other'`, the fallback). Stability values in `load_metadata()`: `'experimental'` (default), `'stable'`, `'deprecated'`. See `references/experiments-framework.md` for the contract details and the Loader/Registry flow.
+Categories: `Experiment_Category::EDITOR` (`'editor'`), `Experiment_Category::ADMIN` (`'admin'`), or `Feature_Category::OTHER` (`'other'`, the fallback). Stability values in `load_metadata()`: `'experimental'` (default), `'stable'`, `'deprecated'`.
+
+**Set `capability` if your Experiment doesn't generate text.** `load_metadata()` also accepts a `capability` key, and `Abstract_Feature` defaults it to `'text_generation'` — so an admin-only or utility Experiment that never calls a model still advertises a text-generation requirement to Settings → AI (`Feature::get_capability()`, in the contract since v0.9.0, feeds the settings screen). In-tree values at 1.2.0 are `'none'`, `'vision'`, `'image_generation'`, and the default:
+
+```php
+protected function load_metadata(): array {
+    return array(
+        'label'       => __( 'My Experiment', 'my-plugin' ),
+        'description' => __( 'Does something that needs no model.', 'my-plugin' ),
+        'category'    => Experiment_Category::ADMIN,
+        'capability'  => 'none',
+    );
+}
+```
+
+See `references/experiments-framework.md` for the contract details and the Loader/Registry flow.
 
 ### 3) Register the Experiment with the AI plugin
 
@@ -211,7 +226,9 @@ For the full filter list at the version you're targeting, grep the source — se
 
 ### 8) Keep `develop` preparation separate from the released baseline
 
-The current `develop` branch still declares plugin version `1.2.0`, while new APIs use `@since x.x.x`; do not infer a future version number. Relative to the 1.2.0 tag, `develop` adds Content Translation and `ai/content-translation`, the scoped Ability hooks above, settings import/export REST endpoints, Site Health integration, and richer Content Classification controls. Treat these as optional, capability-detected preparation until they appear in a tagged release. See `references/experiments-framework.md` and `references/hooks-and-filters.md` for the exact boundary.
+The current `develop` branch still declares plugin version `1.2.0`, while new APIs use `@since x.x.x`; do not infer a future version number. Relative to the 1.2.0 tag, `develop` grows the Experiment list from sixteen to **nineteen** — adding Content Translation (`ai/content-translation`), Slug Generation, and **Custom Abilities** — plus the scoped Ability hooks above, settings import/export REST endpoints, Site Health integration, and richer Content Classification controls. Treat these as optional, capability-detected preparation until they appear in a tagged release.
+
+⚠️ **The Custom Abilities Experiment changes where the read Abilities come from.** On `develop`, `core/read-content`, `core/read-settings`, `core/read-users`, `ai/get-post-details`, `ai/get-post-terms`, *and* the `show_in_abilities` polyfill no longer register unconditionally — they move into a `includes/Abilities/Gated/` registry that only runs when the `custom-abilities` Experiment is enabled (and Experiments are off by default). Third parties add to that registry via the new `wpai_gated_abilities` filter. If a tagged release ships this, step 4's advice becomes conditional: `wp_get_ability( 'core/read-content' )` can legitimately return null on a site with the AI plugin active. Detect, don't assume. See `references/experiments-framework.md` and `references/hooks-and-filters.md` for the exact boundary.
 
 ## Verification
 
@@ -225,7 +242,7 @@ The current `develop` branch still declares plugin version `1.2.0`, while new AP
 
 - **Experiment doesn't show in Settings → AI**: filter or action hook is registered too late. The Loader runs on the AI plugin's **`init` hook at priority 15** (`Main::initialize_features()`); the `wpai_default_feature_classes` filter is applied inside `Loader::get_default_features()` and the `wpai_register_features` action fires in `Loader::register_features()`. Register your callback by `plugins_loaded`, or on `init` before priority 15.
 - **`Class not found: WP\AI\Features\Abstract_Feature`**: namespace is wrong. Correct path is `WordPress\AI\Abstracts\Abstract_Feature`. (Common error — earlier docs used `WP\AI`.)
-- **Filter never fires**: spelled the filter name wrong. Real names are `wpai_default_feature_classes`, `wpai_register_features`, `wpai_features_enabled`, `wpai_features_initialized`. The legacy `ai_experiments_*` prefix was deprecated in 0.6.0 and exists only via `apply_filters_deprecated` for the per-feature toggle.
+- **Filter never fires**: spelled the filter name wrong. Real names are `wpai_default_feature_classes`, `wpai_register_features`, `wpai_features_enabled`, `wpai_features_initialized`. The legacy `ai_experiments_*` prefix was deprecated in 0.6.0; eight of those names still fire through `apply_filters_deprecated` (the per-feature toggle in `Abstract_Feature`, plus seven shimmed in `includes/Deprecated.php`) — they emit a deprecation notice and are not a target for new code. See `references/hooks-and-filters.md`.
 - **Guidelines do nothing**: either `guideline_categories()` returned empty, the Gutenberg `wp_guideline` CPT isn't registered, or `wpai_use_guidelines` filter returned false. Check `Guidelines::get_instance()->is_available()`.
 - **Experiment registers but `register()` never runs**: the feature's `is_enabled()` returns false. Check the global toggle (`wpai_features_enabled` option, default off until admin enables it on Settings → AI), then the per-feature toggle.
 

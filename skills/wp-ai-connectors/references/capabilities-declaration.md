@@ -47,6 +47,8 @@ Declare input modalities with `OptionEnum::inputModalities()` and output modalit
 
 ## Embedding provider contract (PHP AI Client 1.4+)
 
+> **Core does not bundle this.** WP 7.0 and 7.1 vendor a pre-1.4 SDK: `src/wp-includes/php-ai-client/` has no `src/Providers/Models/EmbeddingGeneration/`, no `EmbeddingResult`/`EmbeddingBuilder`, and no `ModelConfig::KEY_DIMENSIONS` (so `OptionEnum::dimensions()` does not resolve). `CapabilityEnum::EMBEDDING_GENERATION` *is* in the bundled enum, which makes the surface look present. Require `wordpress/php-ai-client: ^1.4` in your plugin's own Composer bundle before writing any of the below.
+
 An automatically discoverable text embedding model with configurable dimensions needs metadata shaped like:
 
 ```php

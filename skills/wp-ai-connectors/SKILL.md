@@ -1,7 +1,7 @@
 ---
 name: wp-ai-connectors
 description: "Use when building or debugging a WordPress AI provider plugin, registering an AI service with the PHP AI Client, exposing it through Settings → Connectors, declaring model capabilities/options, or adding text, media, function-calling, or embedding support at the provider layer."
-compatibility: "Targets WordPress 7.0+ (PHP 7.4+). Embedding-provider guidance requires PHP AI Client 1.4+ in standalone use or a Core build verified to bundle it. Filesystem-based agent with bash + node. Some workflows require WP-CLI."
+compatibility: "Targets WordPress 7.0+ (PHP 7.4+); `application_password` connectors need core 7.1 (or 7.0 + Gutenberg 23.6+). Embedding-provider guidance requires PHP AI Client 1.4+, which core does NOT bundle through 7.1 — a provider needing it must ship the Composer package itself. Filesystem-based agent with bash + node. Some workflows require WP-CLI."
 license: GPL-2.0-or-later
 ---
 
@@ -80,7 +80,9 @@ The provider class itself (`AnthropicProvider` in this example) implements the S
 
 An embedding model must implement both `ModelInterface` and `EmbeddingGenerationModelInterface`; the latter adds `generateEmbeddingResult( array $inputs ): EmbeddingResult` but does not itself extend `ModelInterface`. Declare `OptionEnum::inputModalities()` so automatic resolution can match the actual text/file inputs, and declare `OptionEnum::dimensions()` only when the model accepts caller-selected dimensions. Return exactly one vector per input in input order.
 
-This is a 1.4-only surface. Before applying it inside WordPress, verify the Core build actually bundles PHP AI Client 1.4+; the standalone package release does not establish Core availability. Read `references/capabilities-declaration.md` for the exact enum, metadata, and model contract.
+**This is a 1.4-only surface, and core does not ship it.** Verified against `wordpress-develop` branches `7.0` and `7.1` (RC3): the vendored `src/wp-includes/php-ai-client/` is pre-1.4 — no `src/Providers/Models/EmbeddingGeneration/`, no `EmbeddingResult`/`EmbeddingBuilder`, and no `ModelConfig::KEY_DIMENSIONS`, so `OptionEnum::dimensions()` does not resolve. The trap is that `CapabilityEnum::EMBEDDING_GENERATION` **is** present in the bundled enum, so declaring the capability looks fine right up until `EmbeddingGenerationModelInterface` fatals as an unknown interface.
+
+A provider plugin that offers embeddings must therefore require `wordpress/php-ai-client: ^1.4` as its own Composer dependency and load it from its bundle — the same pattern the flagship plugins already use for their SDK. Note that none of them exercise this path: Anthropic and Google constrain to `^0.4 || dev-trunk` and OpenAI to `^1.1`, and none implement an embedding model, so there is no in-project reference implementation to copy. Read `references/capabilities-declaration.md` for the exact enum, metadata, and model contract, and read the 1.4.0 tag of the SDK rather than core's copy.
 
 ### 3) Let auto-discovery handle the connector
 
@@ -124,13 +126,14 @@ For `api_key` connectors, the AI Client looks up the key in this order. Document
 
 Database storage is unencrypted by default but masked in the UI. The canonical AI plugin (`WordPress/ai` v1.1.0+) ships an opt-in **Key Encryption** experiment that transparently encrypts `connectors_ai_*_api_key` options at rest (libsodium via a bundled secrets API) and restores plaintext on opt-out or deactivation. Core-level encryption is still being explored upstream ([#64789](https://core.trac.wordpress.org/ticket/64789)).
 
-**Application-password connectors (Gutenberg 23.6+).** `authentication.method` accepts `'api_key' | 'application_password' | 'none'` (verified in Gutenberg's `lib/compat/wordpress-7.0/class-wp-connector-registry.php` at v23.6.0-rc.1), and Settings → Connectors gained a credentials UI for the `application_password` method ([#79403](https://github.com/WordPress/gutenberg/pull/79403)). The contract mirrors `api_key` with one twist — the credential is a *pair*:
+**Application-password connectors (core 7.1).** `authentication.method` accepts `'api_key' | 'application_password' | 'none'`. This is **core**, not a Gutenberg-only evolution: `wordpress-develop` branch `7.1` carries it in `src/wp-includes/class-wp-connector-registry.php` and `src/wp-includes/connectors.php` under `@since 7.1.0`, and the built Settings → Connectors route (`src/wp-includes/build/routes/connectors-home/`) renders the credentials UI. It reached core through Gutenberg 23.6 ([#79403](https://github.com/WordPress/gutenberg/pull/79403)); Gutenberg still ships its own copy under `lib/compat/wordpress-7.0/`, so a 7.0 site with a current Gutenberg gets the same surface. The contract mirrors `api_key` with one twist — the credential is a *pair*:
 
-- `env_var_name` / `constant_name` hold a single `username:app-password` string (e.g. `remote-user:abcd efgh ijkl mnop 1234`).
-- The database setting stores an array of `username` + `password`, masked in `/wp/v2/settings`. `setting_name` is auto-generated as `connectors_{$type}_{$id}_application_password` when omitted (hyphens in type/ID normalized to underscores), or can be set explicitly.
+- `env_var_name` / `constant_name` hold a single `username:password` string (e.g. `remote-user:abcd efgh ijkl mnop 1234`), split on the **first** colon so passwords may contain colons. A non-empty value that won't parse triggers `_doing_it_wrong()` and is skipped, falling through to the next source.
+- The database setting stores an array of `username` + `password`, registered as an `object` setting and masked in `/wp/v2/settings` (the password becomes 16 `•` characters). Resubmitting the masked value keeps the stored password, and an empty username discards both fields so a partial update can't orphan a secret. `setting_name` is auto-generated as `connectors_{$type}_{$id}_application_password` when omitted (hyphens in type/ID normalized to underscores), or can be set explicitly.
 - `credentials_url` should point where the user *creates* the application password (e.g. the remote site's `wp-admin/profile.php`).
+- Unlike `api_key`, these credentials are masked but **not validated** on write — there is no provider round-trip.
 
-Typical use is non-AI connector types like `content_source` (remote WordPress) rather than `ai_provider`. A complete registration example ships as Gutenberg's e2e fixture `packages/e2e-tests/plugins/connectors-application-password.php`. This is a post-7.0 evolution carried by the Gutenberg plugin — on stock core without Gutenberg 23.6+, verify the method and UI exist before building on them.
+Typical use is non-AI connector types like `content_source` (remote WordPress) rather than `ai_provider`. A complete registration example ships as Gutenberg's e2e fixture `packages/e2e-tests/plugins/connectors-application-password.php`. On core 7.0 without Gutenberg 23.6+, the method is rejected by `register()` — gate on the target version.
 
 ### 6) Verify the connector card appears
 
@@ -160,6 +163,7 @@ If the connector isn't showing up:
 - **Duplicate-ID error during `register()`**: another plugin already registered that ID. Use `is_registered()` first; if you need to override, follow the unregister-modify-register pattern.
 - **Provider works locally but not on a managed host**: the host may have set `MY_PROVIDER_API_KEY` as a sealed env var. Env beats constant beats database — that's the intended priority and the host's value will win.
 - **Embedding model never resolves**: metadata is missing `CapabilityEnum::embeddingGeneration()`, the exact `OptionEnum::inputModalities()` combination, or `OptionEnum::dimensions()` for the requested value; do not substitute made-up capability names.
+- **`OptionEnum::dimensions()` throws, or `EmbeddingGenerationModelInterface` is "not found"**: the site is resolving core's bundled SDK, which is pre-1.4 through WP 7.1. `CapabilityEnum::embeddingGeneration()` resolving is not evidence the rest of the surface exists. Bundle `wordpress/php-ai-client: ^1.4` in your plugin.
 - **Embedding generation resolves but fails at runtime**: the concrete model does not also implement `ModelInterface`, returned a different vector count than input count, or reported dimensions that do not match every vector.
 
 ## Escalation

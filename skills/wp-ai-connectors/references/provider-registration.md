@@ -35,7 +35,7 @@ array(
     'logo_url'       => 'https://example.com/logo.svg',// Optional. SVG preferred.
     'type'           => 'ai_provider',                 // Use 'ai_provider' for AI providers (grouped + discovered from the AI Client registry).
     'authentication' => array(
-        'method'          => 'api_key',                            // 'api_key' or 'none'.
+        'method'          => 'api_key',                            // 'api_key' | 'none' | 'application_password' (7.1+).
         'credentials_url' => 'https://provider.example/api-keys',  // Where users get their key.
         'setting_name'    => 'connectors_ai_my_provider_api_key',  // Auto-assigned for AI providers; overridable (see below).
     ),
@@ -48,12 +48,17 @@ array(
 
 ## Authentication methods
 
-Only two methods are supported in WP 7.0:
+`WP_Connector_Registry::register()` validates `authentication.method` against a closed list and returns `null` (with `_doing_it_wrong()`) for anything else. The list grew in 7.1:
 
-- **`api_key`** — single API key, looked up from env var → PHP constant → database (in that order).
-- **`none`** — no authentication needed. Use for local providers like Ollama running on `localhost:11434`.
+| Method | Since | Notes |
+| --- | --- | --- |
+| `api_key` | 7.0 | Single API key, looked up env var → PHP constant → database. |
+| `none` | 7.0 | No authentication. Use for local providers like Ollama on `localhost:11434`. |
+| `application_password` | **7.1** | A `username` + `password` pair. Env var / constant hold one `username:password` string; the DB setting is an `object`. Auto-generated `setting_name` is `connectors_{$type}_{$id}_application_password`. |
 
-Other authentication methods (OAuth, JWT, mTLS) are not yet supported by the Settings → Connectors screen, though the underlying registry accepts arbitrary `authentication` data. Until that lands, providers needing other auth must ship their own admin UI for credentials.
+`application_password` is core in 7.1 (`@since 7.1.0` in `src/wp-includes/connectors.php`), and also reaches 7.0 sites running Gutenberg 23.6+ via `lib/compat/wordpress-7.0/`. It is aimed at non-AI connector types such as `content_source` (a remote WordPress), not at `ai_provider`. Unlike `api_key`, the values are masked in REST but never validated against the remote.
+
+Other authentication methods (OAuth, JWT, mTLS) are still not supported by the Settings → Connectors screen, though the underlying registry accepts arbitrary extra `authentication` data. Until that lands, providers needing other auth must ship their own admin UI for credentials.
 
 ## API key naming convention
 
@@ -184,4 +189,4 @@ Use these — not the registry directly — outside the `wp_connectors_init` cal
 
 ## What `Settings → Connectors` actually shows
 
-The admin screen renders the API-key card for any connector whose `authentication.method` is `api_key`, regardless of `type` — the built-in Akismet connector (`type` `spam_filtering`) appears alongside the AI providers. `none`-auth connectors (e.g. a local Ollama) are also supported. AI providers should still use `type => 'ai_provider'` so they're grouped and auto-discovered from the AI Client registry. Connectors using other auth methods (OAuth, etc.) aren't rendered by the default card. Track #64789 and the Connectors API dev note's "Looking ahead" section for expansion.
+The admin screen renders the API-key card for any connector whose `authentication.method` is `api_key`, regardless of `type` — the built-in Akismet connector (`type` `spam_filtering`) appears alongside the AI providers. `none`-auth connectors (e.g. a local Ollama) are also supported. Since 7.1 the screen also renders a username/password card for `application_password` connectors (the built route at `src/wp-includes/build/routes/connectors-home/` handles the method). AI providers should still use `type => 'ai_provider'` so they're grouped and auto-discovered from the AI Client registry. Connectors using auth methods outside the registry's closed list can't be registered at all. Track #64789 and the Connectors API dev note's "Looking ahead" section for expansion.
