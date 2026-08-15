@@ -58,13 +58,32 @@ These are namespaced functions in `WordPress\AI`. Import as `use function WordPr
 | `wpai_default_feature_classes` | `Loader::get_default_features()` | array of built-in classes | Add or remove Feature class strings before instantiation |
 | `wpai_features_enabled` | `Loader::initialize_features()` | `true` | Master kill switch for all features |
 | `wpai_feature_{$id}_enabled` | `Abstract_Feature::is_enabled()` | option value | Per-feature override (force on/off in code) |
-| `ai_experiments_experiment_{$id}_enabled` | `Abstract_Feature::is_enabled()` | option value | Deprecated, kept via `apply_filters_deprecated` for legacy compat |
+| `ai_experiments_experiment_{$id}_enabled` | `Abstract_Feature::is_enabled()` | option value | Deprecated (0.6.0), kept via `apply_filters_deprecated` for legacy compat. Note the doubled segment — the id is preceded by `experiment_`, unlike the modern `wpai_feature_{$id}_enabled` |
 
 ### The rest of the deprecated `ai_experiments_*` surface
 
-The per-feature toggle above is the one you meet in `Abstract_Feature`, but it isn't the only survivor. `includes/Deprecated.php` shims seven more, all `apply_filters_deprecated( ..., '0.6.0' )` and still firing in v1.2.0: `ai_experiments_pre_normalize_content`, `ai_experiments_normalize_content`, `ai_experiments_preferred_models_for_text_generation`, `ai_experiments_preferred_image_models`, `ai_experiments_preferred_vision_models`, `ai_experiments_pre_has_valid_credentials_check`, and `ai_experiments_enabled`. `wpai_summarization_min_content_length` is separately shimmed in `Summarization.php`.
+The per-feature toggle above is the one you meet in `Abstract_Feature`, but it isn't the only survivor. `includes/Deprecated.php` shims **nine** more — seven filters and **two actions** — all tagged `'0.6.0'` and still firing in v1.2.0. Each maps to a modern replacement:
 
-These fire a deprecation notice and are not a migration target — they exist so pre-0.6.0 code keeps working. Read them only when debugging why an old filter still appears to have an effect.
+| Deprecated | Kind | Replacement |
+| --- | --- | --- |
+| `ai_experiments_pre_normalize_content` | filter | `wpai_pre_normalize_content` |
+| `ai_experiments_normalize_content` | filter | `wpai_normalize_content` |
+| `ai_experiments_preferred_models_for_text_generation` | filter | `wpai_preferred_text_models` |
+| `ai_experiments_preferred_image_models` | filter | `wpai_preferred_image_models` |
+| `ai_experiments_preferred_vision_models` | filter | `wpai_preferred_vision_models` |
+| `ai_experiments_pre_has_valid_credentials_check` | filter | `wpai_pre_has_valid_credentials_check` |
+| `ai_experiments_enabled` | filter | `wpai_features_enabled` |
+| `ai_experiments_register_experiments` | **action** | `wpai_register_features` |
+| `ai_experiments_initialized` | **action** | `wpai_features_initialized` |
+
+Counting the `Abstract_Feature` toggle, that is **ten** legacy names still live. `wpai_summarization_min_content_length` is separately shimmed in `Summarization.php`.
+
+Two details that matter when debugging:
+
+- **The last two are actions, fired via `do_action_deprecated`.** They are the deprecated forms of the two hooks this skill documents as the primary downstream extension points. `add_filter( 'ai_experiments_register_experiments', … )` will not behave like the modern `wpai_register_features` action — grepping only for `apply_filters_deprecated` misses both.
+- **Every shim is conditional.** Each is registered as a callback on its *modern* hook and guarded by `has_filter()` / `has_action()`, so the legacy name only fires when a legacy callback is actually attached. A silent legacy hook means nothing is listening, not that the shim was removed.
+
+These fire a deprecation notice and are not a migration target — they exist so pre-0.6.0 code keeps working. Read them only when debugging why an old filter still appears to have an effect. Note that the in-tree `@todo` and the notice text both say "will be removed in v1.0"; they survived v1.0 and are still present in v1.2.0, so treat the stated removal target as unreliable in both directions.
 
 ### Guidelines
 

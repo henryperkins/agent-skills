@@ -11,7 +11,7 @@ OpenRouter is itself a router across many upstream providers (Anthropic, OpenAI,
 - A single provider declaration lists hundreds of models, drawn from OpenRouter's `/models` endpoint.
 - The models list shouldn't be hardcoded — fetch and cache (transient with a 24-hour expiry is a reasonable default).
 - Capabilities for each model are also exposed via OpenRouter's API, so the declarations can be data-driven rather than maintained by hand.
-- Model IDs follow OpenRouter's `provider/model` convention (e.g., `anthropic/claude-sonnet-4.6`) which is distinct from the flagship plugins. Site owners using both an aggregator and a direct provider will see overlapping models with different IDs.
+- Model IDs follow OpenRouter's `provider/model` convention (e.g., `anthropic/claude-sonnet-5`) which is distinct from the flagship plugins. Site owners using both an aggregator and a direct provider will see overlapping models with different IDs. Treat the model slug as illustrative — resolve the exact string from the aggregator's own catalog endpoint rather than hardcoding it, since vendor lineups turn over faster than this reference does.
 
 When to choose this pattern: aggregator services, multi-model gateways, internal LLM routers. Fetch-and-cache the catalog rather than enumerating it in PHP.
 

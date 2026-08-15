@@ -143,7 +143,24 @@ export function runReleaseConformance(repoRoot) {
     core.recent.some((v) => v.startsWith("6.9.")),
     "WordPress recent must include the maintained 6.9 branch (the Abilities API floor)"
   );
-  assert(gutenberg.latest?.tag === "v23.5.3", "Gutenberg latest must be v23.5.3");
+  // Same reasoning as CORE_FLOOR above — this assertion was an exact pin at
+  // v23.5.3 and did exactly what the comment predicts: the index refreshed to
+  // v23.7.2 and the pin rejected it. The failure stayed hidden because
+  // assertPluginVersionFresh() throws earlier in this function, so it only
+  // surfaced once that gate was satisfied. Floor, not pin.
+  const GUTENBERG_FLOOR = "23.5.3";
+  assert(
+    typeof gutenberg.latest?.tag === "string" && gutenberg.latest.tag.startsWith("v"),
+    "Gutenberg index must have a latest.tag string in vX.Y.Z form"
+  );
+  assert(
+    Array.isArray(gutenberg.recent) && gutenberg.recent[0]?.tag === gutenberg.latest.tag,
+    "Gutenberg index recent[] must be sorted newest-first and lead with latest"
+  );
+  assert(
+    compareSemver(gutenberg.latest.tag.replace(/^v/, ""), GUTENBERG_FLOOR) >= 0,
+    `Gutenberg latest must not regress below v${GUTENBERG_FLOOR} (found ${gutenberg.latest.tag}) — refresh with shared/scripts/update-upstream-indices.mjs`
+  );
   assert(map.note === null && map.rows.length > 0, "WP/Gutenberg map must be non-empty");
   assert(
     map.rows.some((row) => row.wordpress === "7.0.X" && row.gutenberg === "22.6"),

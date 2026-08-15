@@ -1,8 +1,10 @@
 # AI Plugin & Connectors audit — skills vs. canonical sources
 
 Covers `wp-ai-plugin` and `wp-ai-connectors` (SKILL.md plus all seven reference files). Audited
-2026-08-15 against cloned upstream sources rather than documentation. All findings below are
-closed; the finding text is kept so the reasoning behind the current guidance stays legible.
+against cloned upstream sources rather than documentation, in two passes on 2026-08-15 — the second
+re-derived from the sources rather than reading this document, which is how P6 was caught. All
+findings below are closed; the finding text is kept so the reasoning behind the current guidance
+stays legible.
 
 Sibling audit: `abilities-api-audit.md` covers the Abilities API surface these two skills sit on
 top of, including the MCP exposure semantics that `wp-ai-plugin` references.
@@ -175,10 +177,10 @@ values.
 
 Fixed with a new "Other `develop`-only hooks" table.
 
-### P4. The deprecated-hook surface was understated (minor) — fixed
+### P4. The deprecated-hook surface was understated (minor) — fixed, then **corrected again in the second pass; see P6**
 
 `SKILL.md`'s failure-modes section said the legacy `ai_experiments_*` prefix "exists only via
-`apply_filters_deprecated` for the per-feature toggle." There are eight: the toggle in
+`apply_filters_deprecated` for the per-feature toggle." This pass raised that to eight: the toggle in
 `Abstract_Feature`, plus seven shimmed in `includes/Deprecated.php`
 (`ai_experiments_pre_normalize_content`, `ai_experiments_normalize_content`,
 `ai_experiments_preferred_models_for_text_generation`, `ai_experiments_preferred_image_models`,
@@ -188,6 +190,11 @@ Fixed with a new "Other `develop`-only hooks" table.
 
 "Only one" is the kind of claim that sends someone debugging a live legacy filter to the wrong
 conclusion.
+
+**Eight was also wrong.** The correct count is ten — see P6. The enumeration above was built by
+grepping `apply_filters_deprecated`, which structurally cannot see the two `do_action_deprecated`
+shims. Recording the error rather than silently overwriting it: the same grep would produce the
+same undercount next time.
 
 Fixed in `SKILL.md` (failure modes) and `references/hooks-and-filters.md` (new subsection).
 
@@ -199,6 +206,98 @@ The skill carries a warning that the 1.2.0 changelog and `readme.txt` name this 
 `includes/helpers.php`; `wp_ai_client_default_request_timeout` appears in **no** PHP in the plugin
 at 1.2.0 or on `develop`. The warning stands as written and is worth keeping — it is the one place
 where following the upstream changelog produces dead code.
+
+## Second pass — 2026-08-15 (independent re-verification)
+
+Re-run from the canonical sources rather than from this document, against the same release state
+(`WordPress/ai` 1.2.0 + `develop`, `php-ai-client` 1.4.0, `wordpress-develop` `7.0`/`7.1`, provider
+plugins Anthropic 1.0.3 / Google 1.1.0 / OpenAI 1.0.3). No upstream release moved between the two
+passes. `check-upstream-drift.mjs` passes.
+
+Everything in "Verified correct" below re-confirmed, plus the four connector findings (C1–C4) and
+P1/P2/P3/P5. One new finding, one nit.
+
+### P6. The deprecated `ai_experiments_*` surface is ten names, and two of them are actions (moderate) — fixed
+
+`includes/Deprecated.php` shims **nine** legacy names, not seven. Two are actions fired via
+`do_action_deprecated`, which is why a grep for `apply_filters_deprecated` — the method behind P4 —
+undercounts them:
+
+| Deprecated | Kind | Replacement |
+|---|---|---|
+| `ai_experiments_register_experiments` | **action** | `wpai_register_features` |
+| `ai_experiments_initialized` | **action** | `wpai_features_initialized` |
+
+These are not obscure leftovers. They are the deprecated forms of the two hooks `wp-ai-plugin`
+teaches as the *primary* downstream extension points, so they are exactly what someone maintaining
+pre-0.6.0 code arrives with. Telling that reader the legacy surface is filters-only sends them to
+`add_filter( 'ai_experiments_register_experiments', … )` on what is an action.
+
+With the `Abstract_Feature` toggle, ten legacy names are live at 1.2.0.
+
+Two supporting details the reference now carries:
+
+- **Every shim is conditional.** Each is registered as a callback on its *modern* hook and returns
+  early unless `has_filter()` / `has_action()` reports a listener. A legacy hook that appears dead
+  has no listener; it has not been removed.
+- **The stated removal target is unreliable.** Both the in-tree `@todo` and the deprecation notice
+  say "will be removed in v1.0". They survived v1.0 and are still present at 1.2.0.
+
+Fixed in `SKILL.md` (failure modes) and `references/hooks-and-filters.md` (the seven-name paragraph
+replaced by a nine-row deprecated→replacement table, plus the two details above). The reference
+previously named the deprecated hooks without naming their modern replacements for four of them;
+the table now maps all nine.
+
+Also corrected in the same table: `ai_experiments_experiment_{$id}_enabled` carries a doubled
+segment (`experiment_` before the id) that the modern `wpai_feature_{$id}_enabled` does not. The row
+documented the name correctly but the asymmetry is easy to misread as a typo and retype wrong.
+
+### N1. Dated model slug in `community-providers.md` (nit) — fixed
+
+The OpenRouter section illustrated the `provider/model` ID convention with
+`anthropic/claude-sonnet-4.6`, behind the current lineup. Updated to `anthropic/claude-sonnet-5`
+and — more usefully — reframed so the slug is explicitly illustrative, with the instruction to
+resolve real IDs from the aggregator's catalog endpoint. The surrounding advice already said not to
+hardcode the catalog; the example contradicted it.
+
+### Confirmed by direct source read this pass
+
+Beyond the standing list below, these were re-derived from the source rather than carried forward:
+
+- 16 registered Experiments at 1.2.0 / 19 on `develop` — verified by counting `::class` entries in
+  `Experiments.php` (17 and 20 minus `self::class`), with `Example_Experiment` absent from both.
+- `Main::initialize_features()` at `init` priority 15; `Experiments::register_default_experiment_classes()`
+  on `wpai_default_feature_classes` at priority 9.
+- `Abstract_Feature::__construct()` line 126: `$metadata['capability'] ?? 'text_generation'`.
+- `wpai_default_request_timeout` applied at `includes/helpers.php:737`;
+  `wp_ai_client_default_request_timeout` present only in `readme.txt` and `CHANGELOG.md`. P5 stands.
+- Widgets `wpai_status` / `wpai_capabilities` at `Dashboard_Widgets.php:75,83`.
+- Guidelines: `POST_TYPE = 'wp_guideline'`, `DEFAULT_MAX_GUIDELINE_LENGTH = 5000`, the four category→tag
+  mappings (`site-context`, `copy-guidelines`, `image-guidelines`, `additional-guidelines`) plus
+  `<block-guidelines>`, and the four public instance methods the reference tabulates.
+- The five unconditional ability IDs at 1.2.0, and `develop`'s `Gated_Abilities::GATED_ABILITY_CLASSES`
+  + `wpai_gated_abilities` filter. P1's inversion stands.
+- The five `develop`-only `wpai_*` hooks are exactly the five the skill lists — verified by diffing
+  the applied-hook sets of the tag and `develop`.
+- Connectors: `add_action( 'init', '_wp_connectors_init', 15 )` on both branches; `'api_key'`/`'none'`
+  on 7.0 vs `'api_key'`/`'application_password'`/`'none'` on 7.1; ID regex `/^[a-z0-9_-]+$/`;
+  first-colon split at `connectors.php:484`; 16-bullet mask; empty-username discard; `_doing_it_wrong()`
+  fall-through. C1 stands.
+- **The `connectors_ai_{id}_api_key` literal.** Worth re-recording because the generic path
+  contradicts it: `WP_Connector_Registry::register()` derives `connectors_{$type}_{$id}_{$method}`,
+  which for an auto-discovered AI provider (`type` = `ai_provider`) would give
+  `connectors_ai_provider_{id}_api_key`. `_wp_connectors_register_default_ai_providers()` overrides
+  it explicitly at `connectors.php:391` with `"connectors_ai_{$sanitized_id}_api_key"`. The skill's
+  name is right and the reasoning behind it is not reconstructible from the registry alone.
+- Core's vendored SDK on **both** 7.0 and 7.1: no `Providers/Models/EmbeddingGeneration/`, no
+  `ModelConfig::KEY_DIMENSIONS`, but `CapabilityEnum::EMBEDDING_GENERATION` present. C2's trap is real.
+- SDK 1.4.0: eight `CapabilityEnum` cases; `OptionEnum` declares only `INPUT_MODALITIES` and reflects
+  the rest off `ModelConfig::KEY_*`; `EmbeddingGenerationModelInterface` does not extend
+  `ModelInterface` and declares only `generateEmbeddingResult()`; no `EmbeddingOperation`.
+- All three provider plugins: `init` priority 5, `Requires at least: 6.9`, `Requires PHP: 7.4`,
+  `registerProvider()`; SDK constraints `^0.4 || dev-trunk` (Anthropic, Google) and `^1.1` (OpenAI);
+  zero embedding implementations. C3 stands.
+- All eight escalation URLs in the two skills return 200.
 
 ## Verified correct — no change needed
 
@@ -260,3 +359,32 @@ claims in these two skills (the Knowledge rename, the connectors compat path) ag
 were re-verified by hand in this pass against v23.7.2.
 
 `shared/references/ai-plugin-releases.json` is current at 1.2.0.
+
+### Second pass — two harness defects found while validating the fixes
+
+Neither is an AI-skill content issue, but both were blocking `node eval/harness/run.mjs` and the
+second masked the first.
+
+**H1. `release-conformance.mjs` pinned Gutenberg to an exact version — fixed.** Line 146 asserted
+`gutenberg.latest?.tag === "v23.5.3"`. The index has since refreshed to v23.7.2 (correctly — that is
+current upstream), so the assertion rejected the refresh it exists to protect. The comment block
+*directly above it* diagnoses this exact anti-pattern for the core index — "Pinning an exact version
+here guarantees the assertion goes stale and then blocks the very refresh it exists to protect" —
+and the core assertions were duly rewritten as shape + floor. The Gutenberg line one row down was
+left as a pin. Rewritten to match: shape check, newest-first check, and a `GUTENBERG_FLOOR` of
+23.5.3.
+
+This also resolves the "Gutenberg claims age silently" note above from the other direction — the
+index is now allowed to move, and the floor prevents regression.
+
+**H2. The failure was invisible.** `assertPluginVersionFresh()` runs at the top of
+`runReleaseConformance()` and throws on the first `skills/` change since the last version bump.
+Because commit `065cd5b` changed six skill files without bumping `plugin.json`, that gate threw on
+every run and execution never reached line 146. Two independent failures, one visible. Worth knowing
+when this harness next goes red: fixing the reported error can reveal a second one behind it, and
+"the harness passed before my change" may only mean it aborted earlier.
+
+The version gate is history-based (`lastBump..HEAD`), so it is satisfied by committing the bump
+alongside the content it ships — which is its stated intent — not by editing the manifests alone.
+Plugin version bumped 1.4.0 → 1.5.0 in both `.claude-plugin/plugin.json` and
+`.claude-plugin/marketplace.json` to cover `065cd5b`'s six files plus this pass's three.
