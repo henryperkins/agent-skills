@@ -84,7 +84,38 @@ Each entry:
 | `use_case_fit` | string | One sentence naming the human or agent workflow this ability serves. The use-case-contract check (see `wp-abilities-api/references/domain-vs-projection.md`): if no human would intentionally do this through a supported UI or workflow, the entry probably belongs in `excluded_from_mvp` instead. |
 | `side_effects` | array of strings | Side effects the backing path emits on every call: telemetry hooks, audit-log rows, notifications, cache writes. One short line per effect. Empty array (`[]`) when the backing is a pure data-fetch — that is *itself* a load-bearing fact: it is what unlocks the conditional delegation shortcut in `wp-abilities-api/references/shared-core-service.md`. A non-empty array tells the implementer (and downstream verify-mode tooling) that this ability needs the shared-service shape, not the delegate-through-REST shortcut. |
 | `seed_data_needs` | string OR `null` | One line describing what representative data must exist in the test environment for the ability to execute through the public boundary and return something meaningful (e.g. `"at least one entity in the plugin's primary table"`, `"no seed required"`). `null` when the auditor has not yet identified the seed shape; downstream verify-mode tooling treats `null` as "ask the implementer" rather than guessing. |
+| `exposure` | object (optional) | The deliberate decision about who may *discover* this ability, kept separate from who may *run* it. See below. Optional for backwards compatibility; new audits MUST populate it. |
 | `reference_ability` | bool (optional) | If `true`, marks this ability as the reference implementation — the first one an implementer should land (smallest, safest, highest-leverage read). Exactly zero or one ability per audit may set this. |
+
+### `exposure` object
+
+Exposure is a decision, not a default. Core resolves
+`show_in_rest = meta.show_in_rest ?? meta.public ?? false` from WP 7.1, and MCP Adapter 0.6.0+
+resolves `meta.mcp.public ?? meta.public ?? false` — so an implementer who sets `meta.public`
+for REST also publishes to agents unless someone decided otherwise. This object records that
+someone decided, and what they decided, at audit time rather than at registration time.
+
+| Field | Type | Description |
+|---|---|---|
+| `agent_facing` | bool | Whether an external agent (MCP client, command palette, headless caller) should be able to *discover* this ability. Drives the implementer's `meta.public`. `false` is a real answer, not a placeholder — plenty of useful abilities are for first-party UI only. |
+| `mcp` | enum | The explicit MCP decision: `allow` (allow-list it for agents), `deny` (register `meta.mcp.public => false`), or `inherit` (accept whatever `meta.public` resolves to on the target adapter version). Use `inherit` only when the audit has confirmed the target adapter version. |
+| `rationale` | string | One sentence. **Required when `agent_facing: true` or `mcp: allow`** — name the agent workflow that needs it. Optional otherwise. |
+
+```yaml
+exposure:
+  agent_facing: true
+  mcp: allow
+  rationale: "A triage agent answering 'which items need attention?' needs to enumerate before it can act."
+```
+
+Two rules downstream tooling depends on:
+
+- **A `destructive: true` ability reaching MCP requires `mcp: allow` plus a `rationale`.** That
+  pairing is the "explicit allow-list decision" `wp-abilities-verify` looks for. `mcp: inherit`
+  on a destructive ability is not a decision — it is a default nobody read.
+- **`agent_facing` and `permission` are independent.** Never soften a `permission` entry because
+  `agent_facing` is `false`; obscurity is not a capability check. A non-agent-facing ability is
+  still executable by anything that knows its name.
 
 ### `backing: null` semantics
 
@@ -203,6 +234,10 @@ proposed_abilities:
     use_case_fit: "Agent answers 'which items need attention right now?' in a single call without paging through a UI."
     side_effects: []
     seed_data_needs: "at least one item exists in any non-trashed status"
+    exposure:
+      agent_facing: true
+      mcp: allow
+      rationale: "A triage agent answering 'which items need attention right now?' must enumerate before it can act."
     reference_ability: true
 
   - name: example-plugin/close-item
@@ -230,6 +265,10 @@ proposed_abilities:
       - "fires action `example_plugin/item_closed` (downstream listeners may dispatch email)"
       - "writes audit-log row to `example_plugin_audit_log`"
     seed_data_needs: "one open item to close; the test must capture the item id before invocation"
+    exposure:
+      agent_facing: false
+      mcp: deny
+      rationale: "Close is terminal and has no reopen endpoint; keep it to the admin UI until a soft-delete design exists."
 
 excluded_from_mvp:
   - name: example-plugin/delete-item
@@ -287,6 +326,15 @@ Documented so downstream skills have an explicit contract:
   fields to nudge backfill the next time the audit is touched; they do
   NOT FAIL, mirroring the legacy `capability_gate` posture above. New
   audits MUST populate all three.
+- **`exposure` added 2026-08-15.** Optional so audits authored earlier validate
+  as-is; new audits MUST populate it on every entry in `proposed_abilities`.
+  Validators emit WARN on a missing `exposure` object, mirroring the
+  implementation-readiness posture above, and MUST NOT FAIL on its absence.
+  Note what a missing object means downstream: `wp-abilities-verify`'s exposure
+  checks cannot conclude anything about intent, so its audit-versus-registration
+  rules degrade from FAIL to WARN and the report says the audit predates the
+  field rather than that the registration is wrong. An absent `exposure` is not
+  evidence that an ability is not agent-facing.
 - **`backing.kind` and `permission.source` added 2026-05-21.** Both
   are optional with default `rest_controller` so older audits validate
   as-is. New audits SHOULD populate both explicitly — `backing.kind`

@@ -197,6 +197,8 @@ When `executeAbility` calls a server-registered ability through the REST API, th
 
 This matters for caching, logging, and CSRF posture. A read-only ability should always be marked `readonly` so it gets `GET` and benefits from any HTTP caching layer.
 
+The package is not choosing a convention here — it is matching one the server enforces. The run controller derives the same single legal method from the same annotations and returns `rest_ability_invalid_method` (HTTP 405) for anything else, so a hand-rolled client must apply this mapping too. See "The `/run` method is enforced, not conventional" in `rest-api.md`.
+
 ## Querying
 
 ```js

@@ -56,9 +56,15 @@ Apply the field-shape rules defined in
 5. Each ability's `backing` is either an object with the canonical
    fields or `null`; `null` is WARN, not FAIL (it's intentional gap
    output).
+6. Each ability's `exposure` is either absent or an object with
+   `agent_facing` (bool), `mcp` (one of `allow` / `deny` / `inherit`),
+   and `rationale` (string). Absent → WARN (audit predates the field,
+   added 2026-08-15). Present but with a non-boolean `agent_facing`, an
+   `mcp` value outside the enum, or a missing `rationale` when
+   `agent_facing` is `true` or `mcp` is `allow` → FAIL.
 
 Missing required field → FAIL. Wrong type → FAIL. Legacy
-`capability_gate` slash-string → WARN.
+`capability_gate` slash-string → WARN. Missing `exposure` object → WARN.
 
 ## Step 3 — whole-audit invariants
 
@@ -89,6 +95,27 @@ for (const ability of audit.proposed_abilities) {
 }
 ```
 
+### Every `destructive: true` ability records an MCP decision
+
+`exposure.mcp: inherit` is not a decision for a destructive ability — on MCP
+Adapter 0.6.0+ it resolves to whatever `meta.public` resolves to, which is
+how a destructive operation reaches the default MCP server without anyone
+choosing that. Per the canonical schema, destructive abilities take `allow`
+(with a rationale) or `deny`.
+
+```js
+for (const a of audit.proposed_abilities) {
+  if (a.annotations?.destructive !== true || !a.exposure) continue; // absent exposure → WARN, handled above
+  if (a.exposure.mcp === "inherit") {
+    fail(`destructive ability ${a.name} records exposure.mcp: inherit; require allow (with rationale) or deny`);
+  }
+}
+```
+
+This result feeds the exposure section too — see `exposure-checks.md` §3,
+which compares the recorded decision against what the plugin actually
+registered.
+
 ### `excluded_from_mvp` and `surfaced_gaps` may be empty
 
 Both are optional; empty arrays are legal. Missing entirely → WARN
@@ -109,6 +136,7 @@ final report:
 | Per-ability fields | WARN | 1 ability has `backing: null` (intentional) |
 | `reference_ability` uniqueness | OK | 1 ability marked |
 | `surfaced_gaps` consistency | OK | all `backing: null` entries present |
+| `exposure` decisions | WARN | 2 abilities have no `exposure` object (audit predates 2026-08-15 schema) |
 ```
 
 A single FAIL in this section makes the whole run FAIL; verify cannot

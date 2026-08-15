@@ -40,6 +40,25 @@ async function fetchJson(url) {
   }
 }
 
+/**
+ * Descending numeric version compare.
+ *
+ * A plain string sort is wrong here and fails silently: "7.0.10" < "7.0.4"
+ * lexicographically, so the tenth patch of a series would rank below the
+ * fourth and `latest` would name a superseded release. Everything downstream
+ * of this index — including the core drift gate — trusts `latest`.
+ */
+function compareVersionsDesc(a, b) {
+  const pa = String(a).split(".").map((n) => Number.parseInt(n, 10) || 0);
+  const pb = String(b).split(".").map((n) => Number.parseInt(n, 10) || 0);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i += 1) {
+    const d = (pb[i] ?? 0) - (pa[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
 function normalizeWpVersionCheckPayload(payload) {
   // https://api.wordpress.org/core/version-check/1.7/ returns something like:
   // { offers: [...], translations: [...] }
@@ -65,7 +84,7 @@ function normalizeWpVersionCheckPayload(payload) {
     if (!byVersion.has(v)) byVersion.set(v, o);
   }
 
-  const versions = [...byVersion.keys()].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
+  const versions = [...byVersion.keys()].sort(compareVersionsDesc);
   return {
     latest: versions[0] ?? null,
     recent: versions.slice(0, 20),

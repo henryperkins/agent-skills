@@ -15,18 +15,45 @@ The Abilities API registers five routes under the `wp-abilities/v1` namespace:
 `{name}` is the full namespaced ID, slash included — `my-plugin/list-orders` — so the run route
 reads `/wp-abilities/v1/abilities/my-plugin/list-orders/run`.
 
-The method used on `/run` is not arbitrary. The client packages pick it from the ability's
-annotations (`readonly: true` → `GET`; `destructive: true` + `idempotent: true` → `DELETE`;
-otherwise `POST`), which is one more reason to set annotations accurately — see
-`client-side.md`. Input travels as the `input` argument: a query-string parameter on `GET` and
-`DELETE`, a body parameter on `POST`.
-
 Debug checklist:
 
 - Confirm the route exists under `wp-json/wp-abilities/v1/...`.
 - Verify the ability/category shows in REST responses.
 - If missing, check the exposure resolution below — on WP 7.1+ an ability can be hidden by
   either `meta.show_in_rest` or `meta.public`.
+- If `/run` returns **405**, the HTTP method does not match the one the ability's annotations
+  require — see the next section.
+
+### The `/run` method is enforced, not conventional
+
+The route registers `WP_REST_Server::ALLMETHODS`, but that is a load-order workaround, not
+permissiveness: routes are registered before plugins have registered their abilities, so core
+cannot know each ability's annotations at registration time. It enforces the method later
+instead. `check_ability_permissions()` — the route's `permission_callback` — calls
+`validate_request_method()`, which derives **exactly one** legal method from the annotations:
+
+| Annotations | Required method |
+|---|---|
+| `readonly: true` | `GET` |
+| `destructive: true` **and** `idempotent: true` | `DELETE` |
+| anything else | `POST` |
+
+The first matching row wins (`readonly` is tested before the destructive/idempotent pair). Any
+other method returns `rest_ability_invalid_method` with **HTTP 405**, before the permission
+callback or the execute callback runs.
+
+So this is not a client-side convention that `@wordpress/abilities` happens to follow — the
+package follows it because the server requires it. Two practical consequences:
+
+- **A hand-rolled client must derive the method the same way.** `POST`ing to a `readonly`
+  ability gets a 405, not a result. Read the ability's annotations from
+  `GET /wp-abilities/v1/abilities/{name}` and pick the method from the table above.
+- **Changing an annotation changes the ability's HTTP contract.** Flipping `readonly` from
+  `true` to `false` moves the ability from `GET` to `POST` and breaks every existing caller.
+  Treat annotations as part of the public API surface, not as documentation.
+
+Input travels as the `input` argument: a query-string parameter on `GET` and `DELETE`, a body
+parameter on `POST`. See `client-side.md` for how the JS packages apply the same mapping.
 
 ## Exposure: `public` and `show_in_rest` (WP 7.1+)
 
@@ -77,6 +104,29 @@ wp_register_ability(
 );
 ```
 
+### Worked example: what the flag change did to core's own abilities
+
+Core migrated its three registered abilities onto `meta.public` in 7.1, and the migration changed
+observable behavior for one of them. This is the clearest available demonstration that `public`
+is not a cosmetic rename of `show_in_rest`:
+
+| Ability | 7.0 registration | 7.1 registration | Effective REST | `permission_callback` |
+|---|---|---|---|---|
+| `core/get-site-info` | `show_in_rest => true` | `public => true` | `true` → `true` (unchanged) | `current_user_can( 'manage_options' )` |
+| `core/get-user-info` | `show_in_rest => false` | `public => true` | **`false` → `true`** | `is_user_logged_in()` |
+| `core/get-environment-info` | `show_in_rest => true` | `public => true` | `true` → `true` (unchanged) | `current_user_can( 'manage_options' )` |
+
+`core/get-user-info` was deliberately hidden from REST on 7.0 and is listed on 7.1, reachable by
+any logged-in user. And because all three now carry `meta.public => true` with no
+`meta.mcp.public` key, all three are served by the default MCP server on adapter 0.6.0+ — where
+on 7.0 none of them were, since the adapter reads `meta.public` and 7.0 never sets it.
+
+The lesson generalizes to any migration from a channel key to `public`: `show_in_rest => false`
+and *no* exposure key are the same effective value but not the same declaration, and only the
+first survives a rewrite to `public => true`. When converting registrations, convert
+`show_in_rest => false` to `public => false` (or keep the explicit `show_in_rest => false`
+alongside `public => true`), never drop it.
+
 ### Exposure is not authorization
 
 `public` and `show_in_rest` decide **whether a client can see and address the ability**. They
@@ -87,8 +137,10 @@ Two failure shapes follow, and coding agents produce both:
 
 - **Setting `public => true` and omitting `permission_callback`.** The ability is now
   discoverable and runs for anyone who can reach the endpoint. `public` is not a gate. (Core
-  throws `InvalidArgumentException` on a missing `permission_callback`, so the realistic version
-  of this bug is a callback that returns `true` unconditionally.)
+  rejects a registration with no `permission_callback`, but it does so by discarding the ability
+  behind a `_doing_it_wrong()` notice rather than raising anything catchable — so in practice
+  this bug ships as a callback that returns `true` unconditionally. See
+  "How a bad registration fails" in `php-registration.md`.)
 - **Setting `public => false` and treating that as the security control.** Obscurity is not
   authorization; a non-public ability is still executable by any code path that knows its
   name, including a direct `wp_get_ability( 'my-plugin/x' )->execute()`.
@@ -226,6 +278,77 @@ GET /wp-json/wp-abilities/v1/abilities?category=my-plugin-content
 GET /wp-json/wp-abilities/v1/abilities?meta[annotations][readonly]=true
 GET /wp-json/wp-abilities/v1/abilities?category=data-export&namespace=my-plugin
 ```
+
+The list endpoint always forces `meta => array( 'show_in_rest' => true )` into the query and
+merges caller-supplied `meta` **underneath** it, so a caller cannot use `?meta[...]` to reveal an
+ability that is hidden from REST. `show_in_rest` is deliberately absent from the declared
+parameters for the same reason.
+
+#### `?meta[...]` silently matches nothing on undeclared keys
+
+This is the REST counterpart of the strict-comparison rule above, and it is the most common
+"my filter returns an empty list" cause.
+
+Query-string values arrive as **strings**, and `wp_get_abilities()` compares meta strictly. So
+`?meta[custom_key]=true` compares `'true' !== true` and matches nothing — no error, just an empty
+collection. The values that *do* work are the ones core pre-declares a schema type for, and core
+pre-declares only the three annotations:
+
+```php
+'meta' => array(
+    'type'       => 'object',
+    'properties' => array(
+        // show_in_rest is omitted on purpose. It is forced on and cannot be filtered by a caller.
+        'annotations' => array(
+            'type'       => 'object',
+            'properties' => array(
+                'readonly'    => array( 'type' => array( 'boolean', 'null' ) ),
+                'destructive' => array( 'type' => array( 'boolean', 'null' ) ),
+                'idempotent'  => array( 'type' => array( 'boolean', 'null' ) ),
+            ),
+            'additionalProperties' => true,
+        ),
+    ),
+    'additionalProperties' => true,
+),
+```
+
+`additionalProperties => true` is why an undeclared key is *accepted* rather than rejected — it
+passes validation, stays a string, and then fails the strict match. Declaring a type is what lets
+REST coerce `"true"` to `true` before matching.
+
+WP 7.1 adds **`rest_abilities_collection_params`** for exactly this. Declare the type of any
+custom meta key your clients filter on:
+
+```php
+add_filter(
+    'rest_abilities_collection_params',
+    function ( array $params ): array {
+        $params['meta']['properties']['mcp'] = array(
+            'description'          => __( 'Limit results by MCP metadata.', 'my-plugin' ),
+            'type'                 => 'object',
+            'properties'           => array(
+                'public' => array( 'type' => array( 'boolean', 'null' ) ),
+            ),
+            'additionalProperties' => true,
+        );
+
+        $params['meta']['properties']['tier'] = array(
+            'description' => __( 'Limit results by plugin tier.', 'my-plugin' ),
+            'type'        => 'integer',
+        );
+
+        return $params;
+    }
+);
+```
+
+With that in place `?meta[mcp][public]=true` and `?meta[tier]=2` both match. Without it, both
+return an empty collection while looking perfectly well-formed.
+
+Note the ordering constraint: this filter runs on the REST controller, so it only affects the
+*endpoint*. A direct PHP call to `wp_get_abilities( array( 'meta' => array( 'tier' => '2' ) ) )`
+still fails the strict comparison — pass a real integer there.
 
 ### The 7.0 fallback trap
 

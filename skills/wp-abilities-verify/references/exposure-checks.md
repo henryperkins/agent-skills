@@ -42,19 +42,50 @@ For each registered ability, record the raw keys — `meta.public`, `meta.show_i
   `meta.mcp.public` (either value) to state the intent."
 - `meta.public => true` on a plugin whose readme/compatibility targets WP < 7.1 → WARN: the flag
   does nothing for REST on the target version but still drives MCP.
-- No exposure key at all on an ability the audit doc lists as agent-facing → FAIL: the audit and
-  the registration disagree.
 
 The WARN is deliberately not a FAIL. Inheriting `meta.public` is legitimate and often intended —
 what is not legitimate is doing it silently.
+
+### 2a. Registration matches the audit's exposure decision
+
+**Only runs when an audit doc was supplied.** The comparison is against the `exposure` object in
+`proposed_abilities` (canonical schema:
+`../../wp-abilities-audit/references/audit-schema.md`), which carries `agent_facing` (bool),
+`mcp` (`allow` / `deny` / `inherit`), and `rationale`.
+
+| Audit says | Registration resolves to | Result |
+|---|---|---|
+| `agent_facing: true` | no exposure key at all | FAIL — the audit and the registration disagree |
+| `agent_facing: false` | effectively REST- or MCP-exposed | FAIL — exposed against an explicit decision not to |
+| `mcp: deny` | effectively MCP-public | FAIL — the opt-out was decided and not written |
+| `mcp: allow` | not MCP-public | WARN — decided but not implemented; may be deliberate sequencing |
+| `mcp: inherit` | anything | INFO — record the resolved value against the project's adapter version |
+
+**When the `exposure` object is absent, every rule in this subsection degrades to WARN, and the
+warning is about the audit, not the registration.** `exposure` was added to the canonical schema
+on 2026-08-15; audits authored earlier simply do not carry it, and per the canonical's "Known
+limitations" a missing `exposure` MUST NOT FAIL. Report it as
+"audit predates the `exposure` field — exposure intent unverifiable" and move on. Do **not** read
+an absent object as `agent_facing: false`; it carries no intent either way, and treating silence
+as a decision is how this check would start manufacturing findings.
+
+Same posture when no audit was supplied at all: §2's declared-vs-inherited WARNs still apply,
+this subsection is skipped entirely, and the report says so rather than passing it silently.
 
 ### 3. Exposure matches the annotation risk profile
 
 Cross-reference the annotations already parsed for `annotation-correctness.md`:
 
-- `destructive: true` **and** effectively MCP-public → FAIL unless the audit doc names the ability
-  in an explicit allow-list decision. Destructive abilities reaching the default MCP server is the
-  shape that turns a discovery leak into a real incident.
+- `destructive: true` **and** effectively MCP-public → FAIL unless the audit records
+  `exposure.mcp: allow` with a non-empty `exposure.rationale` for that ability. That pairing is
+  what the canonical schema defines as an explicit allow-list decision; `mcp: inherit` does not
+  qualify, because inheriting `meta.public` on adapter 0.6.0+ is exactly the default nobody read.
+  Destructive abilities reaching the default MCP server is the shape that turns a discovery leak
+  into a real incident.
+  - No audit supplied, or an audit with no `exposure` object → **WARN, not FAIL**, worded as
+    "destructive ability is MCP-public with no recorded allow-list decision." The finding is real
+    and worth surfacing; the FAIL is reserved for the case where an audit exists, carries the
+    field, and contradicts the registration.
 - `readonly: null` (unset) and effectively public → WARN. Agents read annotations to plan; an
   exposed ability with unknown behavior is worse than an unexposed one.
 
@@ -101,10 +132,15 @@ Add an `## Exposure` section to the report, between "Permission gates" and "Sche
 ```
 ## Exposure
 
-| Ability | public | show_in_rest | mcp.public | Effective REST | Effective MCP | Result |
-|---|---|---|---|---|---|---|
+| Ability | public | show_in_rest | mcp.public | Effective REST | Effective MCP | Audit | Result |
+|---|---|---|---|---|---|---|---|
 ```
 
 Fill "Effective MCP" against the adapter version the project depends on, and state that version
 in the section header. A verdict computed against the wrong adapter version is worse than no
 verdict, because it reads as confirmation.
+
+The "Audit" column holds the recorded decision — `agent_facing/mcp` from the audit's `exposure`
+object (e.g. `true/allow`), `—` when no audit was supplied, or `n/a (pre-2026-08-15 schema)` when
+the audit carries no `exposure` object. Those last two are not verdicts and must not be rendered
+as PASS; the "Result" column for such rows is the WARN from §2a.

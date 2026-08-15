@@ -76,7 +76,24 @@ Two adjacent projects version independently and must be tracked separately:
   `skills/wp-abilities-api/SKILL.md`.
 - **`WordPress/ai`** — hosts abilities proposed for core but not yet merged.
 
-The **`WordPress/abilities-api` feature plugin is archived** (5 February 2026, read-only, last
-release 0.2.0). It is not a source for current behavior and must not be recommended as a
-pre-6.9 shim.
+#### Read the release branch, not `trunk`
+
+Once a release branches, `trunk` moves on and stops describing it. Verifying "what WP 7.1 does"
+against `trunk` is only accidentally correct, and silently stops being correct the moment 7.2
+lands a change. Read `wordpress-develop` at the **release branch** (`7.1`, `7.0`, `6.9`), and
+diff branches when you need to know which release introduced a behavior rather than trusting a
+single `@since` tag.
+
+`check-upstream-drift.mjs` carries a third check for this: it compares the released core version
+in `shared/references/wordpress-core-versions.json` against the `core verified through:` marker
+in `skills/wp-abilities-api/SKILL.md`, at **minor** granularity. A patch release stays quiet; a
+new minor turns CI red, because that is when a large pre-release-verified surface needs
+re-checking against a shipped build. The abilities skills currently describe a 7.1 surface
+verified against the `7.1` branch at RC3, so the gate fires when 7.1 ships stable.
+
+The **`WordPress/abilities-api` feature plugin is archived** (5 February 2026, read-only; last
+tagged release the `v0.5.0-rc` prerelease of 14 November 2025, last stable `v0.4.0`). It is not a
+source for current behavior and must not be recommended as a pre-6.9 shim. Its version numbers
+are also not comparable to the MCP Adapter's — both are in `0.x` and the two `0.5.0`s are
+unrelated releases of different projects.
 

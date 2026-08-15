@@ -35,6 +35,27 @@ const CHECKS = [
     skillPattern: /current canonical release:\s*v?(\d+(?:\.\d+)+)/,
     hint: "Re-verify skills/wp-abilities-api against the newer MCP Adapter release — especially McpAbilityExposure::is_public() and create_server() — then update references/mcp-exposure.md and bump the 'current canonical release' marker in the SKILL.md compatibility line.",
   },
+  {
+    // The abilities skills carry a large WP 7.1 surface (the execution
+    // lifecycle hooks, meta.public, wp_get_abilities() args, typed REST
+    // inputs) that was verified against the 7.1 *branch* while it was still
+    // a release candidate. Branch content moves until it ships, so the gate
+    // fires when a new core minor actually releases and someone has to
+    // re-verify against the released build.
+    //
+    // Minor granularity on purpose: a patch release almost never touches this
+    // surface, and firing on every 7.0.x would train people to ignore the gate.
+    name: "wp-abilities-api vs released WordPress core",
+    indexFile: "shared/references/wordpress-core-versions.json",
+    skillFile: "skills/wp-abilities-api/SKILL.md",
+    // Matches the frontmatter compatibility line, e.g.
+    // "(core verified through: 7.0)".
+    skillPattern: /core verified through:\s*(\d+\.\d+)/,
+    // This index stores `latest` as a plain version string, not a release object.
+    latestFrom: (index) => (typeof index?.latest === "string" ? index.latest : null),
+    granularity: "minor",
+    hint: "A new WordPress minor has shipped. Re-verify the 7.1+ surface in skills/wp-abilities-api (and the exposure rules in wp-abilities-verify) against the released branch rather than the pre-release one, then bump the 'core verified through' marker in the SKILL.md compatibility line.",
+  },
 ];
 
 function parseVersion(value) {
@@ -44,9 +65,10 @@ function parseVersion(value) {
     .map((n) => Number.parseInt(n, 10) || 0);
 }
 
-function compareVersions(a, b) {
-  const pa = parseVersion(a);
-  const pb = parseVersion(b);
+function compareVersions(a, b, granularity = "patch") {
+  const depth = granularity === "minor" ? 2 : Infinity;
+  const pa = parseVersion(a).slice(0, depth);
+  const pb = parseVersion(b).slice(0, depth);
   const len = Math.max(pa.length, pb.length);
   for (let i = 0; i < len; i += 1) {
     const d = (pa[i] ?? 0) - (pb[i] ?? 0);
@@ -74,16 +96,18 @@ function main() {
       continue;
     }
 
+    const latestFrom = check.latestFrom ?? ((index) => index?.latest?.tag ?? null);
+
     let latestTag = null;
     try {
       const index = JSON.parse(fs.readFileSync(indexPath, "utf8"));
-      latestTag = index?.latest?.tag ?? null;
+      latestTag = latestFrom(index) ?? null;
     } catch {
       failures.push(`[${check.name}] Could not parse ${check.indexFile} as JSON.`);
       continue;
     }
     if (!latestTag) {
-      failures.push(`[${check.name}] ${check.indexFile} has no latest.tag.`);
+      failures.push(`[${check.name}] ${check.indexFile} has no usable latest version.`);
       continue;
     }
 
@@ -97,9 +121,9 @@ function main() {
     }
 
     const declared = match[1];
-    if (compareVersions(latestTag, declared) > 0) {
+    if (compareVersions(latestTag, declared, check.granularity) > 0) {
       failures.push(
-        `[${check.name}] Upstream latest is ${latestTag} but the skill declares v${declared}. ${check.hint}`
+        `[${check.name}] Upstream latest is ${latestTag} but the skill declares ${declared}. ${check.hint}`
       );
     }
   }

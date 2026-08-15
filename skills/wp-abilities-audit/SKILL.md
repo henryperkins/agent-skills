@@ -105,14 +105,40 @@ For each proposed ability that passes the sanity check, fill in every
 field in the `proposed_abilities` schema: `name`, `intent`, `backing`,
 `permission`, `return_type`, `effort` (S/M/L), `annotations`
 (readonly/destructive/idempotent), `notes`, `risks`, `use_case_fit`,
-`side_effects`, `seed_data_needs`.
+`side_effects`, `seed_data_needs`, `exposure`.
 
-The last three are the implementation-readiness facts the implementer
-and the verify-mode tooling both need: which human/agent workflow this
-ability serves (`use_case_fit`), what the backing path emits on every
-call (`side_effects` — empty array is a fact, not a missing value), and
-what representative data must exist in the test environment for the
-ability to execute through the public boundary (`seed_data_needs`).
+`use_case_fit`, `side_effects`, and `seed_data_needs` are the
+implementation-readiness facts the implementer and the verify-mode
+tooling both need: which human/agent workflow this ability serves
+(`use_case_fit`), what the backing path emits on every call
+(`side_effects` — empty array is a fact, not a missing value), and what
+representative data must exist in the test environment for the ability
+to execute through the public boundary (`seed_data_needs`).
+
+### 4a. Decide exposure explicitly
+
+Fill in `exposure` on every proposed ability. This is a distinct decision
+from `permission`, and the audit is where it gets made — if it is left to
+the implementer it gets made by a metadata default instead.
+
+Set `agent_facing` (should an external agent be able to *discover* this?),
+`mcp` (`allow` / `deny` / `inherit`), and a one-sentence `rationale`
+naming the agent workflow whenever `agent_facing: true` or `mcp: allow`.
+
+Two rules:
+
+- **Every `destructive: true` ability needs `mcp: allow` with a rationale,
+  or `mcp: deny`.** `inherit` on a destructive ability is not a decision.
+  On MCP Adapter 0.6.0+ the default server serves anything resolving to
+  `meta.public`, so `inherit` silently hands agents a destructive
+  operation.
+- **Never soften `permission` because `agent_facing` is `false`.**
+  Exposure decides who can find an ability; `permission_callback` decides
+  who may run it. A non-agent-facing ability is still executable by any
+  caller that knows its name.
+
+`../wp-abilities-api/references/rest-api.md` has the resolution tables if
+the target WP or adapter version is in question.
 
 ### 5. Surface gaps and deferred items
 
@@ -159,6 +185,9 @@ downstream workflows a deterministic starting point.
 - `capability_gate` is a string for single-cap plugins or a `{read, write}`
   object for post-type-backed plugins.
 - Every ability with `backing: null` also appears in `surfaced_gaps`.
+- Every ability carries an `exposure` object, and every `destructive: true`
+  ability resolves it to `mcp: allow` (with a rationale) or `mcp: deny` —
+  never `inherit`.
 - The doc round-trips through the validator in `audit-schema.md` "Known
   limitations" without errors.
 

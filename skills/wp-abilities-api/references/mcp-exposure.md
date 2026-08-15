@@ -105,6 +105,34 @@ Practical rules:
   ability with `meta.public` truthy and no `meta.mcp.public` key. See the
   `wp_get_abilities()` recipe in `rest-api.md`.
 
+## `meta.mcp.type`: a typo becomes a tool
+
+`meta.mcp.type` selects which MCP primitive an ability is projected as — `'tool'` (the default),
+`'resource'`, or `'prompt'`. The adapter reads it on two different code paths that handle an
+invalid value **differently**, and the asymmetry is the whole trap:
+
+| Path | How it reads the type | Out-of-enum value (e.g. `'resources'`) |
+|---|---|---|
+| `DiscoverAbilitiesAbility` (what agents list) | `McpAbilityHelperTrait::get_ability_mcp_type()` — validates against the enum, falls back to `'tool'` | **coerced to `'tool'` → listed as a tool** |
+| `GetAbilityInfoAbility` / `ExecuteAbilityAbility` | no type check at all; gates on MCP-public only | inspectable and executable |
+| `DefaultServerFactory::discover_abilities_by_type()` (builds the `resources` / `prompts` lists) | raw `$meta['mcp']['type'] ?? 'tool'`, strict `!==`, no validation | excluded from both lists |
+
+So an ability you meant to expose as a resource, misspelled as `'resources'`, does not disappear
+and does not raise anything. It is **silently promoted to a tool**: absent from the server's
+`resources` list, present in `discover-abilities`, and executable through
+`mcp-adapter/execute-ability`.
+
+That is the opposite of the failure people expect, and it matters because tools are the
+primitive agents act with. An ability designed to be read as passive context becomes something
+an agent can decide to invoke.
+
+- Write `meta.mcp.type` only when it is not `'tool'`, and copy the value rather than typing it.
+- Verify after registration rather than trusting the registration. On a site with the adapter,
+  `wp mcp-adapter list` plus the server's `resources` list is the check that catches this; a
+  string comparison in your own tests against `'resource'` / `'prompt'` is the cheaper one.
+- Do not rely on an invalid type to hide an ability. Exposure is decided by
+  `McpAbilityExposure::is_public()` alone — set `meta.mcp.public => false` to hide it.
+
 ## Default server vs custom server
 
 On activation, the adapter registers a default MCP server (`mcp-adapter-default-server`) with three core abilities for inspection and execution:

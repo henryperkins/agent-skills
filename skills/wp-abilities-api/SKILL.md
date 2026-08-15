@@ -1,7 +1,7 @@
 ---
 name: wp-abilities-api
 description: "Use when working with the WordPress Abilities API (wp_register_ability, wp_register_ability_category, wp_get_abilities, /wp-json/wp-abilities/v1/*, @wordpress/abilities, @wordpress/core-abilities) including defining abilities, categories, meta, the meta.public and show_in_rest exposure flags, filtered ability discovery, permissions checks for clients, the WP 7.1+ execution lifecycle hooks (wp_ability_invoked, wp_pre_execute_ability, wp_ability_validate_input/output, wp_ability_permission_result, wp_before_execute_ability, wp_after_execute_ability), the WP 7.0+ client-side JS API (registerAbility, executeAbility, the core/abilities store), and exposing abilities to external AI agents via the MCP Adapter (Claude Desktop, Cursor, ChatGPT)."
-compatibility: "Targets WordPress 6.9+ (PHP 7.2.24+); sections marked WP 7.1+ describe APIs that do not exist on 6.9/7.0. MCP Adapter guidance tracks the current canonical release: v0.6.1 (requires PHP 7.4+). Filesystem-based agent with bash + node. Some workflows require WP-CLI."
+compatibility: "Targets WordPress 6.9+ (PHP 7.2.24+); sections marked WP 7.1+ describe APIs that do not exist on 6.9/7.0. The 7.1 surface was verified against the `7.1` branch at RC3, not a released build — core verified through: 7.0. MCP Adapter guidance tracks the current canonical release: v0.6.1 (requires PHP 7.4+). Filesystem-based agent with bash + node. Some workflows require WP-CLI."
 license: GPL-2.0-or-later
 ---
 
@@ -98,6 +98,16 @@ tell a user that `core/read-*` is available from core, and do not assume the two
 shape — contributors have discussed making `core/get-*` compatibility aliases, but that has not
 happened.
 
+**That migration was not behavior-preserving, and it is the cleanest worked example of the
+exposure trap in step 5.** On 7.0, `core/get-user-info` was registered with
+`'show_in_rest' => false`; on 7.1 it is registered with `'public' => true` and no override, which
+resolves to `show_in_rest: true`. An ability that was deliberately hidden from REST is now listed
+there, gated only by its `permission_callback` of `is_user_logged_in()` — and on MCP Adapter
+0.6.0+ it inherits MCP exposure as well, alongside `core/get-site-info` and
+`core/get-environment-info`. Cite this when someone treats `public` as a cosmetic refactor of
+`show_in_rest`: core made exactly that assumption in its own registrations and changed the
+exposure of one of the three. See `references/rest-api.md`.
+
 ### 5) Set exposure, and keep it separate from authorization
 
 Read `references/rest-api.md` for the resolution table and worked examples.
@@ -140,9 +150,15 @@ agents most often misuse are documented there. The load-bearing distinctions:
   value — including `null` — ends the call. Guard on the ability name and do your own capability
   check.
 - `wp_ability_validate_input` / `wp_ability_validate_output` run **after** built-in schema
-  validation and **extend** it. They cannot relax a schema rejection. Return `WP_Error`, not
+  validation, and what they return **replaces** its verdict — they do not merely extend it. A
+  callback that returns `true` without first guarding on `is_wp_error( $is_valid )` overturns the
+  schema rejection and the ability executes on invalid input, site-wide. Return `WP_Error`, not
   `false`, or the caller loses the reason. `wp_ability_validate_input` does not fire at all when
   the ability declares no `input_schema`.
+- A single REST `/run` request fires `wp_ability_normalize_input`, `wp_ability_validate_input`,
+  and `wp_ability_permission_result` **twice** — once in the route's permission callback, once
+  inside `execute()`. Keep callbacks on those three pure; meter on `wp_ability_invoked` or
+  `wp_after_execute_ability` instead.
 - `wp_ability_permission_result` fires wherever `check_permissions()` runs, not only during
   execution. Tighten with it; never widen. Through `execute()` a `WP_Error` is logged via
   `_doing_it_wrong()` and replaced by a generic denial, so the message never reaches an executing
@@ -182,7 +198,12 @@ If external agents (Claude Desktop, Cursor, ChatGPT) should be able to discover 
 
 ## Failure modes / debugging
 
-- Ability never appears:
+- Ability never appears — **turn on `WP_DEBUG` first.** `wp_register_ability()` never throws and
+  never returns `WP_Error`; every rejection ends in `_doing_it_wrong()` + `null`, which is
+  invisible in production. A registration that failed and an ability hidden by exposure metadata
+  look identical from REST, and only the first leaves a notice. Then check, in order:
+  - registration rejected (missing `permission_callback`, non-boolean `meta.public`, malformed or
+    duplicate ID, unregistered `category`) — see `references/php-registration.md`,
   - registration code not running (wrong hook / file not loaded),
   - neither `meta.public` (7.1+) nor `meta.show_in_rest` set, or an explicit `show_in_rest: false`
     overriding `public: true`,

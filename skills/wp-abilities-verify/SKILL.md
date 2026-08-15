@@ -139,8 +139,18 @@ not just their resolved value — then judge:
   unexposed one is only a WARN),
 - `meta.public: true` with no `meta.mcp.public` key → WARN, because MCP
   exposure is being inherited rather than declared,
-- `destructive: true` and effectively MCP-public without an explicit
-  allow-list decision in the audit → FAIL.
+- `destructive: true` and effectively MCP-public → FAIL when the audit
+  records `exposure.mcp: allow` for a *different* set of abilities or
+  contradicts the registration; WARN when no audit was supplied or the
+  audit predates the `exposure` field.
+
+The audit-versus-registration rules key off the `exposure` object
+(`agent_facing`, `mcp`, `rationale`) in the audit's `proposed_abilities`
+entries. That field was added to the canonical schema on 2026-08-15 and is
+optional for backwards compatibility, so an audit without it is a WARN
+about the audit — never a FAIL against the plugin, and never evidence
+that an ability is not agent-facing. Skip the subsection entirely when no
+audit was supplied, and say so in the report rather than passing silently.
 
 Resolution depends on versions: core applies
 `show_in_rest ?? public ?? false` from WP 7.1, and the MCP Adapter
@@ -193,8 +203,8 @@ Last updated: <YYYY-MM-DD HH:MM>
 ## Permission gates
 
 ## Exposure (WP <version>, MCP Adapter <version>)
-| Ability | public | show_in_rest | mcp.public | Effective REST | Effective MCP | Result |
-|---|---|---|---|---|---|---|
+| Ability | public | show_in_rest | mcp.public | Effective REST | Effective MCP | Audit | Result |
+|---|---|---|---|---|---|---|---|
 
 ## Schema lints
 

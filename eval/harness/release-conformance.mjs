@@ -7,6 +7,18 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+/** Numeric version compare. String comparison ranks "7.0.10" below "7.0.4". */
+function compareSemver(a, b) {
+  const pa = String(a).split(".").map((n) => Number.parseInt(n, 10) || 0);
+  const pb = String(b).split(".").map((n) => Number.parseInt(n, 10) || 0);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i += 1) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
 function read(repoRoot, relativePath) {
   return fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
 }
@@ -110,10 +122,26 @@ export function runReleaseConformance(repoRoot) {
   const core = readJson(repoRoot, "shared/references/wordpress-core-versions.json");
   const gutenberg = readJson(repoRoot, "shared/references/gutenberg-releases.json");
   const map = readJson(repoRoot, "shared/references/wp-gutenberg-version-map.json");
-  assert(core.latest === "7.0.2", "WordPress latest must be 7.0.2");
+  // The core index tracks a moving upstream. Pinning an exact version here
+  // guarantees the assertion goes stale and then blocks the very refresh it
+  // exists to protect — which is how this index sat at 7.0.2 while WordPress
+  // shipped 7.0.4. Assert shape and a floor instead, and leave "a new minor
+  // shipped, go re-verify the skills" to the drift gate in
+  // shared/scripts/check-upstream-drift.mjs, which reports it with the
+  // context needed to act on it.
+  const CORE_FLOOR = "7.0.4";
+  assert(typeof core.latest === "string", "WordPress core index must have a latest version string");
   assert(
-    core.recent.includes("6.9.5"),
-    "WordPress recent must include maintained release 6.9.5"
+    Array.isArray(core.recent) && core.recent[0] === core.latest,
+    "WordPress core index recent[] must be sorted newest-first and lead with latest"
+  );
+  assert(
+    compareSemver(core.latest, CORE_FLOOR) >= 0,
+    `WordPress latest must not regress below ${CORE_FLOOR} (found ${core.latest}) — refresh with shared/scripts/update-upstream-indices.mjs`
+  );
+  assert(
+    core.recent.some((v) => v.startsWith("6.9.")),
+    "WordPress recent must include the maintained 6.9 branch (the Abilities API floor)"
   );
   assert(gutenberg.latest?.tag === "v23.5.3", "Gutenberg latest must be v23.5.3");
   assert(map.note === null && map.rows.length > 0, "WP/Gutenberg map must be non-empty");

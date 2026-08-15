@@ -52,6 +52,50 @@ add_action( 'wp_abilities_api_init', function() {
 - `wp_register_ability_category( $category_id, $args )`
 - `wp_register_ability( $ability_id, $args )`
 
+## How a bad registration fails
+
+**It fails silently.** `wp_register_ability()` never throws and never returns a `WP_Error` — every
+rejection path in `WP_Abilities_Registry::register()` ends in `_doing_it_wrong()` followed by
+`return null`. That includes argument validation, which throws internally and is then swallowed:
+
+```php
+try {
+    // WP_Ability::prepare_properties() throws InvalidArgumentException if the properties are invalid.
+    $ability = new $ability_class( $name, $args );
+} catch ( InvalidArgumentException $e ) {
+    _doing_it_wrong( __METHOD__, $e->getMessage(), '6.9.0' );
+    return null;
+}
+```
+
+So a missing `permission_callback`, a non-boolean `meta.public`, a malformed ability name, a
+duplicate name, or an unregistered `category` all produce the same observable result: **the
+ability simply is not there.** No exception reaches your code, nothing appears in the REST
+listing, and `wp_get_ability()` returns `null`.
+
+Two consequences worth designing around:
+
+- **`_doing_it_wrong()` is the only signal, and it is invisible in production.** With `WP_DEBUG`
+  off, the notice is not displayed and — unless `WP_DEBUG_LOG` is on — not written anywhere. A
+  registration bug that a developer would have caught instantly on a debug site ships as a
+  feature that quietly does nothing.
+- **Do not write `try`/`catch` or `is_wp_error()` around `wp_register_ability()`.** Neither can
+  fire. If you need to know a registration succeeded, check the return value, which is the
+  `WP_Ability` on success and `null` on every failure:
+
+  ```php
+  add_action( 'wp_abilities_api_init', function () {
+      $ability = wp_register_ability( 'my-plugin/get-info', array( /* ... */ ) );
+      if ( null === $ability && defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+          error_log( '[my-plugin] ability my-plugin/get-info failed to register' );
+      }
+  } );
+  ```
+
+When debugging "my ability never appears", turn on `WP_DEBUG` **before** investigating exposure
+metadata. A registration that never happened and an ability hidden by `show_in_rest` look
+identical from the REST endpoint, and only the first one leaves a notice.
+
 ## Key arguments for `wp_register_ability()`
 
 | Argument | Required? | Description |
@@ -60,13 +104,13 @@ add_action( 'wp_abilities_api_init', function() {
 | `description` | **Required** | What the ability does. |
 | `category` | **Required** | Category ID (must be registered first via `wp_abilities_api_categories_init`). |
 | `execute_callback` | **Required** | Function that runs when the ability is invoked. Receives mixed input (per `input_schema`), returns mixed result or `WP_Error`. |
-| `permission_callback` | **Required** | Function that checks whether the current user may execute. Receives the same mixed input as `execute_callback`; returns `bool` or `WP_Error`. WP core throws `InvalidArgumentException` if this is missing — there is no implicit default. |
+| `permission_callback` | **Required** | Function that checks whether the current user may execute. Receives the same mixed input as `execute_callback`; returns `bool` or `WP_Error`. There is no implicit default — omitting it means the ability is never registered (see "How a bad registration fails"). |
 | `input_schema` | Optional | JSON Schema for expected input (enables validation). Required when the ability accepts input. |
 | `output_schema` | Optional | JSON Schema for returned output (enables validation of the result). |
 | `meta.public` | Optional (default `false`, **WP 7.1+**) | General "this ability is meant for clients" declaration. Channel keys override it. Core resolves `show_in_rest = meta.show_in_rest ?? meta.public ?? false`. Has no effect on WP 6.9/7.0 core, but the MCP Adapter reads it on those versions too. |
 | `meta.show_in_rest` | Optional (default `false`) | Per-channel override for the `wp-abilities/v1` REST API namespace. On 7.1+ an explicit value always beats `meta.public`, in both directions. |
 | `meta.mcp.public` | Optional (default: `meta.public` on adapter 0.6.0+, `false` before) | Set `true` to expose the ability as a tool via the WordPress MCP adapter, or `false` to opt a `public` ability out. |
-| `meta.mcp.type` | Optional (default `'tool'`) | One of `'tool'`, `'resource'`, `'prompt'`. Controls how the bundled MCP adapter projects the ability. Values outside this enum silently coerce to `'tool'`. |
+| `meta.mcp.type` | Optional (default `'tool'`) | One of `'tool'`, `'resource'`, `'prompt'`. Controls how the MCP adapter projects the ability. A typo does **not** fail loudly — it lands the ability back on the tool path. See "`meta.mcp.type`: a typo becomes a tool" in `mcp-exposure.md`. |
 | `meta.annotations.readonly` | **Strongly recommended** (default `null`) | `true` if the ability does not modify its environment. |
 | `meta.annotations.destructive` | **Strongly recommended** (default `null`) | `true` if the ability may perform destructive updates. `false` for additive-only updates. |
 | `meta.annotations.idempotent` | **Strongly recommended** (default `null`) | `true` if calling the ability repeatedly with the same arguments has no additional effect. |
@@ -127,7 +171,8 @@ core. Both statements are now wrong; do not carry them forward.
 
 The Abilities API is **core** from WordPress 6.9 onward — `wp-includes/abilities-api.php` plus
 `wp-includes/abilities-api/`. The `WordPress/abilities-api` feature plugin that preceded it was
-archived on 5 February 2026 and is read-only; its last release was 0.2.0. Do not install it, and
+archived on 5 February 2026 and is read-only; its last tagged release was the `v0.5.0-rc`
+prerelease (14 November 2025), and its last stable release was `v0.4.0`. Do not install it, and
 do not treat it as a back-compat shim for WP < 6.9 — MCP Adapter 0.6.0 dropped support for that
 path explicitly. Projects that must run below 6.9 should feature-detect
 (`function_exists( 'wp_register_ability' )`) and degrade rather than vendoring the archived

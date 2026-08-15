@@ -72,6 +72,41 @@ Two orderings surprise people:
   reshapes the result can push it out of conformance with `output_schema` and turn a working
   ability into `ability_invalid_output`.
 
+### One REST run request runs part of the chain twice
+
+The chain above describes a single `execute()` call. A request to
+`/wp-abilities/v1/abilities/{name}/run` produces **two** partial passes, because the route's
+`permission_callback` re-does the work before the route callback ever calls `execute()`:
+
+```php
+// WP_REST_Abilities_V1_Run_Controller::check_ability_permissions() — the permission_callback.
+$input    = $ability->normalize_input( $input );   // fires wp_ability_normalize_input
+$is_valid = $ability->validate_input( $input );    // fires wp_ability_validate_input
+$result   = $ability->check_permissions( $input ); // fires wp_ability_permission_result
+
+// WP_REST_Abilities_V1_Run_Controller::execute_ability() — the route callback.
+$result = $ability->execute( $input );             // fires all three again, inside execute()
+```
+
+Per REST run request:
+
+| Hook | Times fired |
+|---|---|
+| `wp_ability_normalize_input` | **2** |
+| `wp_ability_validate_input` | **2** |
+| `wp_ability_permission_result` | **2** |
+| every other hook in the chain | 1 |
+
+This is a correctness trap for exactly the use cases these filters attract. A rate limiter, audit
+row, or usage counter hung on `wp_ability_permission_result` records two events per REST call and
+one per WP-CLI or direct-PHP call — so the same policy produces different numbers depending on
+transport. An expensive `wp_ability_normalize_input` callback (a remote lookup, a cache warm)
+pays its cost twice.
+
+Keep callbacks on these three filters **pure** — decide and return, never meter or mutate. Put
+counting on `wp_ability_invoked` (once per attempt) or `wp_after_execute_ability` (once per
+success), both of which fire exactly once regardless of transport.
+
 ## Signatures
 
 ```php
@@ -211,12 +246,31 @@ add_filter( 'wp_ability_permission_result', function ( $permission, $name, $inpu
 Tightening is safe; widening is not. A filter that returns `true` unconditionally silently
 disables every permission callback on the site.
 
-### `wp_ability_validate_input` / `wp_ability_validate_output` — additive only
+### `wp_ability_validate_input` / `wp_ability_validate_output` — the last word, not an add-on
 
-Both run **after** the built-in `rest_validate_value_from_schema()` pass, and receive its
-verdict as `$is_valid`. They extend schema validation; they cannot relax it. If the schema
-already rejected the value, `$is_valid` arrives as a `WP_Error` and returning `true` does not
-resurrect the call.
+Both run **after** the built-in `rest_validate_value_from_schema()` pass and receive its verdict
+as `$is_valid` — but what they *return* **replaces** that verdict rather than adding to it.
+Nothing re-checks the schema afterwards:
+
+```php
+$validity = apply_filters( 'wp_ability_validate_input', $is_valid, $input, $this->name );
+if ( false === $validity ) {
+    return new WP_Error( 'ability_invalid_input', __( 'Invalid input.' ) );
+}
+if ( is_wp_error( $validity ) && $validity->has_errors() ) {
+    return $validity;
+}
+return true;
+```
+
+A callback that returns `true` when `$is_valid` arrived as a `WP_Error` makes `validate_input()`
+return `true`, and the ability then executes on input the schema rejected. Core's own docblock
+says so outright: the filter "can add additional error information **or override it**."
+`validate_output()` has the identical shape.
+
+So treat built-in schema validation as a **default, not a floor**. Any callback on these two
+filters can lower it for every ability on the site, which is what makes the `is_wp_error()` guard
+below mandatory rather than stylistic.
 
 Use them for rules JSON Schema cannot express: cross-field constraints, database existence
 checks, business rules.
@@ -241,10 +295,12 @@ Return `true` to accept, or a `WP_Error` to reject with a useful message. Return
 `ability_invalid_input` / `ability_invalid_output` error — the caller loses any explanation of
 what went wrong. Prefer `WP_Error`.
 
-Guard on `is_wp_error( $is_valid )` early, as above: without it, a callback that unconditionally
-returns `true` overturns the schema verdict for every ability on the site.
+**Always guard on `is_wp_error( $is_valid )` first, as in the example above, and return it
+unchanged.** A callback that skips the guard and unconditionally returns `true` silently disables
+`input_schema` enforcement for every ability on the site — including abilities belonging to other
+plugins.
 
-Three asymmetries between the two, all of which have bitten people:
+Four asymmetries and edge cases, all of which have bitten people:
 
 - **`wp_ability_validate_input` does not always fire.** `validate_input()` returns early when the
   ability declares no `input_schema` — `true` if the input is `null`, otherwise an
@@ -252,8 +308,11 @@ Three asymmetries between the two, all of which have bitten people:
   on a schema-less ability silently never runs. `validate_output()` has no such bypass: an empty
   `output_schema` still reaches the filter with `$is_valid` as `true`.
 - **The rejection test is strict `false ===`.** A callback returning `0`, `''`, or `null` does not
-  reject — those fall through and the value is treated as valid. Only literal `false` and
-  `WP_Error` reject.
+  reject — those fall through and the value is treated as valid. Only literal `false` and a
+  `WP_Error` carrying at least one error code reject.
+- **An empty `WP_Error` does not reject.** The test is
+  `is_wp_error( $validity ) && $validity->has_errors()`, so a bare `new WP_Error()` built without
+  a code passes as valid. Always construct the error with a code and message.
 - **Neither filter receives the `WP_Ability` object.** Their third argument is the ability *name*
   string. Call `wp_get_ability( $name )` if you need the object.
 
@@ -297,8 +356,16 @@ Symptoms and where to look:
   counts attempts. Move success metering to `wp_after_execute_ability`.
 - **Custom input validation never runs** — the ability declares no `input_schema`, so
   `validate_input()` returns before reaching `wp_ability_validate_input`. Add a schema.
-- **A validation filter appears to be ignored** — it returned `0`, `''`, or `null`. The check is
-  strict `false ===`; return literal `false` or a `WP_Error`.
+- **A validation filter appears to be ignored** — it returned `0`, `''`, or `null`, or a
+  `WP_Error` with no code. The checks are strict `false ===` and `has_errors()`; return literal
+  `false` or a fully-constructed `WP_Error`.
+- **Input the schema should have rejected reaches the execute callback** — a
+  `wp_ability_validate_input` callback returned `true` without first guarding on
+  `is_wp_error( $is_valid )`, so its return value replaced the schema's rejection.
+- **A policy or counter on a validation/permission filter double-counts, but only over REST** —
+  `wp_ability_normalize_input`, `wp_ability_validate_input`, and `wp_ability_permission_result`
+  each fire twice per `/run` request and once per direct call. Move metering to
+  `wp_ability_invoked` or `wp_after_execute_ability`.
 - **`ArgumentCountError` on every ability call after deploying to an older site** — a
   `wp_before_execute_ability` or `wp_after_execute_ability` callback declares the 7.1 arity on a
   6.9/7.0 site. Default the trailing `$ability` parameter.
@@ -308,6 +375,9 @@ Symptoms and where to look:
 
 ## Sources
 
-- Core source: `src/wp-includes/abilities-api/class-wp-ability.php` (`@since 7.1.0` markers)
+- Core source: `src/wp-includes/abilities-api/class-wp-ability.php` (`@since 7.1.0` markers).
+  Read it on the **`7.1` branch**, not `trunk` — trunk is 7.2-alpha and no longer describes 7.1.
+- Core source: `src/wp-includes/rest-api/endpoints/class-wp-rest-abilities-v1-run-controller.php`
+  — the authority on what a REST run request does *around* `execute()`.
 - Dev note: https://make.wordpress.org/core/2026/07/31/abilities-api-improvements-in-wordpress-7-1/
   (Trac #64311, #65248)
