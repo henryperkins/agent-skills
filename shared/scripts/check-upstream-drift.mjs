@@ -22,6 +22,19 @@ const CHECKS = [
     skillPattern: /current canonical release:\s*v?(\d+(?:\.\d+)+)/,
     hint: "Re-sync skills/wp-ai-plugin to the newer release (verify against the tagged source per docs/upstream-sync.md), then bump the 'current canonical release' marker in its SKILL.md compatibility line.",
   },
+  {
+    // The adapter is versioned independently of core and has already reversed
+    // its ability-exposure default once (0.6.0 made `meta.public` grant MCP
+    // exposure). Guidance written against an older adapter is not merely stale,
+    // it inverts a security-relevant default — so this surface needs a gate.
+    name: "wp-abilities-api vs WordPress/mcp-adapter releases",
+    indexFile: "shared/references/mcp-adapter-releases.json",
+    skillFile: "skills/wp-abilities-api/SKILL.md",
+    // Matches the frontmatter compatibility line, e.g.
+    // "current canonical release: v0.6.1".
+    skillPattern: /current canonical release:\s*v?(\d+(?:\.\d+)+)/,
+    hint: "Re-verify skills/wp-abilities-api against the newer MCP Adapter release — especially McpAbilityExposure::is_public() and create_server() — then update references/mcp-exposure.md and bump the 'current canonical release' marker in the SKILL.md compatibility line.",
+  },
 ];
 
 function parseVersion(value) {

@@ -235,7 +235,7 @@ function AbilitiesList() {
 }
 ```
 
-Use the imported `store` constant rather than referencing the store by string name. The string key differs by environment: the standalone `WordPress/abilities-api` plugin registers it as `'abilities-api/abilities'`; the WP 7.0 dev note documents it as `'core/abilities'`. Importing `store` sidesteps the discrepancy.
+Use the imported `store` constant rather than referencing the store by string name. The canonical key is `'core/abilities'` — that is what the WP 7.0 dev note documents and what `@wordpress/abilities` registers. You may still meet `'abilities-api/abilities'` in older code: that was the key used by the standalone `WordPress/abilities-api` feature plugin, archived in February 2026 once the API landed in core. Importing `store` keeps that history from mattering.
 
 ## Executing
 

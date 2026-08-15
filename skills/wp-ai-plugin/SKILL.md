@@ -12,7 +12,7 @@ license: GPL-2.0-or-later
 Use this skill when the task involves:
 
 - adding a new Experiment to the canonical AI plugin (a content-classification experiment, a new editorial workflow, a custom suggestion type),
-- pairing the Experiment with a registered Ability so it's reachable via the Abilities API and REST, and deliberately controlling effective MCP exposure (explicit `meta.mcp.public` wins; otherwise MCP Adapter 0.5.0 inherits `meta.public`),
+- pairing the Experiment with a registered Ability so it's reachable via the Abilities API and REST, and deliberately controlling effective MCP exposure (explicit `meta.mcp.public` wins; otherwise MCP Adapter 0.6.0+ inherits `meta.public`, while 0.5.0 and earlier ignore it),
 - opting into Guidelines so the Experiment respects site editorial standards,
 - customizing the AI plugin's behavior in your own plugin via its hooks/filters (prompt overrides, response filtering, feature visibility),
 - diagnosing "my Experiment doesn't appear in Settings → AI" or "the plugin works but my filter never fires".

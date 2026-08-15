@@ -1,0 +1,32 @@
+{
+  "name": "Audit ability usage with WordPress 7.1 lifecycle hooks",
+  "skills": ["wordpress-router", "wp-project-triage", "wp-abilities-api"],
+  "query": "WordPress 7.1 site. Compliance wants an audit trail of which abilities each user actually ran, and product wants a per-customer usage meter we bill against. I found the wp_ability_invoked action — can I hang both off that single hook and be done?",
+  "expected_behavior": [
+    "Step 1: Run wordpress-router to classify repo kind",
+    "Step 2: Run wp-project-triage to detect plugin structure and confirm the site is on WordPress 7.1",
+    "Step 3: Route to wp-abilities-api and read references/execution-lifecycle.md before writing hooks",
+    "Step 4: Correct the premise — wp_ability_invoked fires first in WP_Ability::execute(), before input normalization, before schema validation, and before the permission callback",
+    "Step 5: State that wp_ability_invoked therefore records an attempt, and still fires for invalid input, for callers the permission callback denies, and for calls a wp_pre_execute_ability filter short-circuits",
+    "Step 6: Refuse to meter billing on wp_ability_invoked because it over-counts calls the ability never served",
+    "Step 7: Split the two requirements across two hooks — wp_ability_invoked for the attempt-level compliance trail, wp_after_execute_ability for the billable success signal",
+    "Step 8: Note that wp_after_execute_ability is the only hook that fires exclusively after output validation passed, and that wp_before_execute_ability is the right hook when the callback ran but the output may still fail validation",
+    "Step 9: Use the correct callback signatures and accepted_args — wp_ability_invoked receives name, input, ability (3 args) and wp_after_execute_ability receives name, input, result, ability (4 args)",
+    "Step 10: Distinguish the two version stories rather than calling the whole lifecycle new — wp_ability_invoked is new in 7.1 and simply never fires on 7.0, while wp_after_execute_ability has existed since 6.9 and only gained the trailing ability argument in 7.1",
+    "Step 11: Warn that a wp_after_execute_ability callback declaring four required parameters raises ArgumentCountError on 6.9 or 7.0, and default the trailing parameter if the plugin supports those versions",
+    "Step 12: Verify by triggering one denied call and one successful call and confirming the attempt log records both while the usage meter increments only once"
+  ],
+  "success_criteria": [
+    "Routes to wp-abilities-api and consults references/execution-lifecycle.md",
+    "States that wp_ability_invoked fires before validation and before the permission callback",
+    "Explicitly identifies wp_ability_invoked as an attempt signal, not a success signal",
+    "Does not attach usage metering or billing to wp_ability_invoked",
+    "Uses wp_after_execute_ability for the success and billing surface",
+    "Names at least two distinct cases where wp_ability_invoked fires without the ability executing",
+    "Passes the correct accepted_args count for each hook and does not reuse one signature for both",
+    "Does not invent a hook name or use a filter where the API provides an action",
+    "Does not assert that every lifecycle hook is new in 7.1 — identifies wp_after_execute_ability as pre-existing since 6.9 with an added argument",
+    "Surfaces the ArgumentCountError risk of the 7.1 arity on a 6.9 or 7.0 site",
+    "Provides a verification step that distinguishes the denied call from the successful call"
+  ]
+}

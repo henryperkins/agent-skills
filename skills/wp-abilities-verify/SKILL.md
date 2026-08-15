@@ -1,6 +1,6 @@
 ---
 name: wp-abilities-verify
-description: Use when verifying a WordPress plugin's Abilities API registrations, callback behavior, permissions, schemas, annotations, or an audit produced by wp-abilities-audit.
+description: Use when verifying a WordPress plugin's Abilities API registrations, callback behavior, permissions, exposure metadata (meta.public / show_in_rest / meta.mcp.public), schemas, annotations, or an audit produced by wp-abilities-audit.
 compatibility: "Targets WordPress 6.9+ plugins (PHP 7.2.24+). Requires a runnable environment (wp-env, docker-based dev stack, or equivalent) for runtime mode; static mode runs entirely from the plugin checkout with no env. Filesystem-based agent with bash + node."
 license: GPL-2.0-or-later
 ---
@@ -129,7 +129,27 @@ denied; admin allowed (unless deliberately public). When an audit was
 provided, cross-check the registered cap against the audit's declared
 gate.
 
-### 6. Schema lints
+### 6. Exposure
+
+Read `references/exposure-checks.md`. Record each ability's raw exposure keys
+(`meta.public`, `meta.show_in_rest`, `meta.mcp.public`) as present/absent —
+not just their resolved value — then judge:
+
+- an exposed ability with a weak permission callback → FAIL (an
+  unexposed one is only a WARN),
+- `meta.public: true` with no `meta.mcp.public` key → WARN, because MCP
+  exposure is being inherited rather than declared,
+- `destructive: true` and effectively MCP-public without an explicit
+  allow-list decision in the audit → FAIL.
+
+Resolution depends on versions: core applies
+`show_in_rest ?? public ?? false` from WP 7.1, and the MCP Adapter
+applies `mcp.public ?? public ?? false` from 0.6.0 (earlier adapters
+read `mcp.public` alone). Establish both versions before computing an
+effective verdict, and state them in the report section — a verdict
+computed against the wrong adapter version reads as false confirmation.
+
+### 7. Schema lints
 
 Read `references/schema-lints.md`. Six small principles applied to
 each ability's `input_schema`: object schemas declare
@@ -142,7 +162,7 @@ for the four runtime gotchas (defaults not injected on the
 property-level path, pagination key drift, `empty()` on string IDs,
 direct vs indirect invocation strictness).
 
-### 7. Error-code vocabulary
+### 8. Error-code vocabulary
 
 Cross-reference `../wp-abilities-api/references/error-code-vocabulary.md`.
 Inspect each callback's `WP_Error` returns; non-vocabulary codes →
@@ -171,6 +191,10 @@ Last updated: <YYYY-MM-DD HH:MM>
 |---|---|---|---|
 
 ## Permission gates
+
+## Exposure (WP <version>, MCP Adapter <version>)
+| Ability | public | show_in_rest | mcp.public | Effective REST | Effective MCP | Result |
+|---|---|---|---|---|---|---|
 
 ## Schema lints
 

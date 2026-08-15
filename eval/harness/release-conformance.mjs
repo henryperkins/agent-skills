@@ -195,6 +195,13 @@ export function runReleaseConformance(repoRoot) {
     "WP\\MCP\\Transport\\HttpTransport",
     "WP\\MCP\\Infrastructure\\ErrorHandling\\ErrorLogMcpErrorHandler",
     "WP\\MCP\\Infrastructure\\Observability\\NullMcpObservabilityHandler",
+    // Adapter 0.6.0 reversed the default: an absent meta.mcp.public now
+    // inherits meta.public. Guidance that omits this understates the MCP
+    // surface, so the reversal must stay documented.
+    "Current release: 0.6.1",
+    "McpAbilityExposure::is_public()",
+    "@since 0.6.0",
+    "verified in v0.6.1",
   ]);
   requireExcludes(repoRoot, "skills/wp-abilities-api/references/mcp-exposure.md", [
     "discover and call every server-registered ability",
@@ -202,18 +209,62 @@ export function runReleaseConformance(repoRoot) {
     "WP\\MCP\\Transport\\Http\\HttpTransport",
     "ErrorHandling\\Implementations",
     "Observability\\Implementations",
+    // Pre-0.6.0 claims. Both are now false and the second is security-relevant.
+    "ships in no release as of 0.5.0",
+    "is not a key the core Abilities API defines",
   ]);
   requireIncludes(repoRoot, "skills/wp-abilities-api/SKILL.md", [
-    "MCP Adapter 0.5.0 requires PHP 7.4+",
+    "MCP Adapter 0.6.1 requires PHP 7.4+",
+    "current canonical release: v0.6.1",
     "upgrade the site runtime or stop before installing the adapter",
     "Read `references/mcp-exposure.md` before giving installation, bootstrap, or server code.",
     "composer require automattic/jetpack-autoloader",
     "vendor/autoload_packages.php",
+    "meta.mcp.public ?? meta.public ?? false",
+    "references/execution-lifecycle.md",
+  ]);
+  requireExcludes(repoRoot, "skills/wp-abilities-api/SKILL.md", [
+    "released adapter 0.5.0 reads that key and nothing else",
+    // The feature plugin was archived 2026-02-05; core is the only source.
+    "you may need the Abilities API plugin/package rather than relying on core",
+  ]);
+  // WP 7.1 defines meta.public in core (WP_Ability::DEFAULT_PUBLIC), resolved
+  // in prepare_properties(). The registration reference must not deny it.
+  requireIncludes(repoRoot, "skills/wp-abilities-api/references/php-registration.md", [
+    "DEFAULT_PUBLIC",
+    "prepare_properties()",
+    "meta.public",
+    "archived on 5 February 2026",
+  ]);
+  requireExcludes(repoRoot, "skills/wp-abilities-api/references/php-registration.md", [
+    "Released adapter 0.5.0 consults no other key",
+    "is not a key the core Abilities API defines",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-abilities-api/references/rest-api.md", [
+    "/wp-abilities/v1/abilities/{name}/run",
+    "meta.mcp.public ?? meta.public ?? false",
+    "wp_get_abilities( array $args = array() ): array",
+    "Exposure is not authorization",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-abilities-api/references/execution-lifecycle.md", [
+    "wp_ability_invoked",
+    "wp_pre_execute_ability",
+    "WP_Filter_Sentinel",
+    "ArgumentCountError",
+    "wp_ability_permission_result",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-abilities-verify/references/exposure-checks.md", [
+    "meta.mcp.public ?? meta.public ?? false",
+    "adapter 0.6.0",
+  ]);
+  requireExcludes(repoRoot, "skills/wp-ai-plugin/references/experiments-framework.md", [
+    "MCP Adapter 0.5.0 uses explicit",
   ]);
   requireIncludes(repoRoot, "eval/scenarios/abilities-mcp-expose.json", [
     "PHP 7.4+",
     "composer require automattic/jetpack-autoloader",
     "vendor/autoload_packages.php",
+    "meta.mcp.public ?? meta.public ?? false",
   ]);
   requireExcludes(repoRoot, "skills/wp-abilities-api/references/client-side.md", [
     "currentUserCan(",

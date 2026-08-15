@@ -179,7 +179,7 @@ The `ability_class` key is the AI plugin's convention — it points to a class e
 - `category(): string` (defaults to `WPAI_DEFAULT_ABILITY_CATEGORY`)
 - `guideline_categories(): array` (optional, for Guidelines integration)
 
-The Ability is what the Abilities API exposes — reachable via REST when its `meta` sets `show_in_rest => true` (as the canonical abilities do). MCP exposure is separate from REST visibility but is not determined solely by the nested MCP flag: MCP Adapter 0.5.0 uses explicit `meta.mcp.public` when present and otherwise inherits high-level `meta.public`. Set `meta.mcp.public => false` when a public Ability must remain unavailable through the default MCP server. The Experiment is the Settings → AI surface.
+The Ability is what the Abilities API exposes — reachable via REST when its `meta` sets `show_in_rest => true` (as the canonical abilities do). MCP exposure is separate from REST visibility but is not determined solely by the nested MCP flag: **MCP Adapter 0.6.0+** (`McpAbilityExposure::is_public()`) uses explicit `meta.mcp.public` when present and otherwise inherits high-level `meta.public`. Adapter 0.5.0 and earlier read `meta.mcp.public` alone and never inherit — check which version the site runs before reasoning about effective exposure. Set `meta.mcp.public => false` when a public Ability must remain unavailable through the default MCP server. The Experiment is the Settings → AI surface.
 
 ## Promotion path
 

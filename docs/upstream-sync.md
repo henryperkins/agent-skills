@@ -26,7 +26,7 @@ This keeps automation deterministic and reviewable before it starts rewriting sk
 
 - `shared/scripts/update-upstream-indices.mjs`
   - Fetches upstream sources and rewrites JSON indexes in `shared/references/`.
-  - Covers WordPress core versions, Gutenberg releases, WordPress/ai (canonical AI plugin) releases, and the WP↔Gutenberg mapping.
+  - Covers WordPress core versions, Gutenberg releases, WordPress/ai (canonical AI plugin) releases, WordPress/mcp-adapter releases, and the WP↔Gutenberg mapping.
 - `shared/scripts/check-upstream-drift.mjs`
   - Offline check (run by `eval/harness/run.mjs` and therefore CI): compares the committed release indexes against the canonical release each skill declares (e.g. the `current canonical release: vX.Y.Z` marker in `skills/wp-ai-plugin/SKILL.md`).
   - When the Upstream Sync workflow's refresh PR lands a newer release, CI turns red until the affected skill is re-synced against the tagged source and its marker is bumped. This converts "someone notices the skill is stale" into a forced, reviewable follow-up.
@@ -55,4 +55,28 @@ The automation should prefer canonical sources and avoid scraping where possible
 - WordPress core releases and API endpoints (official WordPress APIs)
 - Gutenberg releases (GitHub releases)
 - WordPress developer docs (used for the WP↔Gutenberg mapping when no API exists)
+
+### Abilities API specifically
+
+The Abilities API is core from WordPress 6.9. Its canonical sources, in priority order:
+
+1. **Core source** — `src/wp-includes/abilities-api.php` and `src/wp-includes/abilities-api/`
+   in `WordPress/wordpress-develop`. The `@since` tags are the authority on which surface belongs
+   to which release.
+2. **Make/Core dev notes** — the per-release notes carry the rationale and the Trac tickets.
+3. **`developer.wordpress.org/apis/abilities-api/`** — the handbook; correct but less current than
+   the source during a release cycle.
+4. **Gutenberg `packages/abilities` and `packages/core-abilities`** for the client-side API.
+
+Two adjacent projects version independently and must be tracked separately:
+
+- **`WordPress/mcp-adapter`** — not core, ships no part of WordPress. It has already reversed an
+  ability-exposure default once (0.6.0), so a stale pin here inverts security-relevant guidance
+  rather than merely aging. `check-upstream-drift.mjs` gates it against the marker in
+  `skills/wp-abilities-api/SKILL.md`.
+- **`WordPress/ai`** — hosts abilities proposed for core but not yet merged.
+
+The **`WordPress/abilities-api` feature plugin is archived** (5 February 2026, read-only, last
+release 0.2.0). It is not a source for current behavior and must not be recommended as a
+pre-6.9 shim.
 

@@ -2,7 +2,24 @@
 
 The MCP Adapter (`WordPress/mcp-adapter`) bridges the Abilities API to the Model Context Protocol, letting external AI agents (Claude Desktop, Claude Code, Cursor, ChatGPT) discover and execute WordPress abilities as MCP tools, resources, and prompts.
 
-The adapter is a separate Composer package and plugin. WordPress 7.0 ships the Abilities API in core but does **not** ship the adapter. The base Abilities skill supports PHP 7.2.24+, but MCP Adapter 0.5.0 requires PHP `^7.4 || ^8.0`. On PHP 7.2 or 7.3, stop before installation: upgrade the site runtime to PHP 7.4+ or do not enable MCP exposure.
+The adapter is a separate Composer package and plugin. WordPress ships the Abilities API in core
+from 6.9 onward but does **not** ship the adapter. The base Abilities skill supports PHP 7.2.24+,
+but the adapter requires PHP `^7.4 || ^8.0`. On PHP 7.2 or 7.3, stop before installation: upgrade
+the site runtime to PHP 7.4+ or do not enable MCP exposure.
+
+**Current release: 0.6.1.** Verify against the version the project actually pulls in — this
+package moves faster than core, and 0.6.0 changed both the exposure default and the minimum
+platform:
+
+- **WordPress 6.9+ is now required**, and the standalone `WordPress/abilities-api` plugin is no
+  longer a supported installation path (that repository was archived in February 2026; the API
+  lives in core).
+- **`meta.public` now grants MCP exposure** unless `meta.mcp.public` opts out — see below. This
+  reverses the 0.5.0 rule and is the single most important thing to get right in a registration.
+- On multisite, session storage moved from a network-wide key to per-site keys, so active
+  Streamable HTTP sessions must reconnect once after upgrading.
+- `_meta` is preserved on resource contents, embedded resources, content blocks, and prompt
+  messages; resource URIs now match case-insensitively.
 
 ## Installation
 
@@ -25,7 +42,7 @@ For local exploration / smoke testing, the standalone plugin zip from the [adapt
 
 Once the adapter is loaded:
 
-1. The default server's `discover-abilities`, `get-ability-info`, and `execute-ability` abilities only surface registered abilities whose `meta.mcp.public` value is strictly `true`.
+1. The default server's `discover-abilities`, `get-ability-info`, and `execute-ability` abilities only surface registered abilities that resolve to MCP-public — on 0.6.0+ that means `meta.mcp.public` when set, otherwise `meta.public` (see the resolution rules below).
 2. A custom server may explicitly list selected ability IDs as tools, resources, or prompts; that selection does not bypass each ability's `permission_callback`.
 3. The adapter respects the ability's `permission_callback` at execution — agents can only invoke what the authenticated user is authorized to do.
 4. The ability's `input_schema` and `output_schema` translate directly into the MCP tool's input and output schemas.
@@ -44,18 +61,49 @@ Mark an ability public for the default-server flow only after reviewing it for e
 ),
 ```
 
-`meta.mcp.public` controls default-server discovery, not authorization. A well-shaped ability still needs a namespaced ID, label, description, schemas, permission callback, and accurate annotations.
+MCP exposure controls default-server discovery, not authorization. A well-shaped ability still needs a namespaced ID, label, description, schemas, permission callback, and accurate annotations.
 
-**Set `meta.mcp.public` explicitly — do not rely on a fallback.** In released 0.5.0 this key is the only input to the decision:
+## Exposure resolution — the 0.6.0 reversal
 
-```php
-// McpAbilityHelperTrait::is_ability_mcp_public(), v0.5.0
-return (bool) ( $meta['mcp']['public'] ?? false );
+**This changed, and it changed in the dangerous direction.** Adapter 0.6.0 introduced
+`McpAbilityExposure::is_public()` (tagged `@since 0.6.0`), which resolves:
+
+```
+meta.mcp.public  ?? meta.public  ?? false
 ```
 
-There is no inheritance from any higher-level flag, and `meta.public` is not a key the core Abilities API defines. An ability that omits `meta.mcp.public` is registered but invisible to MCP clients through the default server.
+An explicit `meta.mcp.public` still wins in both directions; a malformed `meta.mcp` fails
+closed. But an *absent* `meta.mcp.public` now inherits the general-purpose `meta.public` flag
+that WP 7.1 adds for REST exposure.
 
-Unreleased adapter trunk moves this decision into `McpAbilityExposure::is_public()`, where an explicit `meta.mcp.public` still wins but an absent one falls back to a high-level `meta.public` flag (malformed `meta.mcp` fails closed). That class is tagged `@since n.e.x.t` and ships in no release as of 0.5.0. Writing `meta.mcp.public` explicitly is correct under both, which is why it is the guidance here.
+| Registration | ≤ 0.5.0 | 0.6.0+ |
+|---|---|---|
+| `mcp.public: true` | exposed | exposed |
+| `mcp.public: false` | hidden | hidden |
+| `public: true`, no `mcp.public` | **hidden** | **exposed** |
+| `public: true`, `mcp.public: false` | hidden | hidden |
+| neither key | hidden | hidden |
+
+The third row is the trap. An author who sets `public => true` purely to get an ability onto
+the `wp-abilities/v1` REST namespace also publishes it to the default MCP server on any site
+running a current adapter — and the adapter honors `meta.public` on WordPress 6.9 and 7.0 too,
+where core itself still ignores that key for REST. The exposure can therefore precede the REST
+behavior the author was actually aiming for.
+
+This is a discoverability change, not an authorization hole: every execution still runs the
+ability's `permission_callback`. But the default server's own gate is `read` (see the table
+below), so "discoverable by any Subscriber" is the realistic blast radius.
+
+Practical rules:
+
+- **Set `meta.mcp.public` explicitly on every ability whose MCP status matters.** It is the one
+  key that means the same thing on every adapter version, and it is self-documenting at the
+  registration site.
+- **When adding `public => true` for REST, decide MCP in the same edit.** If the ability should
+  not reach agents, write `'mcp' => array( 'public' => false )` alongside it.
+- **Auditing an existing plugin against a 0.6.0+ upgrade:** the newly-exposed set is every
+  ability with `meta.public` truthy and no `meta.mcp.public` key. See the
+  `wp_get_abilities()` recipe in `rest-api.md`.
 
 ## Default server vs custom server
 
@@ -67,7 +115,7 @@ On activation, the adapter registers a default MCP server (`mcp-adapter-default-
 
 (Ability names follow the `namespace/ability` convention — slash, not hyphen, between the two parts. They register inside the `mcp-adapter` ability namespace.)
 
-This is enough for most use cases when the abilities intended for agent access are explicitly marked `meta.mcp.public => true`. The default server's discovery, get, and execute flow excludes every other registered ability.
+This is enough for most use cases when the abilities intended for agent access are explicitly marked `meta.mcp.public => true`. The default server's discovery, get, and execute flow excludes every other registered ability — remembering that on 0.6.0+ "every other" no longer includes abilities carrying `meta.public => true`.
 
 Each of the three requires a logged-in user and then a capability that also defaults to `'read'`:
 
@@ -79,7 +127,7 @@ Each of the three requires a logged-in user and then a capability that also defa
 
 So on a stock install a Subscriber can enumerate every effectively MCP-public ability and attempt to execute it. Each target ability's own `permission_callback` is the final operation-specific authorization check. Raise these baseline capabilities before relying on the default server anywhere but a local site.
 
-For finer control (exposing only a subset, separating tool/resource/prompt categorization, server-level metadata), register a custom server. **`create_server()` has 13 parameters in current source (v0.5.0+); the 7th is required and takes an array of transport class names, not a config array.** The signature and convention follow what `DefaultServerFactory::create()` does internally:
+For finer control (exposing only a subset, separating tool/resource/prompt categorization, server-level metadata), register a custom server. A custom server with an explicit allow-list is also the cleanest way to stay insulated from the 0.6.0 exposure default. **`create_server()` has 13 parameters (verified in v0.6.1); the 7th is required and takes an array of transport class names, not a config array.** The signature and convention follow what `DefaultServerFactory::create()` does internally:
 
 ```php
 use WP\MCP\Core\McpAdapter;
@@ -236,6 +284,7 @@ For a more thorough check, connect an MCP client (Claude Desktop, MCP Inspector,
 MCP clients act as authenticated WordPress users. An overly permissive ability is the same risk as giving an external service the user's credentials.
 
 - **Default-deny.** Don't expose abilities you haven't reviewed for safety. Use a custom server with an explicit allow-list rather than the default server in production.
+- **Re-audit exposure when upgrading the adapter to 0.6.0+.** The inherited-`meta.public` rule can widen the default server's surface without any change to your registrations. Enumerate what the default server now serves before shipping the upgrade.
 - **Raise the transport and built-in-ability capabilities.** Both default to `'read'`, which every role has. An MCP server left on defaults is reachable by any Subscriber.
 - **Discipline `permission_callback`.** Every write or destructive ability needs one. Read-only abilities should still have one if they expose anything sensitive.
 - **Mark annotations honestly.** `readonly: true` on an ability that actually mutates state misleads both human reviewers and the MCP client's safety logic.
