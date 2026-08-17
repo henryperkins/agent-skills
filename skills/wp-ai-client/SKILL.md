@@ -119,29 +119,56 @@ The `wp_ai_client_prevent_prompt` filter lets you block specific prompts before 
 
 Do not handle API keys. The Connectors API (in core) reads keys from env var → PHP constant → database (in that order) and the **Settings → Connectors** screen surfaces them to admins. If you need to hint to site owners that no provider is set up, use feature detection (step 1) plus a link to `Settings → Connectors`.
 
-### 6) Function calling: `using_abilities()` is the bridge to the Abilities API
+### 6) Function calling: `using_abilities()` declares functions — you drive the round trip
 
-If your feature needs the model to *call* something — read a post, update an attachment, classify content — pass registered ability IDs to `using_abilities()`. The AI Client converts them into function declarations the model can invoke; when the model calls one, execution routes back through the Abilities API's permission and execution machinery. This makes the AI Client agentic without writing function-calling boilerplate. Pair this with `wp-abilities-api` to define the abilities themselves.
+If your feature needs the model to *call* something — read a post, update an attachment, classify content — pass registered ability IDs to `using_abilities()`. It converts each into a `FunctionDeclaration` (name, description, input schema) and terminates in `using_function_declarations()`. Pair this with `wp-abilities-api` to define the abilities themselves.
+
+**`using_abilities()` does not execute anything.** A `FunctionDeclaration` carries no callable. When the model decides to call one, the result comes back holding a *function-call part*, and nothing has run: no `permission_callback`, no `execute_callback`. Executing it and feeding the answer back is the caller's job, and Core gives you `WP_AI_Client_Ability_Function_Resolver` to do it. Treat the loop below as mandatory, not as a low-level alternative:
 
 ```php
-$result = wp_ai_client_prompt( 'Summarize the latest 5 posts.' )
-    ->using_abilities( 'core/get-posts', 'core/get-post' )
+$abilities = array( 'core/get-attachment', 'core/update-attachment' );
+
+$result = wp_ai_client_prompt( 'Add alt text to image #123 if it lacks one.' )
+    ->using_abilities( ...$abilities )
     ->generate_text_result();
+
+if ( is_wp_error( $result ) ) {
+    return $result;
+}
+
+// The model may have asked for an ability instead of answering. Nothing has run yet.
+$model_message = $result->toMessage();
+$resolver      = new WP_AI_Client_Ability_Function_Resolver( ...$abilities );
+
+if ( $resolver->has_ability_calls( $model_message ) ) {
+    // This is where permission_callback and execute_callback finally run.
+    $tool_message = $resolver->execute_abilities( $model_message );
+
+    $result = wp_ai_client_prompt( $tool_message )
+        ->using_abilities( ...$abilities )
+        ->with_history( $model_message )
+        ->generate_text_result();
+
+    if ( is_wp_error( $result ) ) {
+        return $result;
+    }
+}
+
+$answer = $result->toText();
 ```
 
-Abilities you pass must already be registered server-side via `wp_register_ability()`. Their `permission_callback` runs every time the model attempts to invoke them.
+Two things the resolver enforces that the builder does not. It allow-lists independently — `execute_ability()` returns `ability_not_allowed` for anything absent from *its own* constructor arguments, so pass the same list you gave `using_abilities()`. And a model can emit several calls in one turn: `execute_abilities()` handles all of them and returns one message of responses, which is why the example loops on the message rather than a single call.
 
-### 7) Use the Core resolver and timeout APIs when working below `using_abilities()`
+A production loop should carry the full turn history (the original user message as well as `$model_message`) and should re-check for further calls, since the second response can request more. Abilities you pass must already be registered server-side via `wp_register_ability()`.
 
-`using_abilities()` is the normal high-level path. For low-level function-call handling, Core exposes `WP_AI_Client_Ability_Function_Resolver`. Its static conversion helpers round-trip an Ability ID to the AI-safe function name, and an instance allow-lists the Abilities it may execute:
+The resolver also exposes static helpers that round-trip an Ability ID to the AI-safe function name the model actually sees, which is what you need when inspecting or logging raw function-call parts:
 
 ```php
 $function_name = WP_AI_Client_Ability_Function_Resolver::ability_name_to_function_name( 'my-plugin/lookup' );
 $ability_name  = WP_AI_Client_Ability_Function_Resolver::function_name_to_ability_name( $function_name );
-
-$resolver = new WP_AI_Client_Ability_Function_Resolver( 'my-plugin/lookup' );
-$payload  = $resolver->execute_ability( $function_call )->getResponse();
 ```
+
+### 7) Timeout policy
 
 For builders created after a global timeout policy is installed, use Core's real filter rather than a plugin-specific lookalike:
 

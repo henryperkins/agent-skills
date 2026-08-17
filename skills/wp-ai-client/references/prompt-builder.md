@@ -48,15 +48,18 @@ The skill's main SKILL.md and the dev note focus on the most-used subset (the fi
 
 ### Function calling via the Abilities API
 
-`using_abilities()` is the integration point between the AI Client and the Abilities API. Pass registered ability IDs (server-side abilities, registered via `wp_register_ability()`); the AI Client converts them into function declarations the model can call. When the model invokes one, the AI Client routes the call back through the Abilities API's permission and execution machinery.
+`using_abilities()` is the integration point between the AI Client and the Abilities API. Pass registered ability IDs (server-side abilities, registered via `wp_register_ability()`); each is converted into a `FunctionDeclaration` — name, description, input schema — and handed to `using_function_declarations()`.
+
+Declaration is all it does. A `FunctionDeclaration` holds no callable, so the call below never executes an ability by itself: if the model chooses one, the result carries a function-call part and no `permission_callback` or `execute_callback` has run.
 
 ```php
+// Single call — the model can REQUEST an ability here, but nothing executes.
 $result = wp_ai_client_prompt( 'Add an alt text to image #123 if it doesn\'t have one yet.' )
     ->using_abilities( 'core/get-attachment', 'core/update-attachment' )
     ->generate_text_result();
 ```
 
-This makes the AI Client agentic without you writing function-calling boilerplate. The abilities you pass must already be registered. See the `wp-abilities-api` skill for the registration side.
+Running the requested ability and returning its output to the model requires `WP_AI_Client_Ability_Function_Resolver` and a second generation call. The abilities you pass must already be registered. See step 6 of the skill's `SKILL.md` for the full round trip, and the `wp-abilities-api` skill for the registration side.
 
 ## Generator methods
 

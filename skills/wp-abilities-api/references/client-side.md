@@ -7,6 +7,34 @@ WordPress 6.9 introduced the server-side Abilities API. WordPress 7.0 added the 
 - **`@wordpress/abilities`** — pure state management, no server dependencies. Provides the store, registration, querying, and execution. Use when you only need the store; works in non-WordPress contexts too.
 - **`@wordpress/core-abilities`** — the WordPress integration layer. When loaded, it auto-fetches all server-registered abilities and categories via `/wp-abilities/v1/` and registers them in the `@wordpress/abilities` store with execution callbacks. Use this for the common case.
 
+### Registration is asynchronous — await `ready`
+
+`@wordpress/core-abilities` starts fetching on import and exports a single thing: a `ready` promise that
+resolves once both round trips (categories, then abilities) have registered.
+
+```ts
+// packages/core-abilities/src/index.ts — the package's only export.
+export const ready: Promise< void > = initialize();
+```
+
+Until `ready` resolves, the store holds no server abilities. `getAbilities()` returns an empty array and
+`executeAbility( 'some/server-ability' )` fails to find its target — **silently, with no error that points at
+the cause**. Every imperative call against server-registered abilities must await it first:
+
+```js
+const { ready } = await import( '@wordpress/core-abilities' );
+await ready;
+// Server abilities are now in the store.
+```
+
+Use the dynamic-import form rather than a static `import { ready } from '@wordpress/core-abilities'` when your
+module is enqueued as a *sibling* script module (the pattern below): siblings have no guaranteed evaluation
+order, so a static import may not have a resolved binding when your code runs. Importing it yourself also
+defers the network requests until the feature actually needs abilities.
+
+`useSelect` consumers do not need this — they re-render when the store fills. Only imperative reads and
+executions race it.
+
 ## Enqueuing
 
 ### Server abilities + client UI (most common)
@@ -32,6 +60,8 @@ add_action( 'admin_enqueue_scripts', function ( $hook_suffix ) {
 ```
 
 `wp_register_script_module()` makes the plugin's compiled script module available; it does not load it. `wp_enqueue_script_module()` loads it on the matching screen. Keep this page-scoped enqueue pattern, and explicitly enqueue `@wordpress/core-abilities`: it loads its `@wordpress/abilities` dependency and registers server abilities in the store automatically.
+
+Note that `my-plugin-admin` declares `@wordpress/abilities` as its dependency, not `@wordpress/core-abilities` — the two are enqueued as siblings. That gets the store loaded in time but guarantees nothing about *registration* having finished, which is asynchronous. Await `ready` as shown above before any imperative read or execution.
 
 ### Client-only abilities on a specific page
 
@@ -209,6 +239,10 @@ const {
     getAbilityCategory,
 } = await import( '@wordpress/abilities' );
 
+// Required before reading server-registered abilities; without it these return empty.
+const { ready } = await import( '@wordpress/core-abilities' );
+await ready;
+
 const all      = getAbilities();
 const filtered = getAbilities( { category: 'data-retrieval' } );
 const one      = getAbility( 'my-plugin/create-item' );
@@ -244,6 +278,10 @@ Use the imported `store` constant rather than referencing the store by string na
 ```js
 import { executeAbility } from '@wordpress/abilities';
 
+// Server-registered target, so wait for registration before executing.
+const { ready } = await import( '@wordpress/core-abilities' );
+await ready;
+
 try {
     const result = await executeAbility( 'my-plugin/create-item', {
         title: 'New Item',
@@ -263,7 +301,7 @@ try {
 }
 ```
 
-`executeAbility` works for both client- and server-registered abilities. For server abilities loaded via `@wordpress/core-abilities`, execution is dispatched over REST automatically using the method derived from annotations.
+`executeAbility` works for both client- and server-registered abilities. For server abilities loaded via `@wordpress/core-abilities`, execution is dispatched over REST automatically using the method derived from annotations — but only once `ready` has resolved. Client-registered abilities are available synchronously and need no wait.
 
 ## Unregistering
 

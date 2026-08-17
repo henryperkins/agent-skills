@@ -18,7 +18,8 @@ Key concepts and entrypoints for the WordPress Abilities API:
 // 1. Register category first
 add_action( 'wp_abilities_api_categories_init', function() {
     wp_register_ability_category( 'my-plugin', [
-        'label' => __( 'My Plugin', 'my-plugin' ),
+        'label'       => __( 'My Plugin', 'my-plugin' ),
+        'description' => __( 'Abilities provided by My Plugin.', 'my-plugin' ),
     ] );
 } );
 
@@ -46,6 +47,13 @@ add_action( 'wp_abilities_api_init', function() {
     ] );
 } );
 ```
+
+A category needs **both** `label` and `description`; `meta` is optional. `WP_Ability_Category::prepare_properties()`
+throws `InvalidArgumentException` on a missing, empty, or non-string `description` exactly as it does for `label`,
+and `WP_Ability_Categories_Registry::register()` catches that into `_doing_it_wrong()` + `return null`. The failure
+then cascades: `WP_Abilities_Registry::register()` rejects every ability whose `category` is not registered, so one
+omitted `description` silently takes out the category *and* all of its abilities. See "How a bad registration fails"
+below — this is the most common way to hit it.
 
 ## Common primitives
 
