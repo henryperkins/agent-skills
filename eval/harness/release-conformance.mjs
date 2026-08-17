@@ -49,6 +49,7 @@ export function requireNoMatch(repoRoot, relativePath, pattern, message) {
 }
 
 const PLUGIN_MANIFEST = ".claude-plugin/plugin.json";
+const MARKETPLACE_MANIFEST = ".claude-plugin/marketplace.json";
 
 function git(repoRoot, args) {
   const result = spawnSync("git", args, { cwd: repoRoot, encoding: "utf8" });
@@ -91,8 +92,49 @@ export function assertPluginVersionFresh(repoRoot) {
   );
 }
 
+/**
+ * Keep the marketplace catalog entry's version in step with the plugin manifest.
+ *
+ * `assertPluginVersionFresh` above only reads `plugin.json` — it tells you to
+ * bump both files, but nothing checks that you did. So the catalog entry can
+ * silently keep advertising the previous version while `plugin.json` moves on,
+ * and a marketplace consumer reading the catalog never learns an update exists.
+ * That is the same failure the freshness gate exists to prevent, one file over.
+ *
+ * A catalog entry that omits `version` resolves it from `plugin.json` and can
+ * never drift, so only a declared version is checked.
+ */
+export function assertMarketplaceVersionMatches(repoRoot) {
+  const plugin = readJson(repoRoot, PLUGIN_MANIFEST);
+  const marketplace = readJson(repoRoot, MARKETPLACE_MANIFEST);
+
+  assert(
+    typeof plugin.version === "string" && plugin.version !== "",
+    `${PLUGIN_MANIFEST} must declare a non-empty "version" string`
+  );
+  assert(
+    Array.isArray(marketplace.plugins),
+    `${MARKETPLACE_MANIFEST} must declare a "plugins" array`
+  );
+
+  // Join on name: the catalog may list plugins this repo does not own.
+  const entry = marketplace.plugins.find((p) => p && p.name === plugin.name);
+  assert(
+    entry,
+    `${MARKETPLACE_MANIFEST} has no entry named "${plugin.name}" — the plugin this repo ships is not listed in its own marketplace catalog.`
+  );
+
+  if (entry.version === undefined) return;
+
+  assert(
+    entry.version === plugin.version,
+    `${MARKETPLACE_MANIFEST} lists "${plugin.name}" at version ${entry.version} but ${PLUGIN_MANIFEST} declares ${plugin.version}. Bump both together, or drop "version" from the catalog entry so it resolves from the manifest.`
+  );
+}
+
 export function runReleaseConformance(repoRoot) {
   assertPluginVersionFresh(repoRoot);
+  assertMarketplaceVersionMatches(repoRoot);
   assert(
     IMMEDIATE_UNWATCH_PATTERN.test("const unwatch = watch( () => { return cleanup; } );\n// Dispose later.\nunwatch();"),
     "Immediate-unwatch regression fixture must exercise the structural check"
