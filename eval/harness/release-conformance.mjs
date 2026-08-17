@@ -415,19 +415,24 @@ export function runReleaseConformance(repoRoot) {
     "license: GPL-2.0-or-later",
     "WordPress 6.9 with PHP 7.2.24 or later",
     "No inline `<style>` tags",
-    "Always escape",
-    "Prefer presets over hardcoded values",
     "references/pattern-registration.md",
     "references/block-markup-reference.md",
   ]);
+  // Escaping and preset-over-hardcoded guidance moved out of SKILL.md and into
+  // these reference files upstream (#79). Assert them where they now live so the
+  // guarantee survives the progressive-disclosure refactor.
   requireIncludes(repoRoot, "skills/wp-patterns/references/pattern-registration.md", [
     "Auto-Registration via `/patterns/` Directory",
     "register_block_pattern()",
     "esc_html_e()",
+    "Always use:",
+    "`esc_url()` for URLs",
   ]);
   requireIncludes(repoRoot, "skills/wp-patterns/references/design-with-tokens.md", [
     "theme.json",
     "Preset",
+    "reference theme.json values by name (preferred)",
+    "Never use inline `<style>` tags",
   ]);
   requireIncludes(repoRoot, "skills/wp-interactivity-api/SKILL.md", [
     "watch()",
