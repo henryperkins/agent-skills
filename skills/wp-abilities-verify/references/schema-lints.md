@@ -1,12 +1,12 @@
 # Schema Lints
 
-Static lints against an ability's `input_schema`. Schema hygiene is
-about *agent legibility*: orchestrating agents read the schema to
-figure out how to call the ability. A schema that's hard to parse,
-ambiguous, or misleading wastes turns even when the ability itself
-works.
+Static lints against an ability's `input_schema` — and, for Lint 7,
+its `output_schema` as well. Schema hygiene is about *agent
+legibility*: orchestrating agents read the schema to figure out how to
+call the ability. A schema that's hard to parse, ambiguous, or
+misleading wastes turns even when the ability itself works.
 
-These lints are six small principles. Apply them by reading the
+These lints are seven small principles. Apply them by reading the
 schema, not by mechanically grepping — most plugins use enough
 formatting variety that grep recipes drift.
 
@@ -82,9 +82,34 @@ bootstrap call an implementer lands first; it must work with
 (No audit provided → this lint is skipped — no reference ability is
 declared.)
 
-## Cross-reference: gotchas 1-3 (callback hardening) and gotcha 4 (structural default)
+## Lint 7 — `format` values the JS client can compile
 
-Static lints catch shape; the four runtime gotchas in
+The PHP and JS validators enforce different `format` lists.
+`rest_validate_value_from_schema()` handles `hex-color`, `date-time`,
+`email`, `ip`, `uuid`; `@wordpress/abilities` registers `date-time`,
+`email`, `hostname`, `ipv4`, `ipv6`, `uri`, `uuid` with AJV. A format
+outside the client's list is not merely unenforced there — AJV refuses
+to compile the schema, the client validator catches the throw and
+returns "Invalid schema provided for validation.", and every
+client-side execution of that ability fails. `@wordpress/core-abilities`
+re-registers every REST-exposed ability in the JS registry with its
+schemas intact, so REST exposure is what puts a schema in front of that
+validator.
+
+- A format in both lists (`date-time`, `email`, `uuid`) → OK.
+- `uri` → OK on Gutenberg 23.6+ clients; WARN below that, where it is
+  exactly the compile failure `WordPress/gutenberg#79555` fixed.
+- `hex-color` or `ip` on an ability that resolves to REST-exposed →
+  FAIL. On an unexposed ability → WARN: nothing breaks today, and
+  turning exposure on later breaks it.
+- No `format` declared → N/A.
+
+Applies to `output_schema` too — the client validates the result against
+it on the way back.
+
+## Cross-reference: gotchas 1-3 (callback hardening) and gotchas 4-5 (structural)
+
+Static lints catch shape; the five runtime gotchas in
 `../../wp-abilities-api/references/input-schema-gotchas.md` split into
 two kinds.
 
@@ -94,10 +119,11 @@ pagination key translation, ID validation that accepts `"0"`. These
 are runtime behaviors the callback itself must handle; static schema
 lints can't enforce them.
 
+Gotchas 4 and 5 ARE structural, and the lints carry the enforcement.
 Gotcha 4 — the direct vs indirect invocation strictness — is what
 motivates the `(object) array()` top-level default that Lint 5
-explicitly accepts. This one IS structural and Lint 5 carries the
-enforcement.
+explicitly accepts. Gotcha 5 — the server and client `format` lists
+don't match — is Lint 7.
 
 ## Output format
 
@@ -112,6 +138,7 @@ enforcement.
 | <ability> | no $ref | OK | inline |
 | <ability> | static defaults | FAIL | `created_at` uses `gmdate('c')` |
 | <ability> | reference_ability implies no required | N/A | not reference ability |
+| <ability> | client-compilable formats | FAIL | `color` uses `format: hex-color`; ability is REST-exposed |
 ```
 
 A FAIL on any lint flips that ability to FAIL in the run summary.

@@ -4,7 +4,9 @@ Why per-feature endpoints, what they should look like, and what to avoid.
 
 ## Why not the client-side prompt API
 
-WordPress 7.0 ships a client-side JavaScript prompt builder in the `wordpress/wp-ai-client` package. It works, but its REST route is gated behind a dedicated capability — `prompt_ai` (defined by `Capabilities_Manager`), which is granted to administrators by default via a removable `user_has_cap` filter and is meant to be customized. The reason for the gate: the JS API lets the caller send *any* prompt to *any* configured provider. That's fine for Core's own admin tooling. It is not safe for distributed plugins, where you can't predict what user role will hit the UI or what prompts will be constructed client-side.
+Core 7.0/7.1 ships no AI REST route and no client-side JavaScript prompt builder. `src/wp-includes/ai-client/` holds `WP_AI_Client_Prompt_Builder`, `WP_AI_Client_Ability_Function_Resolver`, and an `adapters/` directory of cache / HTTP / event-dispatcher / discovery glue — no controller. There is no AI controller in `rest-api/endpoints/`, no AI handle in `script-loader.php`, and no AI package in the root `package.json`. So on plain Core there is nothing to call from JS — you build the route yourself.
+
+The JS prompt builder and its route come from the standalone `wordpress/wp-ai-client` plugin (0.4.x), not Core. There the route is gated behind a dedicated capability — `prompt_ai` (defined by that plugin's `Capabilities_Manager`), which is granted to administrators by default via a removable `user_has_cap` filter and is meant to be customized. The reason for the gate: the JS API lets the caller send *any* prompt to *any* configured provider. That's fine for admin tooling on a site that deliberately installed the plugin. It is not safe for distributed plugins, where you can't predict what user role will hit the UI, what prompts will be constructed client-side, or whether the plugin is installed at all.
 
 The recommended pattern: a separate REST endpoint per AI feature, scoped to that feature's permissions and inputs. The actual prompt construction stays server-side. The JS just calls your endpoint with structured input.
 
@@ -46,8 +48,8 @@ function my_plugin_summarize_post( WP_REST_Request $request ) {
     }
 
     // GenerativeAiResult has NO top-level `text` key — its serialized shape is
-    // id / candidates / tokenUsage / providerMetadata / modelMetadata. Project
-    // the success response down to just what your JS needs.
+    // id / candidates / tokenUsage / providerMetadata / modelMetadata /
+    // additionalData. Project the success response down to just what your JS needs.
     return rest_ensure_response( array(
         'text'       => $result->toText(),        // SDK DTO method (camelCase).
         'tokenUsage' => $result->getTokenUsage(),
@@ -60,7 +62,7 @@ What this gives you:
 - **Per-feature capability.** `edit_post` on the specific post, not `manage_options`. Editors and authors can use the feature without being admins.
 - **Validated input.** `sanitize_callback` runs before your callback, so you never see a non-int post_id.
 - **Server-side prompt construction.** The user can't inject system instructions or change the model preference — those are baked into your endpoint.
-- **Free error handling.** A `WP_Error` serializes through `rest_ensure_response()` with its HTTP status intact. `GenerativeAiResult` is `JsonSerializable` too, but its top-level keys are `id` / `candidates` / `tokenUsage` / `providerMetadata` / `modelMetadata` (no `text`) — so project the success shape your client needs, as above.
+- **Free error handling.** A `WP_Error` serializes through `rest_ensure_response()` with its HTTP status intact. `GenerativeAiResult` is `JsonSerializable` too, but its top-level keys are `id` / `candidates` / `tokenUsage` / `providerMetadata` / `modelMetadata` / `additionalData` (no `text`) — so project the success shape your client needs, as above. `additionalData` is absent from the DTO's JSON Schema `required` list but `toArray()` always emits it, so it is always in the response.
 
 ## Calling from JS
 
@@ -165,5 +167,5 @@ Validate the parsed JSON against your own schema afterward — model output is b
 
 - **Building prompts on the client.** Even with a tight permission_callback, a server-built prompt is auditable, version-controlled, and can be filtered via `wp_ai_client_prevent_prompt`. A client-built prompt is none of those.
 - **Stuffing user input into the system instruction.** Treat user-supplied content as data, not instructions. Use `with_text()` for the user payload and `using_system_instruction()` only for the role/format guidance you author.
-- **Returning the full `GenerativeAiResult` to anonymous callers.** It includes provider/model metadata that may leak operational details. For public-facing endpoints, project to a smaller response shape.
+- **Returning the full `GenerativeAiResult` to anonymous callers.** It includes provider/model metadata that may leak operational details, plus `additionalData` — on OpenAI-compatible providers that is the provider's raw response minus the fields the SDK mapped (`id`, `choices`, `usage`), i.e. whatever else that provider chose to send back. For public-facing endpoints, project to a smaller response shape.
 - **Per-request capability checks inside the callback only.** Use `permission_callback` — REST runs it before the callback, and it's the documented place for authorization. The callback is for logic, not auth.

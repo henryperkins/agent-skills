@@ -49,7 +49,8 @@ Apply the field-shape rules defined in
    limitations" — the legacy slash-separated string).
 3. Every entry in `proposed_abilities` has every required per-ability
    field with the right type (see "`proposed_abilities`" in the
-   canonical).
+   canonical) — except the three implementation-readiness fields, whose
+   absence is WARN under rule 7, not FAIL.
 4. Each ability's `annotations` block has all three booleans
    (`readonly`, `destructive`, `idempotent`) as actual booleans —
    string `"true"` / `"false"` is FAIL (indicates a quoting bug).
@@ -62,9 +63,21 @@ Apply the field-shape rules defined in
    added 2026-08-15). Present but with a non-boolean `agent_facing`, an
    `mcp` value outside the enum, or a missing `rationale` when
    `agent_facing` is `true` or `mcp` is `allow` → FAIL.
+7. Each ability carries the implementation-readiness fields
+   `use_case_fit` (string), `side_effects` (array of strings), and
+   `seed_data_needs` (string or `null`). Any of the three absent → WARN;
+   per the canonical's "Known limitations", validators "emit WARN on
+   missing implementation-readiness fields to nudge backfill the next
+   time the audit is touched; they do NOT FAIL, mirroring the legacy
+   `capability_gate` posture". Present but of the wrong type → FAIL. Two
+   legal values are not absences: `side_effects: []` is the load-bearing
+   "pure data-fetch" signal, and `seed_data_needs: null` means "ask the
+   implementer" — neither is a missing field.
 
 Missing required field → FAIL. Wrong type → FAIL. Legacy
 `capability_gate` slash-string → WARN. Missing `exposure` object → WARN.
+Missing `use_case_fit` / `side_effects` / `seed_data_needs` → WARN (audit
+predates the 2026-05-21 schema revision), never FAIL.
 
 ## Step 3 — whole-audit invariants
 
@@ -136,6 +149,7 @@ final report:
 | Per-ability fields | WARN | 1 ability has `backing: null` (intentional) |
 | `reference_ability` uniqueness | OK | 1 ability marked |
 | `surfaced_gaps` consistency | OK | all `backing: null` entries present |
+| Implementation-readiness fields | WARN | 3 abilities missing `seed_data_needs` (audit predates 2026-05-21 schema) |
 | `exposure` decisions | WARN | 2 abilities have no `exposure` object (audit predates 2026-08-15 schema) |
 ```
 

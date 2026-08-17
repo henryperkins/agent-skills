@@ -17,7 +17,7 @@
     "Step 12: Override guideline_categories() on the Ability to return ['site', 'copy'] — Abstract_Ability handles the Guidelines integration automatically via load_system_instruction_from_file()",
     "Step 13: Test: Settings → AI shows the Experiment; toggle persists; with AI plugin disabled, downstream code no-ops cleanly",
     "Step 14: Check current 1.2.0 capabilities before adding duplicates: sixteen built-in Experiments; core/read-content, core/read-settings, core/read-users, ai/get-post-details, and ai/get-post-terms; conditional Feature/Experiment Abilities; advanced feature settings; and wpai_default_request_timeout",
-    "Step 15: Keep release boundaries honest: the generic wpai_system_instruction filter ships in 1.2.0, while ability-scoped system-instruction, prompt, and prompt-builder filters are develop-only until released"
+    "Step 15: Keep release boundaries honest: the generic wpai_system_instruction filter ships in 0.7.0 and is still present in 1.2.0, while ability-scoped system-instruction, prompt, and prompt-builder filters are develop-only until released"
   ],
   "success_criteria": [
     "Routes to wp-ai-plugin (and wp-abilities-api for the Ability step)",
@@ -34,6 +34,6 @@
     "Recognizes Type_Ahead, Key_Encryption, and Suggest_Reply as current built-in Experiments",
     "Recognizes the five always-registered utility/read Abilities (core/read-content, core/read-settings, core/read-users, ai/get-post-details, ai/get-post-terms), distinguishes conditional Feature/Experiment Abilities, and does not re-register shipped IDs blindly",
     "Uses wpai_default_request_timeout and documented settings filters rather than inventing extension hooks",
-    "Presents wpai_system_instruction as released in 1.2.0 but does not present the post-1.2.0 ability-scoped filters as released"
+    "Presents wpai_system_instruction as shipped in 0.7.0 and still present in 1.2.0, but does not present the post-1.2.0 ability-scoped filters as released"
   ]
 }

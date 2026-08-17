@@ -194,7 +194,7 @@ The two paths differ in three ways agents trip over:
 
 2. **Schema's top-level `default` IS applied — but only on the indirect path.** `normalize_input()` substitutes the schema's top-level `default` when the caller passes `null`. Direct callers don't run through this method; they get whatever PHP default the callback signature declares. Declaring `default => (object) array()` at the schema root makes `$ability->execute()` work without arguments — but the same callback called directly still receives PHP `null`.
 
-3. **The callback's first argument arrives only when `input_schema` is non-empty.** WordPress only forwards `$input` to the callback when the schema is declared. Without an input schema, the callback is invoked with zero arguments — PHP-level signature defaults compensate for this if you wrote them; without them, the indirect path produces an `ArgumentCountError`.
+3. **The callback's first argument arrives only when `input_schema` is non-empty.** WordPress only forwards `$input` to the callback when the schema is declared. Without an input schema, the callback is invoked with zero arguments — PHP-level signature defaults compensate for this if you wrote them; without them, the callback throws an `ArgumentCountError`, which core converts to `WP_Error( 'ability_callback_exception' )` on the `WP_Ability::execute()` path (WP 7.0+); a hard fatal on 6.9 and when the static callback is invoked directly. So don't write `$this->expectException( ArgumentCountError::class )` against `->execute()` — on 7.0+ it returns a `WP_Error` instead of throwing.
 
 ### Symptoms
 
@@ -227,7 +227,7 @@ If you've declared the top-level `default` in the schema, the PHP-level signatur
 
 The server and the client validate ability schemas with different engines, and their supported `format` lists don't match. Verified against `packages/abilities/src/validation.ts` at Gutenberg v23.6.0-rc.1.
 
-- **Server (PHP)**: input/output validation goes through WordPress's REST-style schema validation (`rest_validate_value_from_schema()` semantics), whose format support — including `uri` — long predates the Abilities API.
+- **Server (PHP)**: `WP_Ability::validate_input()` and `validate_output()` call `rest_validate_value_from_schema()` for the schema check — never the sanitizer. (The 7.1 `wp_ability_validate_input` / `wp_ability_validate_output` filters can add checks on top of that result, but no `format` handling.) That validator's `format` switch enforces exactly five formats: `hex-color`, `date-time`, `email`, `ip`, `uuid`. `uri` is **not** one of them — `case 'uri': return sanitize_url( $value );` exists only in `rest_sanitize_value_from_schema()`, a sanitizer that cannot reject anything. On the REST `/wp-abilities/v1/run` route (WP 7.1+) that sanitizer does run, via the route's `sanitize_input_for_ability()` callback — but that callback calls `validate_input()` itself first and returns the raw value untouched whenever validation fails, so it can rewrite a URL, never refuse one. On `$ability->execute()` reached off the REST route, and on every transport before 7.1, no URI handling runs at all.
 - **Client (`@wordpress/abilities`)**: validation uses AJV (draft-04) with `ajv-formats`, registering **exactly** these formats: `date-time`, `email`, `hostname`, `ipv4`, `ipv6`, `uri`, `uuid`.
 
 The failure mode is worse than "not enforced": AJV rejects schemas using an *unregistered* format at compile time, and the client validator catches that and returns **"Invalid schema provided for validation."** — every client-side execution against that schema fails. That's why "Abilities: Support URI schema format" (`WordPress/gutenberg#79555`) shipped as a *bug fix* in Gutenberg 23.6: before it, `format: 'uri'` in a schema broke client-side validation outright.
@@ -236,7 +236,7 @@ The failure mode is worse than "not enforced": AJV rejects schemas using an *unr
 'properties' => [
     'source_url' => [
         'type'   => 'string',
-        'format' => 'uri', // OK server-side; client-side requires Gutenberg 23.6+.
+        'format' => 'uri', // Sanitize-only server-side (never validated); client-side requires Gutenberg 23.6+.
     ],
 ],
 ```
@@ -245,7 +245,7 @@ Practical rules:
 
 1. **Stick to the intersection when clients matter.** If the ability is executed from JS (`executeAbility`, Command Palette, editor surfaces), the safe formats are `date-time`, `email`, `uuid` — plus `uri` on Gutenberg 23.6+ clients. Server-only formats like `hex-color` or `ip` will compile-fail the client validator even though PHP accepts them.
 2. **Don't rely on `format` for business-critical shapes.** Validate in the execute callback regardless (same spirit as Gotcha 1) — it's the only layer that runs on both invocation paths (see Gotcha 4).
-3. **Shape, not scheme or reachability.** `format: uri` validates URI *shape* only — still reject non-`http(s)` schemes and validate the host yourself when the value drives a server-side request (SSRF surface).
+3. **`format: uri` buys nothing on the server.** Only the AJV client checks URI shape, and only for JS-initiated executions; PHP never rejects a malformed URI. Validate the value in the execute callback — and even where AJV does run, shape is all it checks, so reject non-`http(s)` schemes and validate the host yourself when the value drives a server-side request (SSRF surface).
 
 ## Putting gotchas 1-3 together
 

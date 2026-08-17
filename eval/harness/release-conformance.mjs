@@ -357,10 +357,15 @@ export function runReleaseConformance(repoRoot) {
     "wpai_default_request_timeout",
     "wpai_settings_feature_groups",
     "wpai_settings_feature_metadata",
-    "The global `wpai_system_instruction` hook ships in v1.2.0",
+    // Verified against WordPress/ai: absent at 0.6.0, present at 0.7.0 with
+    // `@since 0.7.0` on Abstract_Ability::get_system_instruction(), unchanged
+    // through 1.2.0. This pin previously asserted v1.2.0 and so guarded the
+    // error into place — the version marker for a hook is only as good as the
+    // tag someone actually read.
+    "The global `wpai_system_instruction` hook ships in v0.7.0",
   ]);
   requireIncludes(repoRoot, "skills/wp-ai-plugin/references/guidelines-integration.md", [
-    "that hook ships in v1.2.0",
+    "that hook ships in v0.7.0",
     "wpai_{$ability_slug}_system_instruction",
   ]);
   requireIncludes(repoRoot, "skills/wp-ai-connectors/references/capabilities-declaration.md", [

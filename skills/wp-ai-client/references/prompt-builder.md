@@ -138,7 +138,7 @@ The `isText()` / `isFile()` predicates live on the `MessagePartTypeEnum` returne
 
 ## Feature detection
 
-These methods are synchronous, deterministic, and free — they match the builder's configuration against the available models, no API call. Use them before showing UI:
+These methods are synchronous and never run your prompt — they match the builder's configuration against the models each registered provider advertises. They are not a local lookup, though. Resolving that model list probes every registered API-based provider over HTTP: providers built on `ListModelsApiBasedProviderAvailability` send a list-models request, cached 24h in the `wp_ai_client` object-cache group (per-request only, unless the site runs a persistent object cache), while providers built on `GenerateTextApiBasedProviderAvailability` send an uncached 1-token test generation on *every* check. Cache the boolean yourself, or run the check on admin/editor screens only — not on every front-end request and never inside a loop. Use them before showing UI:
 
 - `is_supported_for_text_generation()`
 - `is_supported_for_image_generation()`
@@ -146,7 +146,7 @@ These methods are synchronous, deterministic, and free — they match the builde
 - `is_supported_for_speech_generation()`
 - `is_supported_for_video_generation()`
 - `is_supported_for_music_generation()`
-- `is_supported_for_embedding_generation()` — **probe only on Core.** WP 7.0.2 bundles PHP AI Client 1.3.1, which has this method but no embedding generation path at all; generation arrived in standalone 1.4.0 as a separate `EmbeddingBuilder`. A `true` here does not mean you can generate an embedding through `wp_ai_client_prompt()`.
+- `is_supported_for_embedding_generation()` — **probe only on Core.** WP 7.0 through 7.0.4 and 7.1 all bundle PHP AI Client 1.3.1, which has this method but no embedding generation path at all; generation arrived in standalone 1.4.0 as a separate `EmbeddingBuilder`. A `true` here does not mean you can generate an embedding through `wp_ai_client_prompt()`.
 - `is_supported( ?CapabilityEnum $capability = null )` — general form, takes any capability enum
 
 ```php
@@ -175,7 +175,7 @@ Every `generate_*_result()` call can instead return `WP_Error`. Branch on `is_wp
 
 The AI Client is two layers:
 
-1. **`wordpress/php-ai-client`** — the framework-agnostic PHP SDK, bundled into Core. WordPress 7.0.2 bundles PHP AI Client 1.3.1; the standalone Composer latest is PHP AI Client 1.4.0, so do not assume standalone-only additions are available in Core before WordPress updates its dependency. camelCase methods, throws exceptions.
+1. **`wordpress/php-ai-client`** — the framework-agnostic PHP SDK, bundled into Core. WordPress 7.0 through 7.0.4 and 7.1 all bundle PHP AI Client 1.3.1 (`AiClient::VERSION`); the standalone Composer latest is PHP AI Client 1.4.0, so do not assume standalone-only additions are available in Core before WordPress updates its dependency. camelCase methods, throws exceptions.
 2. **`WP_AI_Client_Prompt_Builder`** — Core's WordPress wrapper. snake_case methods, returns `WP_Error`, integrates with WordPress HTTP, the Connectors API, and the hooks system.
 
 `wp_ai_client_prompt()` is the recommended entry point. It returns the wrapper, which catches SDK exceptions and converts them to `WP_Error` for you.

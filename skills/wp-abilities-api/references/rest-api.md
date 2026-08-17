@@ -15,10 +15,19 @@ The Abilities API registers five routes under the `wp-abilities/v1` namespace:
 `{name}` is the full namespaced ID, slash included — `my-plugin/list-orders` — so the run route
 reads `/wp-abilities/v1/abilities/my-plugin/list-orders/run`.
 
+The four discovery routes — both category routes and both ability routes — gate on
+`current_user_can( 'read' )`, and have since 6.9. The requester must be an authenticated user
+holding at least Subscriber; an anonymous `GET /wp-json/wp-abilities/v1/abilities` returns
+`rest_forbidden` with **HTTP 401**, not an empty array. `show_in_rest: true` therefore never makes
+an ability anonymously discoverable, and an enumeration client needs cookie+nonce or
+application-password auth. `/run` is gated separately, by the ability's own `permission_callback`.
+
 Debug checklist:
 
 - Confirm the route exists under `wp-json/wp-abilities/v1/...`.
 - Verify the ability/category shows in REST responses.
+- If a discovery route returns **401**, the request is unauthenticated — those four routes require
+  a logged-in user with `read`, whatever the ability's exposure meta says.
 - If missing, check the exposure resolution below — on WP 7.1+ an ability can be hidden by
   either `meta.show_in_rest` or `meta.public`.
 - If `/run` returns **405**, the HTTP method does not match the one the ability's annotations
@@ -52,8 +61,49 @@ package follows it because the server requires it. Two practical consequences:
   `true` to `false` moves the ability from `GET` to `POST` and breaks every existing caller.
   Treat annotations as part of the public API surface, not as documentation.
 
-Input travels as the `input` argument: a query-string parameter on `GET` and `DELETE`, a body
-parameter on `POST`. See `client-side.md` for how the JS packages apply the same mapping.
+Input travels as the `input` argument: a query-string parameter on `GET` and `DELETE`, and a **JSON
+body** parameter on `POST` — `{"input": { ... }}` sent with `Content-Type: application/json`.
+`get_input_from_request()` reads `get_json_params()` and nothing else on `POST`, so a form-encoded
+or multipart body is ignored outright: the ability receives `null` input and either runs on schema
+defaults or fails `validate_input()` with a 400 complaining about a missing property rather than
+about the content type. See `client-side.md` for how the JS packages apply the same mapping.
+
+### The list endpoints are paginated — a single request is not the full set
+
+Both collection routes — `/wp-abilities/v1/abilities` and `/wp-abilities/v1/categories` —
+paginate, and have since 6.9. `get_collection_params()` declares:
+
+| Param | Type | Default | Range |
+|---|---|---|---|
+| `page` | integer | `1` | minimum `1` |
+| `per_page` | integer | `50` | `1`–`100` |
+
+`get_items()` filters first, then slices the matched set with `array_slice()`, so the totals
+describe the *filtered* collection, not the whole registry. Every list response carries:
+
+- `X-WP-Total` — matched items before slicing.
+- `X-WP-TotalPages` — `ceil( total / per_page )`.
+- `Link: <...>; rel="prev"` when `page > 1`, and `Link: <...>; rel="next"` when
+  `page < X-WP-TotalPages`. Both links preserve the request's other query parameters.
+
+```
+GET /wp-json/wp-abilities/v1/abilities?per_page=100&page=2
+
+X-WP-Total: 137
+X-WP-TotalPages: 2
+Link: <.../wp-abilities/v1/abilities?per_page=100&page=1>; rel="prev"
+```
+
+The consequence for generated code: **an enumeration client that issues one unparameterized
+`GET /wp-abilities/v1/abilities` and treats the array as the registry silently truncates at 50
+on any site with more REST-visible abilities than that.** There is no error and no marker in
+the body — the request looks entirely successful. `per_page=100` raises the ceiling but does not
+remove it; the only correct enumeration is a loop that requests `page=1..X-WP-TotalPages` (or
+follows `rel="next"` until it is absent) and concatenates the pages.
+
+A `page` past the end is not an error either: the slice is empty, so the response is `200` with
+`[]` and the totals headers still populated. Do not read an empty body as "this filter matched
+nothing" without checking `X-WP-Total`.
 
 ## Exposure: `public` and `show_in_rest` (WP 7.1+)
 
@@ -278,6 +328,9 @@ GET /wp-json/wp-abilities/v1/abilities?category=my-plugin-content
 GET /wp-json/wp-abilities/v1/abilities?meta[annotations][readonly]=true
 GET /wp-json/wp-abilities/v1/abilities?category=data-export&namespace=my-plugin
 ```
+
+Unlike `wp_get_abilities()`, which returns everything it matches, the endpoint slices the result
+— add `per_page`/`page` and follow `X-WP-TotalPages` as described above.
 
 The list endpoint always forces `meta => array( 'show_in_rest' => true )` into the query and
 merges caller-supplied `meta` **underneath** it, so a caller cannot use `?meta[...]` to reveal an

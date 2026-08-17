@@ -163,7 +163,7 @@ The `ability_class` key points to your `Abstract_Ability` subclass. That class i
 
 Naming convention: ability IDs use the `ai/` prefix when registered by the AI plugin. Your downstream plugin can use its own prefix (e.g., `my-plugin/internal-links`).
 
-Canonical Abilities to study (v1.2.0 source): `ai/suggest-reply` (an admin/comments experiment — a comment-reply suggester paired with the `Suggest_Reply` Experiment), plus the read-only core Abilities `core/read-content`, `core/read-users`, and `core/read-settings`. The read Abilities are the clearest examples of schema + `permission_callback` for exposing WordPress data safely: each supports a single-item mode and a query/collection mode, and gates field-level access on `current_user_can` (raw fields only for objects the current user can edit/view).
+Canonical Abilities to study (v1.2.0 source): `ai/suggest-reply` (an admin/comments experiment — a comment-reply suggester paired with the `Suggest_Reply` Experiment), plus the read-only core Abilities `core/read-content`, `core/read-users`, and `core/read-settings`. `core/read-content` and `core/read-users` are the clearest examples of schema + `permission_callback` for exposing WordPress data safely: each supports a single-item mode and a query/collection mode, and gates field-level access on `current_user_can` (raw fields only for objects the current user can edit/view). `core/read-settings` is shaped differently — it returns a flat map of exposed setting name → value, optionally narrowed by `group` and/or `fields`, behind one blanket `current_user_can( 'manage_options' )` check with no single-item lookup and no per-setting gating.
 
 **Exposing your own data to the read Abilities.** `core/read-content` and `core/read-settings` only surface objects flagged with `show_in_abilities`. To make your custom post type or setting readable, pass `'show_in_abilities' => true` to `register_post_type()` / `register_setting()`, and register it **before** the Abilities API initializes (`wp_abilities_api_init`) so it lands in the ability's input schema. Until WordPress core ships this flag natively, the plugin polyfills it onto curated core objects in `includes/Abilities/Show_In_Abilities.php` (once core owns it, it behaves like `show_in_rest`).
 
@@ -209,7 +209,7 @@ See `references/dashboard-widgets.md` for design conventions matching the AI plu
 
 The plugin exposes filters at several layers. The most useful ones, by need:
 
-- **Disable a specific feature**: `wpai_feature_{$id}_enabled` (returns bool, last value wins). `Abstract_Feature::is_enabled()` reads this.
+- **Disable a specific feature**: `wpai_feature_{$id}_enabled` (returns bool, last value wins). `Abstract_Feature::is_individually_enabled()` applies it; `is_enabled()` is the cached wrapper around that and the global toggle.
 - **Disable AI features globally**: `wpai_features_enabled` (default `true`, applied in `Loader::initialize_features()`).
 - **Customize Guidelines max length**: `wpai_max_guideline_length` (default 5000 chars per category).
 - **Disable Guidelines integration**: `wpai_use_guidelines` (default `true`).
@@ -217,7 +217,7 @@ The plugin exposes filters at several layers. The most useful ones, by need:
 - **Claim Image Generation support** (v1.1.0+): `wpai_has_image_generation_support` — lets a third party declare image-generation support when it can't be auto-detected (e.g., a connector authenticating without an API key, such as OAuth).
 - **Tune the default request timeout** (v1.2.0+): `wpai_default_request_timeout` — filters the per-request timeout as `( int $default_timeout, string $feature_id )`; the plugin uses it for the image-generation request (`includes/helpers.php`). ⚠️ The 1.2.0 changelog and `readme.txt` call this `wp_ai_client_default_request_timeout`, but that name appears in *no* PHP in the plugin — the applied filter is `wpai_default_request_timeout`. (`wp_ai_client_default_request_timeout` is most likely the core AI Client's own timeout filter; verify against the installed core version before using it.)
 - **Extend Settings → AI feature groups or metadata**: `wpai_settings_feature_groups` and `wpai_settings_feature_metadata`. `wpai_feature_{$id}_settings` is not a universal framework hook; only rely on it when the target Feature actually applies it (v1.2.0's Type Ahead Feature does).
-- **Modify every Ability's system instruction (v1.2.0+)**: `wpai_system_instruction` filters the final instruction and receives the Ability name and input data.
+- **Modify every Ability's system instruction (v0.7.0+)**: `wpai_system_instruction` filters the final instruction and receives the Ability name and input data.
 - **Modify one Ability on `develop` after v1.2.0**: `wpai_{$ability_slug}_system_instruction`, `wpai_{$ability_slug}_prompt`, and `wpai_{$ability_slug}_prompt_builder` are currently unreleased. Version- or capability-gate downstream use until a tagged release includes them. Individual Abilities may expose other released filters.
 
 Advanced settings are feature-provided metadata on the existing Settings → AI surface, not a separate public settings registry. Check the current feature metadata and documented filters before creating custom UI or extension hooks.
@@ -262,7 +262,7 @@ For canonical detail before inventing patterns:
   - `includes/Experiments/Suggest_Reply/Suggest_Reply.php` — v1.2.0 admin/comments Experiment + `ai/suggest-reply` Ability
   - `includes/Abilities/Content/Content.php` (`core/read-content`), `includes/Abilities/Users/Users.php` (`core/read-users`), `includes/Abilities/Settings/Settings.php` (`core/read-settings`) — v1.2.0 read-only Abilities
   - `includes/Abilities/Show_In_Abilities.php` — how `show_in_abilities` gates what the read Abilities expose
-  - `includes/Services/Guidelines.php` — Guidelines service (v0.8.0+; being renamed to "Knowledge" upstream in Gutenberg trunk / WP 7.1)
+  - `includes/Services/Guidelines.php` — Guidelines service (v0.8.0+; being renamed to "Knowledge" in the Gutenberg plugin's experimental `lib/experimental/knowledge/`, not in core 7.1 — core ships neither `wp_guideline` nor `wp_knowledge`)
 - **AI Team blog (release notes, roadmap)**: https://make.wordpress.org/ai/
 - **Plugin lead's #core-ai channel** on WordPress Slack for live discussion
 

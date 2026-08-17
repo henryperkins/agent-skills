@@ -55,7 +55,7 @@ capability_gate:
   read: read_private_pages
   write: edit_others_pages
   confirmed: true
-  verified_at: "custom_post_type capability_type='page' → core post-type cap map (wp-includes/post.php map_meta_cap)"
+  verified_at: "custom_post_type capability_type='page' → get_post_type_capabilities (wp-includes/post.php) → map_meta_cap (wp-includes/capabilities.php) → primitive page caps"
 ```
 
 Plugin-specific capabilities (e.g. WooCommerce's `manage_woocommerce`,
@@ -85,7 +85,7 @@ Each entry:
 | `side_effects` | array of strings | Side effects the backing path emits on every call: telemetry hooks, audit-log rows, notifications, cache writes. One short line per effect. Empty array (`[]`) when the backing is a pure data-fetch — that is *itself* a load-bearing fact: it is what unlocks the conditional delegation shortcut in `wp-abilities-api/references/shared-core-service.md`. A non-empty array tells the implementer (and downstream verify-mode tooling) that this ability needs the shared-service shape, not the delegate-through-REST shortcut. |
 | `seed_data_needs` | string OR `null` | One line describing what representative data must exist in the test environment for the ability to execute through the public boundary and return something meaningful (e.g. `"at least one entity in the plugin's primary table"`, `"no seed required"`). `null` when the auditor has not yet identified the seed shape; downstream verify-mode tooling treats `null` as "ask the implementer" rather than guessing. |
 | `exposure` | object (optional) | The deliberate decision about who may *discover* this ability, kept separate from who may *run* it. See below. Optional for backwards compatibility; new audits MUST populate it. |
-| `reference_ability` | bool (optional) | If `true`, marks this ability as the reference implementation — the first one an implementer should land (smallest, safest, highest-leverage read). Exactly zero or one ability per audit may set this. |
+| `reference_ability` | bool (optional) | If `true`, marks this ability as the reference implementation — the first one an implementer should land (smallest, safest, highest-leverage read). Exactly zero or one ability per audit may set this. Only an ability invocable as `execute([])` qualifies: the registration it plans must declare no required inputs, and `wp-abilities-verify` Lint 6 FAILs a reference ability whose `input_schema.required` is non-empty. |
 
 ### `exposure` object
 
@@ -148,7 +148,7 @@ as a warning, not an error:
 |---|---|---|
 | `source` | enum (optional, default `rest_controller`) | Where the canonical permission for this behavior lives — not always the REST controller's `permission_callback`. One of `rest_controller`, `admin_action`, `service`, `domain_policy`, `post_type_map`, `none`. When omitted, defaults to `rest_controller` for backwards compatibility. `admin_action` for behaviors gated by `check_admin_referer` / `current_user_can` on an admin handler; `service` when a shared method enforces the cap; `domain_policy` for plugins with a policy / authorization layer; `post_type_map` for capabilities resolved through `map_meta_cap` on a post-type cap shadow; `none` for genuinely public behavior. Tells the implementer whether the ability's `permission_callback` can mirror the REST callback or must consult a different source of truth. |
 | `callback` | string | The method or function name that enforces the cap at the recorded `source`. For `source: rest_controller`, this is the `permission_callback` value. For `source: admin_action`, the admin handler function or method. For `source: service`, the service method that performs the cap check. |
-| `resolves_to` | string | The `current_user_can()` call(s) it ultimately resolves to. For compound gates, include both (e.g. `"current_user_can('read_private_pages')` for read; `current_user_can('edit_others_pages')` for write"). |
+| `resolves_to` | string | The `current_user_can()` call(s) the **ability** must enforce — the canonical gate for the behavior, not necessarily the value the REST layer happens to carry. `wp-abilities-verify` diffs this field against the registered `permission_callback` and FAILs on disagreement, so a route registered `permission_callback => '__return_true'` records `__return_true` in `callback` and the intended cap here (see `capability-gate-tracing.md`, "Common pitfall"). For compound gates, include both (e.g. `"current_user_can('read_private_pages')` for read; `current_user_can('edit_others_pages')` for write"). |
 | `confirmed` | bool | `true` if verified against source; `false` if inferred. |
 
 ## `excluded_from_mvp` — array

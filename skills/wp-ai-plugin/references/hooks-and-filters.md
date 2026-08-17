@@ -57,8 +57,8 @@ These are namespaced functions in `WordPress\AI`. Import as `use function WordPr
 | --- | --- | --- | --- |
 | `wpai_default_feature_classes` | `Loader::get_default_features()` | array of built-in classes | Add or remove Feature class strings before instantiation |
 | `wpai_features_enabled` | `Loader::initialize_features()` | `true` | Master kill switch for all features |
-| `wpai_feature_{$id}_enabled` | `Abstract_Feature::is_enabled()` | option value | Per-feature override (force on/off in code) |
-| `ai_experiments_experiment_{$id}_enabled` | `Abstract_Feature::is_enabled()` | option value | Deprecated (0.6.0), kept via `apply_filters_deprecated` for legacy compat. Note the doubled segment — the id is preceded by `experiment_`, unlike the modern `wpai_feature_{$id}_enabled` |
+| `wpai_feature_{$id}_enabled` | `Abstract_Feature::is_individually_enabled()` | option value | Per-feature override (force on/off in code) |
+| `ai_experiments_experiment_{$id}_enabled` | `Abstract_Feature::is_individually_enabled()` | option value | Deprecated (0.6.0), kept via `apply_filters_deprecated` for legacy compat. Note the doubled segment — the id is preceded by `experiment_`, unlike the modern `wpai_feature_{$id}_enabled` |
 
 ### The rest of the deprecated `ai_experiments_*` surface
 
@@ -110,14 +110,17 @@ Advanced settings are Feature-provided metadata on the existing Settings → AI 
 | `wpai_pre_normalize_content` | `WordPress\AI\normalize_content()` | input | Modify content before normalization |
 | `wpai_normalize_content` | `WordPress\AI\normalize_content()` | output | Modify content after normalization |
 
-### Content thresholds and capability detection (v1.1.0+)
+### Content thresholds and capability detection
+
+Version-marked per row — these did not all arrive together.
 
 | Filter | Where | Default | Use |
 | --- | --- | --- | --- |
-| `wpai_min_content_length` | `WordPress\AI\get_min_content_length()` | `250` (chars) | Per-feature minimum character count before content-dependent features enable; replaces the deprecated `wpai_summarization_min_content_length` |
-| `wpai_has_image_generation_support` | `WordPress\AI\has_image_generation_support()` | auto-detected bool | Claim Image Generation support when auto-detection misses it (e.g., connectors authenticating without an API key, such as OAuth) |
-| `wpai_is_{$connector_slug}_connector_configured` | AI Status dashboard widget | connector's detected bool | Correct dashboard status for connectors whose configuration cannot be inferred from API-key/OAuth data |
-| `wpai_comment_moderation_moderate_guests` | Comment Moderation experiment | setting value (default yes) | Override whether guest comments are auto-moderated |
+| `wpai_min_content_length` (v1.1.0+) | `WordPress\AI\get_min_content_length()` | `250` (chars) | Per-feature minimum character count before content-dependent features enable; replaces the deprecated `wpai_summarization_min_content_length` |
+| `wpai_has_image_generation_support` (v1.1.0+) | `WordPress\AI\has_image_generation_support()` | auto-detected bool | Claim Image Generation support when auto-detection misses it (e.g., connectors authenticating without an API key, such as OAuth) |
+| `wpai_has_ai_credentials` (v0.7.0+) | `WordPress\AI\has_ai_credentials()` | auto-detected bool | The credential-detection sibling of the row above, filtered as `( bool $has_credentials, array $connectors )`. The detection loop skips every connector whose auth method isn't `api_key`, so an OAuth connector must claim itself here or the site reads as unconfigured — it gates the AI Status widget's "Configure an AI provider" step, Settings → AI's `hasCredentials`, and Comment Moderation's provider check |
+| `wpai_is_{$connector_slug}_connector_configured` (v0.9.0+) | AI Status dashboard widget | connector's detected bool | Correct dashboard status for connectors whose configuration cannot be inferred from API-key/OAuth data; filtered as `( bool $configured, array $connector_data )` |
+| `wpai_comment_moderation_moderate_guests` (v1.1.0+) | Comment Moderation experiment | setting value (default yes) | Override whether guest comments are auto-moderated |
 | `wpai_content_translation_languages` | `Content_Translation/Languages.php` | built-in language map | Add or remove target languages for Content Translation. Codes pass through `sanitize_key()`; entries with a non-string or empty label are dropped; a non-array return is ignored. `develop` only — not in 1.2.0 |
 
 ### Other `develop`-only hooks (unreleased after v1.2.0)
@@ -129,9 +132,9 @@ Advanced settings are Feature-provided metadata on the existing Settings → AI 
 | `wpai_slug_generation_number_of_suggestions` | Slug Generation experiment | How many slug suggestions to request |
 | `wpai_content_classification_candidate_pool_size` | Content Classification experiment | Size of the candidate term pool before ranking |
 
-### Global Ability system instruction (v1.2.0+)
+### Global Ability system instruction (v0.7.0+)
 
-The global `wpai_system_instruction` hook ships in v1.2.0. It runs after Guidelines are appended and filters the final system instruction for every `Abstract_Ability`:
+The global `wpai_system_instruction` hook ships in v0.7.0 (`@since 0.7.0` on `Abstract_Ability::get_system_instruction()`, unchanged through v1.2.0). It runs after Guidelines are appended and filters the final system instruction for every `Abstract_Ability`:
 
 ```php
 apply_filters( 'wpai_system_instruction', string $instruction, string $name, array $data );
@@ -163,6 +166,7 @@ That gives you every Ability-level filter with file/line context.
 | --- | --- | --- |
 | `wpai_register_features` | `Loader::register_features()` | Primary downstream entry point: register a Feature instance into the registry |
 | `wpai_features_initialized` | `Loader::initialize_features()` | Fires after every enabled Feature's `register()` has run; safe to assume features are wired up |
+| `wpai_request_logged` (v1.0.0+) | `AI_Request_Log_Repository::insert()` | Fires after a request row is inserted, as `( string $log_id, array $insert_data )` — `$log_id` is a `wp_generate_uuid4()` string, not an insert ID. Only reachable while the `ai-request-logging` Experiment is enabled; that Experiment is the sole production caller that instantiates the log manager |
 
 The plugin also fires the standard WordPress activation hook via `register_activation_hook( WPAI_PLUGIN_FILE, ... )`, which downstream code generally shouldn't depend on (use your own activation hook for your own plugin).
 

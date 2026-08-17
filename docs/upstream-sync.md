@@ -26,9 +26,14 @@ This keeps automation deterministic and reviewable before it starts rewriting sk
 
 - `shared/scripts/update-upstream-indices.mjs`
   - Fetches upstream sources and rewrites JSON indexes in `shared/references/`.
-  - Covers WordPress core versions, Gutenberg releases, WordPress/ai (canonical AI plugin) releases, WordPress/mcp-adapter releases, and the WP↔Gutenberg mapping.
+  - Covers WordPress core versions, Gutenberg releases, WordPress/ai (canonical AI plugin) releases, WordPress/mcp-adapter releases, `wordpress/php-ai-client` versions, and the WP↔Gutenberg mapping.
+  - `php-ai-client` is read from **Packagist**, not GitHub Releases: Packagist is the authoritative index for a Composer package, and its per-version `time` matches each tag's commit date. `WordPress/php-ai-client` does also publish GitHub Releases, so that endpoint would work — Packagist is the better source here, not the only available one.
 - `shared/scripts/check-upstream-drift.mjs`
-  - Offline check (run by `eval/harness/run.mjs` and therefore CI): compares the committed release indexes against the canonical release each skill declares (e.g. the `current canonical release: vX.Y.Z` marker in `skills/wp-ai-plugin/SKILL.md`).
+  - Offline check (run by `eval/harness/run.mjs` and therefore CI): compares the committed release indexes against the canonical release each skill declares. Four gates:
+    - `ai-plugin-releases.json` → the `current canonical release:` marker in `skills/wp-ai-plugin/SKILL.md`.
+    - `mcp-adapter-releases.json` → the `current canonical release:` marker in `skills/wp-abilities-api/SKILL.md`.
+    - `wordpress-core-versions.json` → the `core verified through:` marker in `skills/wp-abilities-api/SKILL.md`, at minor granularity.
+    - `php-ai-client-releases.json` → the `PHP AI Client verified through:` marker in `skills/wp-ai-client/SKILL.md`.
   - When the Upstream Sync workflow's refresh PR lands a newer release, CI turns red until the affected skill is re-synced against the tagged source and its marker is bumped. This converts "someone notices the skill is stale" into a forced, reviewable follow-up.
 
 ## CI / PR bot design (recommended)
@@ -46,7 +51,7 @@ This keeps automation deterministic and reviewable before it starts rewriting sk
 - Optional: use Agent Skills reference validator:
   - `skills-ref validate skills/<skill-name>`
 
-The updater is transactional with respect to parsing: it fetches and normalizes all three sources before writing any index. If the canonical WordPress/Gutenberg mapping cannot be parsed into at least one row, the command exits non-zero and preserves the checked-in indexes. Never accept `table-not-found` or an empty `rows` array as a successful refresh.
+The updater is transactional with respect to parsing: it fetches and normalizes every source before writing any index. If the canonical WordPress/Gutenberg mapping cannot be parsed into at least one row, the command exits non-zero and preserves the checked-in indexes. Never accept `table-not-found` or an empty `rows` array as a successful refresh.
 
 ## Canonical sources
 

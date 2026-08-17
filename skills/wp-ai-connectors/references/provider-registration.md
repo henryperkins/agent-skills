@@ -32,7 +32,7 @@ Whether auto-generated or manually overridden, every connector is an associative
 array(
     'name'           => 'My Provider',                 // Display name on the card.
     'description'    => 'Text and image generation.',  // Short description on the card.
-    'logo_url'       => 'https://example.com/logo.svg',// Optional. SVG preferred.
+    'logo_url'       => 'https://example.com/logo.svg',// Optional. SVG preferred. Auto-discovered AI providers don't set this — core derives it from ProviderMetadata's logo *path*.
     'type'           => 'ai_provider',                 // Use 'ai_provider' for AI providers (grouped + discovered from the AI Client registry).
     'authentication' => array(
         'method'          => 'api_key',                            // 'api_key' | 'none' | 'application_password' (7.1+).
@@ -53,7 +53,7 @@ array(
 | Method | Since | Notes |
 | --- | --- | --- |
 | `api_key` | 7.0 | Single API key, looked up env var → PHP constant → database. |
-| `none` | 7.0 | No authentication. Use for local providers like Ollama on `localhost:11434`. |
+| `none` | 7.0 | No authentication. Registers fine, but Settings → Connectors renders no card for it — see below. |
 | `application_password` | **7.1** | A `username` + `password` pair. Env var / constant hold one `username:password` string; the DB setting is an `object`. Auto-generated `setting_name` is `connectors_{$type}_{$id}_application_password`. |
 
 `application_password` is core in 7.1 (`@since 7.1.0` in `src/wp-includes/connectors.php`), and also reaches 7.0 sites running Gutenberg 23.6+ via `lib/compat/wordpress-7.0/`. It is aimed at non-AI connector types such as `content_source` (a remote WordPress), not at `ai_provider`. Unlike `api_key`, the values are masked in REST but never validated against the remote.
@@ -145,7 +145,7 @@ add_action( 'init', __NAMESPACE__ . '\\register_provider', 5 );
 
 What each part does:
 
-- **`Requires at least: 6.9`** — the official plugins target 6.9 because they bundle `wordpress/php-ai-client` as a Composer dependency. If you skip the Composer bundle and rely on Core's bundled SDK, set `Requires at least: 7.0` instead.
+- **`Requires at least: 6.9`** — the official plugins target 6.9 *not* because they bundle `wordpress/php-ai-client` (they don't: it sits in `require-dev` + `suggest`, and `/vendor` is in `.distignore`, so the wp.org ZIP carries no SDK) but because the `class_exists()` guard below leaves them inert on any 6.9 site that hasn't installed the package itself. Relying on Core's bundled SDK — what the official plugins do — means setting `Requires at least: 7.0`. Needing a newer SDK than core bundles is not a reason to bundle one yourself: `wp-settings.php` autoloads core's copy before any plugin runs, so gate the newer surface at runtime (`interface_exists()` / `version_compare( AiClient::VERSION, ... )`) the way `ai-provider-for-openai` 1.1.0 does for embeddings.
 - **`require_once __DIR__ . '/src/autoload.php';`** — loads the plugin's autoloader (Composer or hand-rolled PSR-4). The provider class lives under `src/`.
 - **`class_exists( AiClient::class )`** — guards against the SDK not being loaded. Without this, the plugin fatals on sites where the SDK isn't bundled and Core hasn't yet provided it.
 - **`hasProvider( AnthropicProvider::class )`** — makes registration idempotent.
@@ -189,4 +189,4 @@ Use these — not the registry directly — outside the `wp_connectors_init` cal
 
 ## What `Settings → Connectors` actually shows
 
-The admin screen renders the API-key card for any connector whose `authentication.method` is `api_key`, regardless of `type` — the built-in Akismet connector (`type` `spam_filtering`) appears alongside the AI providers. `none`-auth connectors (e.g. a local Ollama) are also supported. Since 7.1 the screen also renders a username/password card for `application_password` connectors (the built route at `src/wp-includes/build/routes/connectors-home/` handles the method). AI providers should still use `type => 'ai_provider'` so they're grouped and auto-discovered from the AI Client registry. Connectors using auth methods outside the registry's closed list can't be registered at all. Track #64789 and the Connectors API dev note's "Looking ahead" section for expansion.
+The admin screen renders the API-key card for any connector whose `authentication.method` is `api_key`, regardless of `type` — the built-in Akismet connector (`type` `spam_filtering`) appears alongside the AI providers. Since 7.1 the screen also renders a username/password card for `application_password` connectors (the built route at `src/wp-includes/build/routes/connectors-home/` handles the method). Those two methods are the whole list: the route assigns a render component for `api_key` and `application_password` only, then filters the page down to connectors that have one. A `none`-auth connector therefore gets **no card** — it registers in PHP and `wp_get_connector()` returns it, but nothing appears unless the plugin registers its own render component with the connectors store. Providers that want a visible card, local ones included, should declare `api_key` even when an empty key is acceptable. AI providers should still use `type => 'ai_provider'` so they're grouped and auto-discovered from the AI Client registry. Connectors using auth methods outside the registry's closed list can't be registered at all. Track #64789 and the Connectors API dev note's "Looking ahead" section for expansion.

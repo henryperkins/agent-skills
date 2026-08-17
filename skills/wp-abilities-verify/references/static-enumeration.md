@@ -103,6 +103,21 @@ Cases where the inventory is incomplete or ambiguous:
 - Variable-indirected annotations (built from config).
 - Conditional registration (`if ( feature_enabled() )`).
 - Variable-indirected callbacks (`array( $this, $callback_name )`).
+- Args rewritten by `wp_register_ability_args` (core 6.9+). The filter
+  runs on the whole `$args` array after the literal above and before the
+  ability is instantiated, so a listener can replace the annotations,
+  `meta.public` / `meta.mcp.public`, and the permission and execute
+  callbacks. Grep for it — and note that the plugin is not the only
+  possible source; any other plugin on the site can register one, and no
+  priority is guaranteed to run last:
+
+  ```bash
+  rg -n --type=php "wp_register_ability_args" <plugin-root>/
+  ```
+
+  When any listener is found, the static annotation and exposure
+  verdicts are advisory only and runtime mode is required for an
+  authoritative reading.
 
 Record each in the report's "Static enumeration limitations" section
 and recommend a runtime-mode rerun for the authoritative inventory.

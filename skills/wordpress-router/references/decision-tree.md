@@ -33,6 +33,10 @@ Route by intent even if repo kind is broad (like `wp-site`):
   - Route → `wp-abilities-api`.
 - **MCP Adapter / mcp_adapter_init / mcp-adapter-default-server / expose abilities to Claude Desktop / Cursor / ChatGPT via MCP**
   - Route → `wp-abilities-api` (see `references/mcp-exposure.md`).
+- **Audit a plugin’s REST surface for Abilities candidates / plan ability registrations / abilities migration audit doc**
+  - Route → `wp-abilities-audit`.
+- **Verify registered abilities / readonly annotation correctness / ability permission gates / exposure metadata (meta.public, show_in_rest, meta.mcp.public) / validate an audit doc**
+  - Route → `wp-abilities-verify`.
 - **Ambiguous WordPress Playground requests**
   - Route → `wp-playground`, then follow its routing wrapper.
 - **Blueprint JSON / Blueprint schema / Blueprint steps / Blueprint bundles**

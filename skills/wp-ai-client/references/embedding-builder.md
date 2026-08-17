@@ -4,7 +4,7 @@ Embedding generation arrived in `wordpress/php-ai-client` 1.4.0. It is a standal
 
 ## Version boundary
 
-- WordPress 7.0.2 bundles PHP AI Client 1.3.1. Its prompt builder can report embedding capability, but that package version has no generation path.
+- WordPress 7.0 through 7.0.4 and 7.1 all bundle PHP AI Client 1.3.1 (`AiClient::VERSION`). Its prompt builder can report embedding capability, but that package version has no generation path.
 - Do not load the unprefixed standalone 1.4 package beside Core's bundled copy. Both use the same namespaces.
 - On stock Core, wait for the bundled dependency to update. If an earlier Core version must use 1.4 behavior, isolate/prefix the dependency or call a separate service rather than relying on Composer load order.
 - In a standalone PHP application where WordPress Core is not loading the SDK, require `wordpress/php-ai-client:^1.4` and register a compatible provider before using `AiClient::input()`.
@@ -79,7 +79,7 @@ Configure a PSR event dispatcher with `AiClient::setEventDispatcher()` before co
 
 - `wp_ai_client_embedding()` does not exist.
 - `wp_ai_client_prompt()` cannot generate embeddings.
-- `is_supported_for_embedding_generation()` returning true on Core 7.0.2 proves provider capability, not the presence of a generation API.
+- `is_supported_for_embedding_generation()` returning true on Core 7.0/7.1 proves provider capability, not the presence of a generation API.
 - `generateEmbedding()` rejects multiple inputs; use `generateEmbeddings()` for a batch.
 - Empty strings and non-text/non-file message parts are invalid inputs.
 - `usingDimensions()` rejects values below 1.

@@ -50,6 +50,7 @@ Search for these in the repo:
 - `wp_get_abilities(`
 - `wp_abilities_api_init`
 - `wp_abilities_api_categories_init`
+- `wp_register_ability_args` (the filter that rewrites registration args before validation)
 - `wp-abilities/v1`
 - `@wordpress/abilities`
 - `wp_ability_` / `wp_pre_execute_ability` / `wp_before_execute_ability` / `wp_after_execute_ability` (lifecycle hooks)
@@ -155,10 +156,15 @@ agents most often misuse are documented there. The load-bearing distinctions:
   schema rejection and the ability executes on invalid input, site-wide. Return `WP_Error`, not
   `false`, or the caller loses the reason. `wp_ability_validate_input` does not fire at all when
   the ability declares no `input_schema`.
-- A single REST `/run` request fires `wp_ability_normalize_input`, `wp_ability_validate_input`,
-  and `wp_ability_permission_result` **twice** — once in the route's permission callback, once
-  inside `execute()`. Keep callbacks on those three pure; meter on `wp_ability_invoked` or
-  `wp_after_execute_ability` instead.
+- A single REST `/run` request fires `wp_ability_normalize_input` and
+  `wp_ability_permission_result` **twice** — once in the route's permission callback, once inside
+  `execute()` — and `wp_ability_validate_input` **three** times, because the `input`
+  `sanitize_callback` runs before the permission callback and asks `validate_input()` before
+  deciding whether to type-coerce (2 when the request carries no input, 0 when the ability
+  declares no `input_schema`). Keep callbacks on those three pure; meter on `wp_ability_invoked`
+  or `wp_after_execute_ability` instead. Because coercion is gated on that verdict, a
+  `wp_ability_validate_input` filter rejecting input the schema accepts also silently suppresses
+  type coercion for the request.
 - `wp_ability_permission_result` fires wherever `check_permissions()` runs, not only during
   execution. Tighten with it; never widen. Through `execute()` a `WP_Error` is logged via
   `_doing_it_wrong()` and replaced by a generic denial, so the message never reaches an executing
@@ -184,7 +190,7 @@ should still cast defensively.
 
 ### 7) Expose via MCP for external AI agents (optional)
 
-If external agents (Claude Desktop, Cursor, ChatGPT) should be able to discover and invoke your abilities, first check the site's PHP and WordPress versions. This base skill supports PHP 7.2.24+ and WP 6.9+, but MCP Adapter 0.6.1 requires PHP 7.4+ (`^7.4 || ^8.0`) and WordPress 6.9+; on PHP 7.2 or 7.3, upgrade the site runtime or stop before installing the adapter. Read `references/mcp-exposure.md` before giving installation, bootstrap, or server code. Install `wordpress/mcp-adapter`; for multi-plugin dependency use, also run `composer require automattic/jetpack-autoloader` and bootstrap `vendor/autoload_packages.php`.
+If external agents (Claude Desktop, Cursor, ChatGPT) should be able to discover and invoke your abilities, first check the site's PHP and WordPress versions. This base skill supports PHP 7.2.24+ and WP 6.9+, but MCP Adapter 0.6.1 requires PHP 7.4+ (`^7.4 || ^8.0`) and WordPress 6.9+; on PHP 7.2 or 7.3, upgrade the site runtime or stop before installing the adapter. Read `references/mcp-exposure.md` before giving installation, bootstrap, or server code. Install `wordpress/mcp-adapter`; for multi-plugin dependency use, also run `composer require automattic/jetpack-autoloader` and bootstrap `vendor/autoload_packages.php` **followed by `McpAdapter::instance()`** — consumed as a Composer package the adapter starts nothing on its own, so without that call the default server is never created and `mcp_adapter_init` never fires.
 
 **Confirm the adapter version before writing exposure metadata — the rule reversed in 0.6.0.** The default server (`mcp-adapter-default-server`) surfaces its discover/get/execute flow for abilities that resolve to MCP-public, and `McpAbilityExposure::is_public()` resolves `meta.mcp.public ?? meta.public ?? false`. On 0.6.0+, an ability marked `meta.public => true` for REST is therefore exposed to agents unless you add `meta.mcp.public => false`; on 0.5.0 and earlier only an explicit `meta.mcp.public => true` did anything. Write `meta.mcp.public` explicitly whenever MCP status matters — it means the same thing on every version. Every execution still runs the ability's `permission_callback`, so this governs discovery rather than authorization; but the default server's own built-in abilities gate on `read`, which every role holds. A custom server can explicitly allow-list selected ability IDs, and is the cleanest way to stay insulated from the 0.6.0 default; it also does not bypass permission callbacks. The adapter maps `meta.annotations` (`readonly`, `destructive`, `idempotent`) to the corresponding MCP tool annotations.
 
@@ -205,6 +211,8 @@ If external agents (Claude Desktop, Cursor, ChatGPT) should be able to discover 
   - registration rejected (missing `permission_callback`, non-boolean `meta.public`, malformed or
     duplicate ID, unregistered `category`) — see `references/php-registration.md`,
   - registration code not running (wrong hook / file not loaded),
+  - another plugin's `wp_register_ability_args` filter rewriting the args into something that
+    fails validation — it runs before every check except the name and duplicate tests,
   - neither `meta.public` (7.1+) nor `meta.show_in_rest` set, or an explicit `show_in_rest: false`
     overriding `public: true`,
   - incorrect category/ID mismatch.
@@ -237,6 +245,10 @@ If external agents (Claude Desktop, Cursor, ChatGPT) should be able to discover 
   asking about rather than inferring.
 - Confirm the installed MCP Adapter version before writing exposure metadata; the exposure rule
   changed in 0.6.0 and the two behaviors are opposites.
+- Planning a whole plugin's migration, or checking one that already shipped, is a different
+  workflow: `wp-abilities-audit` produces the migration audit doc from the plugin's REST surface,
+  and `wp-abilities-verify` checks annotation correctness, permission gates, and exposure metadata
+  against the registrations before a PR lands.
 - For canonical details, consult:
   - `references/rest-api.md` (endpoints, `public`/`show_in_rest` resolution, typed inputs, discovery)
   - `references/execution-lifecycle.md` (WP 7.1+ hook chain)

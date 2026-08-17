@@ -12,7 +12,7 @@ Three stability levels exist (declared in `load_metadata()` or defaulted):
 - **`'stable'`** — graduated through testing and contributor consensus
 - **`'deprecated'`** — slated for removal
 
-Image Generation is a stable Feature (promoted from `'experimental'` to `'stable'` in v0.8.0, #418; registered via `Loader::get_default_features()`). Title Generation has been stable for several releases. In v1.0.0, the *Review Notes* and *Refine from Notes* experiments were renamed to **Editorial Notes** (`editorial-notes`) and **Editorial Updates** (`editorial-updates`) respectively. The path is experimental → stable → potentially core.
+Image Generation is a stable Feature (promoted from `'experimental'` to `'stable'` in v0.8.0, #418; registered via `Loader::get_default_features()`) — and at v1.2.0 it holds the tree's only `'stability' => 'stable'` declaration. No registered Experiment sets the key at all, Title Generation included, so all sixteen fall back to `'experimental'`. The value is visible, not inert: the AI Status dashboard widget calls `Registry::get_features_by_stability()` to split its two lists, so a `'stable'` Feature lands in the **Features** column and everything else in the **Experiments** column (and `get_stability()` also rides along in the Settings → AI payload). In v1.0.0, the *Review Notes* and *Refine from Notes* experiments were renamed to **Editorial Notes** (`editorial-notes`) and **Editorial Updates** (`editorial-updates`) respectively. The path is experimental → stable → potentially core.
 
 ## The contract (`Abstract_Feature`)
 
@@ -137,7 +137,7 @@ Features supply advanced settings through their own metadata and settings-field 
 
 - **`Slug_Generation`** — generates post-slug suggestions; `wpai_slug_generation_number_of_suggestions` filters how many.
 
-- **Ability-scoped prompt hooks** — `wpai_{$ability_slug}_system_instruction`, `wpai_{$ability_slug}_prompt`, and `wpai_{$ability_slug}_prompt_builder`. The global `wpai_system_instruction` hook is already released in v1.2.0; only the scoped family is new on `develop`.
+- **Ability-scoped prompt hooks** — `wpai_{$ability_slug}_system_instruction`, `wpai_{$ability_slug}_prompt`, and `wpai_{$ability_slug}_prompt_builder`. The global `wpai_system_instruction` hook has shipped since v0.7.0 and is present in v1.2.0; only the scoped family is new on `develop`.
 - **Settings import/export** — authenticated `GET /ai/v1/settings/export` and `POST /ai/v1/settings/import` endpoints, both gated by `manage_options`, using schema version 1 and excluding credential-like settings.
 - **Site Health integration** — an AI Plugin debug section and a direct credential-status test that does not expose secrets.
 - **Content Classification controls** — available-term, minimum-confidence, and candidate-pool-size filters plus richer taxonomy descriptors.
@@ -177,7 +177,7 @@ public function register_abilities(): void {
 }
 ```
 
-The `ability_class` key is the AI plugin's convention — it points to a class extending `WordPress\AI\Abstracts\Abstract_Ability` (which itself extends WordPress core's `WP_Ability`). The Ability class implements:
+The `ability_class` key is a core `wp_register_ability()` argument since WordPress 6.9 — any fully-qualified class extending `WP_Ability`, instantiated instead of `WP_Ability` itself. The AI plugin is one consumer: it points the key at a class extending `WordPress\AI\Abstracts\Abstract_Ability` (which itself extends `WP_Ability`). Because core skips its `execute_callback`/`permission_callback` validation whenever `get_class( $this ) !== WP_Ability::class`, the named subclass is responsible for supplying both. The Ability class implements:
 
 - `input_schema(): array`
 - `output_schema(): array`

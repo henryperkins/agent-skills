@@ -56,6 +56,27 @@ const CHECKS = [
     granularity: "minor",
     hint: "A new WordPress minor has shipped. Re-verify the 7.1+ surface in skills/wp-abilities-api (and the exposure rules in wp-abilities-verify) against the released branch rather than the pre-release one, then bump the 'core verified through' marker in the SKILL.md compatibility line.",
   },
+  {
+    // wp-ai-client's most load-bearing claim is a boundary between two moving
+    // versions: what the standalone `wordpress/php-ai-client` package exposes
+    // versus what core actually bundles (1.4.0 vs 1.3.1 — embeddings and the
+    // EmbeddingBuilder surface exist only on the standalone side). The skill
+    // enumerates that delta feature by feature, so a new standalone release
+    // silently invalidates both halves of the boundary: the delta grows and
+    // "what core does not yet expose" stops being the full list.
+    //
+    // This gate watches the standalone package only. The core-bundled half of
+    // the marker moves with core, which the released-core gate above already
+    // covers; re-verifying either side means re-reading both.
+    name: "wp-ai-client vs WordPress/php-ai-client releases",
+    indexFile: "shared/references/php-ai-client-releases.json",
+    skillFile: "skills/wp-ai-client/SKILL.md",
+    // Matches the frontmatter compatibility line, e.g.
+    // "PHP AI Client verified through: 1.4.0 (core-bundled: 1.3.1)." — the
+    // captured version is the standalone one; the parenthetical is prose.
+    skillPattern: /PHP AI Client verified through:\s*(\d+(?:\.\d+)+)/,
+    hint: "A newer standalone php-ai-client has shipped. Re-verify the core-bundled vs standalone boundary in skills/wp-ai-client (the AiClient::VERSION constants in WordPress/php-ai-client and in core's src/wp-includes/php-ai-client/), update the enumerated delta, then bump the 'PHP AI Client verified through' marker in the SKILL.md compatibility line.",
+  },
 ];
 
 function parseVersion(value) {

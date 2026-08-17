@@ -29,6 +29,8 @@ jobs:
             - WordPress core versions (from api.wordpress.org)
             - Gutenberg releases (from GitHub Releases API)
             - WordPress/ai (canonical AI plugin) releases (from GitHub Releases API)
+            - WordPress/mcp-adapter releases (from GitHub Releases API)
+            - wordpress/php-ai-client versions (from Packagist)
             - WordPress ↔ Gutenberg mapping (from developer.wordpress.org docs)
 
             If CI fails on this PR, the drift check caught a skill whose

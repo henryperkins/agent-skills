@@ -101,7 +101,7 @@ Positional (not named) arguments on purpose — the helper is called from every 
 
 ### 1. `class_exists` on the controller
 
-Execute callbacks can be reached on sites where the plugin's classes haven't loaded (tests, WP-CLI with limited bootstrap, admin pages with conditional autoloading). Check is cheap; without it a missing class produces a fatal.
+Execute callbacks can be reached on sites where the plugin's classes haven't loaded (tests, WP-CLI with limited bootstrap, admin pages with conditional autoloading). Check is cheap; without it a missing class throws `Error: Class "<Controller>" not found`, which core converts to `WP_Error( 'ability_callback_exception' )` on the `WP_Ability::execute()` path (WP 7.0+) — a hard fatal on 6.9 and whenever the static callback is invoked directly. Either way the agent gets an opaque failure instead of a code it can act on.
 
 Note `'\\' . $controller_class` — accept controller class names without a leading backslash (readable in config arrays) and re-add it so `class_exists` and `new $fqcn(...)` both root-resolve.
 
@@ -109,7 +109,7 @@ Note `'\\' . $controller_class` — accept controller class names without a lead
 
 When the controller takes a shared API client as a constructor argument, the accessor is typically a `public static` method on the main plugin class. Guard both `class_exists` on the plugin class AND `method_exists` on the accessor because either could be absent during partial bootstraps. Treat a null return from the accessor as "not initialized".
 
-Missing this argument produces `ArgumentCountError: Too few arguments to function <Controller>::__construct(), 0 passed` — a PHP fatal. The standardized `<plugin>_not_initialized` error code is documented in `error-code-vocabulary.md`.
+Missing this argument produces `ArgumentCountError: Too few arguments to function <Controller>::__construct(), 0 passed` — same fate as guard 1: `ability_callback_exception` on the `execute()` path in WP 7.0+, a hard fatal on 6.9 and on direct static calls. The standardized `<plugin>_not_initialized` error code is documented in `error-code-vocabulary.md`.
 
 When the controller takes no constructor args, skip this guard entirely. When it takes only simple scalars (e.g. a post-type string), pass them in via an optional `constructor_args` parameter on the helper.
 

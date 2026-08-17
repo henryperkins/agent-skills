@@ -37,12 +37,14 @@ Plugin families with their own dev tooling will have their own bring-up
 command in `AGENTS.md`; follow it as documented.
 
 If `AGENTS.md` doesn't document it, ask the user rather than guessing.
-Record the env-up command + the corresponding wp-cli invocation (e.g.
-`npx wp-env run cli wp`) and use them uniformly for the rest of the
-harness.
+Record the env-up command + the prefix that runs a command inside the
+env (e.g. `npx wp-env run cli`, `docker compose exec -T wordpress`) and
+use them uniformly for the rest of the harness.
 
-In this file, `<env-cli>` is shorthand for whatever wp-cli invocation the
-plugin uses.
+In this file, `<env-cli>` is that prefix, and every snippet writes its
+own `wp` — so `<env-cli> wp eval '…'` expands to
+`npx wp-env run cli wp eval '…'`. On a stack where wp-cli runs directly
+against the site, `<env-cli>` is empty.
 
 ## Step 1 — bring up the env and sanity-check
 
@@ -161,6 +163,19 @@ Acceptable outcomes:
 - `WP_Error(<upstream_code>)` — upstream third-party error bubbled
   through. Document, don't block.
 
+Artifacts of the bare `execute()` call above — re-invoke before recording
+anything about the callback:
+
+- `WP_Error(ability_invalid_input)` — the ability declares an object-typed
+  `input_schema` with no top-level `default`, so `normalize_input()` leaves
+  the input `null` and `validate_input()` rejects it before the callback
+  runs. Re-invoke as `execute( array() )`. The registration-side fix is
+  `'default' => (object) array()` at the schema root — see
+  `../../wp-abilities-api/references/input-schema-gotchas.md` section 4.
+- `WP_Error(ability_missing_input_schema)` — `execute( array() )` against an
+  ability that declares no `input_schema`. With an empty schema,
+  `validate_input()` accepts only `null`. Call these with no arguments.
+
 Unacceptable:
 
 - PHP fatal → stop the harness.
@@ -270,12 +285,28 @@ echo "non-string: " . ( is_wp_error( $r2 ) ? "WP_Error(" . $r2->get_error_code()
 Acceptable codes, per
 `../../wp-abilities-api/references/error-code-vocabulary.md`:
 
-- `ability_invalid_input` — the Abilities API's schema validator fired
-  first (normal REST-bridge path; emitted by
-  `WP_Ability::validate_input()` in core).
-- `<plugin>_missing_<field>` — the execute callback's own guard fired
-  (direct-invocation path).
+- `ability_invalid_input` — core's schema validator fired first, emitted by
+  `WP_Ability::validate_input()`. `execute()` normalizes input, validates it
+  against `input_schema`, then checks permissions before the callback runs —
+  on every transport, REST and MCP and WP-CLI and plain PHP alike. So this
+  is the expected code whenever the field is schema-required, including for
+  the `wp eval` invocation above.
+- `<plugin>_missing_<field>` — the execute callback's own guard fired.
+  Three paths reach it: (a) the field is *not* listed in the schema's
+  `required`, so validation passed and the callback rejected; (b) the field
+  is required and present with a schema-valid but falsy value — `"0"`, `0`,
+  `""` — and the callback guards it with `empty()`, so validation passed and
+  the guard false-rejected — a defect in its own right, since a legitimate
+  `"0"` ID is rejected the same way (see
+  `../../wp-abilities-api/references/input-schema-gotchas.md` gotcha 3);
+  (c) the raw static callback is invoked directly instead of through the
+  ability.
 - `<plugin>_invalid_<field>` — same, for the wrong-type case.
+
+`ability_missing_input_schema` on either call means the ability declares no
+`input_schema` at all — `validate_input()` rejects any non-null input under
+an empty schema. A write ability that takes input without declaring a schema
+is a registration defect; fix the registration and re-run the check.
 
 `UNEXPECTED_OK` → FAIL. Validation is missing; the ability accepted
 no-input and proceeded to do something it shouldn't have.
@@ -364,9 +395,10 @@ return values."
 
 ```bash
 <env-cli> wp --user=admin eval '
-$a  = wp_get_ability( "<plugin>/<idempotent-ability>" );
-$r1 = $a->execute();
-$r2 = $a->execute();
+$a     = wp_get_ability( "<plugin>/<idempotent-ability>" );
+$input = array(); // the invocation form Check 3 settled on for this ability.
+$r1    = $a->execute( $input );
+$r2    = $a->execute( $input );
 
 if ( is_wp_error( $r1 ) || is_wp_error( $r2 ) ) {
     echo "skipped: one or both invocations returned WP_Error" . PHP_EOL;
@@ -381,6 +413,13 @@ if ( is_wp_error( $r1 ) || is_wp_error( $r2 ) ) {
 }
 '
 ```
+
+Carry Check 3's invocation form forward: `array()` for an object-typed
+root schema, `null` for an ability that declares no `input_schema`, a
+representative value of the declared root type otherwise. A `skipped:`
+line reporting `ability_invalid_input` or `ability_missing_input_schema`
+means the form is wrong, not that the ability failed — fix the call and
+re-run before recording anything.
 
 Interpretation:
 

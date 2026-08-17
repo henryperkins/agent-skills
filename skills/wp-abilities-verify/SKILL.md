@@ -104,8 +104,11 @@ and verify it matches the annotation claim:
 - `readonly: true` → callback must not write to the database, the
   options table, post / user / term / comment data, the filesystem,
   cron, or via non-GET HTTP / REST delegates.
-- `destructive: false` → callback must not delete, refund, void,
-  cancel, or trash.
+- `destructive: false` → callback must perform only additive updates.
+  Removal or reversal of existing state (delete, trash, refund, void,
+  cancel) FAILs; in-place overwrite of existing state (`update_option`,
+  `wp_update_post` on an existing row) is non-additive and at least
+  WARNs.
 - `idempotent: true` → repeated calls with the same input have no
   additional effect on the environment (per the `idempotent`
   annotation's docblock in `class-wp-ability.php`). Static catches
@@ -125,20 +128,26 @@ Read `references/permission-roundtrip.md`. Static: classify each
 `permission_callback` against the six shapes (preferred Shape A
 `current_user_can(...)`; FAIL on Shape B-bad `WP_REST_Request`
 patterns or Shape E literal `true`). Runtime: anon and subscriber
-denied; admin allowed (unless deliberately public). When an audit was
-provided, cross-check the registered cap against the audit's declared
-gate.
+denied; admin allowed (unless deliberately public). On WP 7.1+ also
+grep for `wp_pre_execute_ability` listeners — one that returns a value
+bypasses the permission callback outright, and probing
+`check_permissions()` cannot see it. When an audit was provided,
+cross-check the registered cap against the audit's declared gate.
 
 ### 6. Exposure
 
 Read `references/exposure-checks.md`. Record each ability's raw exposure keys
-(`meta.public`, `meta.show_in_rest`, `meta.mcp.public`) as present/absent —
-not just their resolved value — then judge:
+(`meta.public`, `meta.show_in_rest`, `meta.mcp.public`) plus `meta.mcp.type` as
+present/absent — not just their resolved value — then judge:
 
 - an exposed ability with a weak permission callback → FAIL (an
   unexposed one is only a WARN),
 - `meta.public: true` with no `meta.mcp.public` key → WARN, because MCP
   exposure is being inherited rather than declared,
+- `meta.mcp.type` present with a value outside `tool|resource|prompt` →
+  FAIL, because the adapter silently promotes the ability to a tool
+  instead of hiding it — a misspelled `resources` is exposed, not
+  dropped,
 - `destructive: true` and effectively MCP-public → FAIL when the audit
   records `exposure.mcp: allow` for a *different* set of abilities or
   contradicts the registration; WARN when no audit was supplied or the
@@ -161,16 +170,18 @@ computed against the wrong adapter version reads as false confirmation.
 
 ### 7. Schema lints
 
-Read `references/schema-lints.md`. Six small principles applied to
-each ability's `input_schema`: object schemas declare
+Read `references/schema-lints.md`. Seven small principles applied to
+each ability's schemas: object schemas declare
 `additionalProperties`; required fields have descriptions; enums
 non-empty; no `$ref`; defaults are statically constant (including
-`(object) array()`); reference abilities have no required inputs.
+`(object) array()`); reference abilities have no required inputs;
+`format` values are ones the JS client can compile.
 
 Cross-reference `../wp-abilities-api/references/input-schema-gotchas.md`
-for the four runtime gotchas (defaults not injected on the
+for the five runtime gotchas (defaults not injected on the
 property-level path, pagination key drift, `empty()` on string IDs,
-direct vs indirect invocation strictness).
+direct vs indirect invocation strictness, server/client `format` list
+mismatch).
 
 ### 8. Error-code vocabulary
 
@@ -203,8 +214,8 @@ Last updated: <YYYY-MM-DD HH:MM>
 ## Permission gates
 
 ## Exposure (WP <version>, MCP Adapter <version>)
-| Ability | public | show_in_rest | mcp.public | Effective REST | Effective MCP | Audit | Result |
-|---|---|---|---|---|---|---|---|
+| Ability | public | show_in_rest | mcp.public | mcp.type | Effective REST | Effective MCP | Audit | Result |
+|---|---|---|---|---|---|---|---|---|
 
 ## Schema lints
 

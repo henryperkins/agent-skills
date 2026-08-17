@@ -47,7 +47,7 @@ Declare input modalities with `OptionEnum::inputModalities()` and output modalit
 
 ## Embedding provider contract (PHP AI Client 1.4+)
 
-> **Core does not bundle this.** WP 7.0 and 7.1 vendor a pre-1.4 SDK: `src/wp-includes/php-ai-client/` has no `src/Providers/Models/EmbeddingGeneration/`, no `EmbeddingResult`/`EmbeddingBuilder`, and no `ModelConfig::KEY_DIMENSIONS` (so `OptionEnum::dimensions()` does not resolve). `CapabilityEnum::EMBEDDING_GENERATION` *is* in the bundled enum, which makes the surface look present. Require `wordpress/php-ai-client: ^1.4` in your plugin's own Composer bundle before writing any of the below.
+> **Core does not bundle this.** WP 7.0 and 7.1 vendor a pre-1.4 SDK: `src/wp-includes/php-ai-client/` has no `src/Providers/Models/EmbeddingGeneration/`, no `EmbeddingResult`/`EmbeddingBuilder`, and no `ModelConfig::KEY_DIMENSIONS` (so `OptionEnum::dimensions()` does not resolve). `CapabilityEnum::EMBEDDING_GENERATION` *is* in the bundled enum, which makes the surface look present. Keep `wordpress/php-ai-client: ^1.4` in `require-dev` and gate everything below on `interface_exists( EmbeddingGenerationModelInterface::class )` — the pattern `WordPress/ai-provider-for-openai` 1.1.0 ships — rather than bundling a second SDK copy that would collide with the one `wp-settings.php` already autoloads.
 
 An automatically discoverable text embedding model with configurable dimensions needs metadata shaped like:
 
@@ -85,7 +85,7 @@ Connector cards display a logo (`logo_url` in the connector array). Conventions 
 
 - **SVG preferred.** The card scales the logo; SVG stays sharp.
 - **Square or near-square aspect.** Wide horizontal logos crop awkwardly.
-- **Hosted on your provider's CDN, not WordPress.org.** The card just needs a URL; bundling the asset in the plugin is fine but `logo_url` should point to wherever the screen actually fetches from. Plugin-bundled assets work via `plugins_url()`.
+- **Bundled in the plugin, never remote.** An auto-discovered AI provider supplies its logo as the 7th `ProviderMetadata` constructor argument — an absolute *filesystem* path, gated on `version_compare( AiClient::VERSION, '1.3.0', '>=' )` since that parameter arrived in SDK 1.3.0 — and core resolves it to a URL itself via `plugins_url()`. Only paths inside `WP_PLUGIN_DIR` / `WPMU_PLUGIN_DIR` survive: anything else either fails `file_exists()` (a CDN URL always does) or trips `_doing_it_wrong()`, and the card renders with no logo. `logo_url` is settable directly only through a manual `WP_Connector_Registry::register()` or a `wp_connectors_init` override.
 - **Match the provider's official brand.** Don't invent a logo; use the upstream's asset.
 
 ## Versioning model declarations

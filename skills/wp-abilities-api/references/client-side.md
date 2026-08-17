@@ -18,8 +18,9 @@ export const ready: Promise< void > = initialize();
 ```
 
 Until `ready` resolves, the store holds no server abilities. `getAbilities()` returns an empty array and
-`executeAbility( 'some/server-ability' )` fails to find its target — **silently, with no error that points at
-the cause**. Every imperative call against server-registered abilities must await it first:
+`executeAbility( 'some/server-ability' )` throws `Error: Ability not found: some/server-ability` — **an error
+that names the ability but not the race**, which is why it gets misread as "the plugin never registered it".
+Every imperative call against server-registered abilities must await it first:
 
 ```js
 const { ready } = await import( '@wordpress/core-abilities' );
@@ -192,7 +193,7 @@ registerAbility( {
 } );
 ```
 
-This client check controls discoverability and execution in the UI; server-backed work still needs a server-side `permission_callback`. Returning false throws `ability_permission_denied`.
+`permissionCallback` gates execution and nothing else: `executeAbility()` awaits it and throws `ability_permission_denied` on a falsy result. The store selectors ignore it — `getAbilities()`, `getAbility()`, and the `core/abilities` store still hand back the ability, label and description included, to a user who cannot run it. A UI that lists abilities has to filter by permission itself, or skip the `registerAbility()` call entirely when the user lacks the capability. Server-backed work still needs a server-side `permission_callback`.
 
 ## Annotations
 
@@ -290,9 +291,16 @@ try {
     } );
 } catch ( error ) {
     switch ( error.code ) {
+        // Raised by executeAbility itself.
         case 'ability_permission_denied':
         case 'ability_invalid_input':
         case 'ability_invalid_output':
+            // Handle each appropriately.
+            break;
+        // Raised by apiFetch for server-registered targets.
+        case 'rest_ability_cannot_execute':  // 401/403 — server permission_callback said no.
+        case 'rest_ability_not_found':       // 404 — unregistered, or show_in_rest: false.
+        case 'rest_ability_invalid_method':  // 405 — annotations disagree with the method sent.
             // Handle each appropriately.
             break;
         default:
@@ -300,6 +308,8 @@ try {
     }
 }
 ```
+
+The two families are not interchangeable. `ability_permission_denied` only ever fires for a client-registered ability, because the REST payload carries no `permissionCallback` — a server ability's permission failure arrives as `rest_ability_cannot_execute`. `ability_invalid_input` and `ability_invalid_output` fire for both: the client validates against the `input_schema`/`output_schema` it fetched over REST before and after the round trip, so a server ability can fail validation client-side and never reach the server at all.
 
 `executeAbility` works for both client- and server-registered abilities. For server abilities loaded via `@wordpress/core-abilities`, execution is dispatched over REST automatically using the method derived from annotations — but only once `ready` has resolved. Client-registered abilities are available synchronously and need no wait.
 
@@ -312,7 +322,7 @@ unregisterAbility( 'my-plugin/navigate-to-settings' );
 unregisterAbilityCategory( 'my-plugin-actions' );
 ```
 
-Only client-registered abilities and categories can be unregistered from the client. Server-registered ones are removed by unregistering on the server side.
+Both functions remove any entry from the store by name or slug, including the ones `@wordpress/core-abilities` registered from the server — the `annotations.serverRegistered` flag it stamps is recorded but never checked. Unregistering a server ability client-side only hides it from this page's store; the `/run` route still executes it, and the next page load fetches it back. To actually retire a server ability, unregister it in PHP.
 
 ## Sources
 

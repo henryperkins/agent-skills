@@ -19,7 +19,9 @@ platform:
 - On multisite, session storage moved from a network-wide key to per-site keys, so active
   Streamable HTTP sessions must reconnect once after upgrading.
 - `_meta` is preserved on resource contents, embedded resources, content blocks, and prompt
-  messages; resource URIs now match case-insensitively.
+  messages; resource-URI lookup now folds the **scheme** and only the scheme, so
+  `MyPlugin://Thing` resolves a resource registered as `myplugin://Thing` while
+  `myplugin://thing` still does not — everything after the scheme stays case-sensitive.
 
 ## Installation
 
@@ -30,11 +32,19 @@ composer require wordpress/mcp-adapter
 composer require automattic/jetpack-autoloader
 ```
 
-Then load the Jetpack Autoloader from your plugin's bootstrap. It resolves compatible package versions when multiple plugins on the site depend on the adapter:
+Then load the Jetpack Autoloader from your plugin's bootstrap and start the adapter. The autoloader resolves compatible package versions when multiple plugins on the site depend on the adapter; `McpAdapter::instance()` is what actually boots it:
 
 ```php
 require_once plugin_dir_path( __FILE__ ) . 'vendor/autoload_packages.php';
+
+use WP\MCP\Core\McpAdapter;
+
+if ( class_exists( McpAdapter::class ) ) {
+    McpAdapter::instance();
+}
 ```
+
+**The `instance()` call is not optional.** The package declares PSR-4 autoloading and no `files` entry, so as a pure Composer dependency nothing invokes it for you — autoloading a class is not the same as running it. Skip it and the default server is never created and `mcp_adapter_init` never fires, so a custom server registered on that action silently does not exist. `instance()` hooks the adapter's `init()` on `rest_api_init` at priority 15, or on `init` at priority 20 under WP-CLI, so calling it at plugin-bootstrap time is right.
 
 For local exploration / smoke testing, the standalone plugin zip from the [adapter's Releases page](https://github.com/WordPress/mcp-adapter/releases) is fine. Don't ship that to production with multiple consumers — version conflicts will bite.
 
@@ -45,7 +55,7 @@ Once the adapter is loaded:
 1. The default server's `discover-abilities`, `get-ability-info`, and `execute-ability` abilities only surface registered abilities that resolve to MCP-public — on 0.6.0+ that means `meta.mcp.public` when set, otherwise `meta.public` (see the resolution rules below).
 2. A custom server may explicitly list selected ability IDs as tools, resources, or prompts; that selection does not bypass each ability's `permission_callback`.
 3. The adapter respects the ability's `permission_callback` at execution — agents can only invoke what the authenticated user is authorized to do.
-4. The ability's `input_schema` and `output_schema` translate directly into the MCP tool's input and output schemas.
+4. The ability's `input_schema` and `output_schema` become the MCP tool's input and output schemas — but MCP requires both to be object-typed, so `SchemaTransformer::transform_to_object_schema()` rewrites a non-object root. An input schema of `{ "type": "string" }` is advertised to clients as `{ "type": "object", "properties": { "input": { "type": "string" } }, "required": [ "input" ] }`, a non-object output schema is wrapped under `result`, and an absent `input_schema` is advertised as bare `{ "type": "object" }`. The adapter unwraps and rewraps around execution, so the ability itself still sees its declared shape. Declare an object root if you want the tool schema clients read to match the registration.
 5. The ability's annotations map to MCP annotations: `readonly` → `readOnlyHint`, `destructive` → `destructiveHint`, `idempotent` → `idempotentHint`.
 
 Mark an ability public for the default-server flow only after reviewing it for external use:
@@ -62,6 +72,48 @@ Mark an ability public for the default-server flow only after reviewing it for e
 ```
 
 MCP exposure controls default-server discovery, not authorization. A well-shaped ability still needs a namespaced ID, label, description, schemas, permission callback, and accurate annotations.
+
+## Ability names are rewritten into MCP tool names
+
+MCP tool and prompt names allow only `A-Za-z0-9_.-`, so an ability is **not** exposed under the
+name you registered. `RegisterAbilityAsMcpTool::resolve_tool_name()` runs the registered name
+through `McpNameSanitizer::sanitize_name()` (verified in v0.6.1) before the tool is built:
+
+| Step | Effect |
+|---|---|
+| trim, then `/` → `-` | `my-plugin/list-comments` becomes `my-plugin-list-comments` |
+| `remove_accents()` | `é` → `e`, `ñ` → `n` — only reached if the name is still invalid after the slash swap |
+| `[^a-zA-Z0-9_.-]` → `-`, consecutive hyphens collapsed, leading/trailing `-` and `_` trimmed | spaces and other punctuation become hyphens |
+| length > 128 | truncated to 115 chars + `-` + the first 12 hex chars of `md5()` of the *original* name |
+
+Only an empty result fails; it returns `WP_Error` and the tool is not registered. The
+`mcp_adapter_tool_name` filter receives the sanitized name and its return value is re-validated.
+
+Prompts use the same sanitizer (`RegisterAbilityAsMcpPrompt::resolve_prompt_name()`). Resources
+do not — they are identified by the URI you declare at `meta.mcp.uri`.
+
+So the default server's three abilities reach clients as:
+
+| Registered ability | Client-visible tool |
+|---|---|
+| `mcp-adapter/discover-abilities` | `mcp-adapter-discover-abilities` |
+| `mcp-adapter/get-ability-info` | `mcp-adapter-get-ability-info` |
+| `mcp-adapter/execute-ability` | `mcp-adapter-execute-ability` |
+
+Four places still take the **unsanitized** ability name and must not be "corrected" to the
+hyphenated form:
+
+- the `tools` / `resources` / `prompts` arrays passed to `create_server()`, and the same keys in
+  the `mcp_adapter_default_server_config` filter — those are ability names, resolved with
+  `wp_get_ability()`.
+- the `ability_name` argument of `mcp-adapter-execute-ability`, also resolved with
+  `wp_get_ability()`.
+- the `ability_name` argument of `mcp-adapter-get-ability-info`, resolved the same way.
+- the `name` field reported by `mcp-adapter-discover-abilities` and by
+  `mcp-adapter-get-ability-info`, which is `WP_Ability::get_name()`.
+
+Everything the protocol carries as a *tool name* is sanitized — including the `$tool_name` passed
+to `mcp_adapter_pre_tool_call`. See "Sessions and request interception" for why that matters.
 
 ## Exposure resolution — the 0.6.0 reversal
 
@@ -102,8 +154,12 @@ Practical rules:
 - **When adding `public => true` for REST, decide MCP in the same edit.** If the ability should
   not reach agents, write `'mcp' => array( 'public' => false )` alongside it.
 - **Auditing an existing plugin against a 0.6.0+ upgrade:** the newly-exposed set is every
-  ability with `meta.public` truthy and no `meta.mcp.public` key. See the
-  `wp_get_abilities()` recipe in `rest-api.md`.
+  ability whose `meta.public` is boolean `true` and that has no `meta.mcp.public` key. The two
+  keys are compared differently: `is_meta_public()` casts an explicit `meta.mcp.public` with
+  `(bool)`, so anything truthy exposes, but tests the inherited `meta.public` with strict
+  `true ===`. On 6.9/7.0, where core does not type-check the key, `'public' => 1` is therefore
+  not inherited; on 7.1 it never reaches the registry, because `prepare_properties()` rejects a
+  non-boolean `meta.public`. See the `wp_get_abilities()` recipe in `rest-api.md`.
 
 ## `meta.mcp.type`: a typo becomes a tool
 
@@ -119,8 +175,8 @@ invalid value **differently**, and the asymmetry is the whole trap:
 
 So an ability you meant to expose as a resource, misspelled as `'resources'`, does not disappear
 and does not raise anything. It is **silently promoted to a tool**: absent from the server's
-`resources` list, present in `discover-abilities`, and executable through
-`mcp-adapter/execute-ability`.
+`resources` list, present in `discover-abilities`, and executable through the
+`mcp-adapter-execute-ability` tool.
 
 That is the opposite of the failure people expect, and it matters because tools are the
 primitive agents act with. An ability designed to be read as passive context becomes something
@@ -141,7 +197,7 @@ On activation, the adapter registers a default MCP server (`mcp-adapter-default-
 - `mcp-adapter/get-ability-info` — inspect a single ability's schema
 - `mcp-adapter/execute-ability` — run any ability
 
-(Ability names follow the `namespace/ability` convention — slash, not hyphen, between the two parts. They register inside the `mcp-adapter` ability namespace.)
+(Those are *ability* names — the `namespace/ability` convention, slash not hyphen, registered inside the `mcp-adapter` ability namespace. An MCP client never sees them in that form: it lists `mcp-adapter-discover-abilities`, `mcp-adapter-get-ability-info`, and `mcp-adapter-execute-ability`. See "Ability names are rewritten into MCP tool names".)
 
 This is enough for most use cases when the abilities intended for agent access are explicitly marked `meta.mcp.public => true`. The default server's discovery, get, and execute flow excludes every other registered ability — remembering that on 0.6.0+ "every other" no longer includes abilities carrying `meta.public => true`.
 
@@ -202,7 +258,7 @@ A custom callback that throws or returns `WP_Error` fails closed — the transpo
 
 `create_server()` enforces that it can only be called inside the `mcp_adapter_init` action — calling it elsewhere triggers `_doing_it_wrong()`. The function returns either an `McpAdapter` instance or a `WP_Error`.
 
-The tools/resources/prompts lists decide which abilities this server projects; they do not grant access. Each selected ability retains its own `permission_callback`, which runs when the ability executes.
+The tools/resources/prompts lists decide which abilities this server projects; they do not grant access. Each selected ability retains its own `permission_callback`, which runs when the ability executes. These entries are **ability** names with the slash intact — `my-plugin/list-comments`, not `my-plugin-list-comments`. The adapter sanitizes them into tool names on its own; writing the hyphenated form here means `wp_get_ability()` returns nothing and the tool is silently not registered.
 
 Read the `create_server()` docblock in `includes/Core/McpAdapter.php` for the complete parameter documentation, and `includes/Servers/DefaultServerFactory.php` for the canonical "how to call it" example.
 
@@ -292,6 +348,18 @@ HTTP transport sessions are managed by `SessionManager` and tuned with three fil
 | `mcp_adapter_session_activity_update_interval` | `60` (clamped below the inactivity timeout) |
 
 For auditing, rate limiting, or policy enforcement, hook the request lifecycle rather than wrapping abilities. `mcp_adapter_pre_tool_call` receives `( $args, $tool_name, $mcp_tool, $mcp )` and short-circuits execution by returning a `WP_Error`; `mcp_adapter_tool_call_result` filters the outcome. Equivalents exist for resources (`mcp_adapter_pre_resource_read`, `mcp_adapter_resource_read_result`) and prompts (`mcp_adapter_pre_prompt_get`, `mcp_adapter_prompt_get_result`).
+
+**`$tool_name` is the sanitized MCP tool name, not the ability name.** `ToolsHandler::call_tool()` takes the name off the wire, resolves the tool with it, and passes that same string to the filter — so a policy written against `my-plugin/list-comments` never matches `my-plugin-list-comments`, and which way that breaks depends on the policy's shape. A deny-list never fires and **fails open**: every call sails through. A deny-by-default allow-list never matches either and **fails closed**: every call is blocked, including the ones you meant to permit. Neither enforces what it says. `$uri` in `mcp_adapter_pre_resource_read` is likewise the resource URI, and `$prompt_name` in `mcp_adapter_pre_prompt_get` is sanitized the same way tool names are. Compare against the sanitized form, or recover the ability name from the tool:
+
+```php
+add_filter( 'mcp_adapter_pre_tool_call', function ( $args, $tool_name, $mcp_tool ) {
+    $ability_name = $mcp_tool->get_adapter_meta()['ability'] ?? null; // null for raw-handler tools
+    if ( ! in_array( $ability_name, array( 'my-plugin/list-comments' ), true ) ) {
+        return new WP_Error( 'my_plugin_tool_denied', 'Tool not permitted.' );
+    }
+    return $args;
+}, 10, 3 );
+```
 
 `mcp_adapter_validation_enabled` receives `( false, $server_id, $server )` and is **off** by default. It is not an untrusted-input control. It gates deeper MCP component/DTO compliance checks on the *definitions* you register (`McpToolValidator::validate_tool_dto()`, run while the tool is constructed). `McpTool::execute()` passes arguments to the ability or handler on the same path either way. Enable it to catch malformed tool definitions in development; do not enable it expecting argument validation.
 

@@ -57,8 +57,63 @@ below — this is the most common way to hit it.
 
 ## Common primitives
 
-- `wp_register_ability_category( $category_id, $args )`
-- `wp_register_ability( $ability_id, $args )`
+`wp-includes/abilities-api.php` exposes ten public functions. All ten are `@since 6.9.0`; the only
+signature change since is the `$args` parameter on `wp_get_abilities()`, added in 7.1.
+
+Abilities:
+
+- `wp_register_ability( string $name, array $args ): ?WP_Ability`
+- `wp_unregister_ability( string $name ): ?WP_Ability`
+- `wp_has_ability( string $name ): bool`
+- `wp_get_ability( string $name ): ?WP_Ability`
+- `wp_get_abilities( array $args = array() ): array` — on 6.9/7.0 the signature is
+  `wp_get_abilities(): array` and returns everything; filtering by `$args` is 7.1+.
+
+Categories:
+
+- `wp_register_ability_category( string $slug, array $args ): ?WP_Ability_Category`
+- `wp_unregister_ability_category( string $slug ): ?WP_Ability_Category`
+- `wp_has_ability_category( string $slug ): bool`
+- `wp_get_ability_category( string $slug ): ?WP_Ability_Category`
+- `wp_get_ability_categories(): array`
+
+`wp_unregister_ability()` is the supported way to remove another plugin's ability. It returns the
+removed `WP_Ability` on success and `null` on failure, and — like registration — its only failure
+signal is `_doing_it_wrong()`: `WP_Abilities_Registry::unregister()` emits `Ability "%s" not found.`
+and returns `null` when the name was never registered. Unlike registration it is **not** restricted
+to `wp_abilities_api_init`; call it on any hook after `init`, because
+`WP_Abilities_Registry::get_instance()` bails with `_doing_it_wrong()` before `init` has fired. Do
+not unregister from inside `wp_abilities_api_init` itself — the registry instance is assigned before
+that action fires, so callbacks added by other plugins may not have registered their abilities yet.
+The same rules apply to `wp_unregister_ability_category()`, which does not cascade: unregistering a
+category leaves abilities that referenced it registered and orphaned.
+
+### `wp_register_ability_args` — rewriting a registration instead of removing it
+
+`WP_Abilities_Registry::register()` runs `apply_filters( 'wp_register_ability_args', $args, $name )`
+(`@since 6.9.0`) after the name-format and duplicate checks, but before everything else: the
+category-registered check, the `ability_class` type check, and `WP_Ability::prepare_properties()`.
+It is the only core hook that can rewrite an ability's arguments — exposure meta and both callbacks
+included — before validation sees them.
+
+That makes it the non-destructive alternative to `wp_unregister_ability()` when adjusting another
+plugin's ability: tighten `meta.public`, wrap `permission_callback` in a stricter check, or narrow
+`input_schema`, without removing an ability the owning plugin still depends on.
+
+```php
+add_filter( 'wp_register_ability_args', function ( array $args, string $name ): array {
+    if ( 'other-plugin/delete-everything' !== $name ) {
+        return $args; // Fires for every ability on the site — always name-guard.
+    }
+    $args['meta']['public'] = false;
+    return $args;
+}, 10, 2 );
+```
+
+Because it runs ahead of the remaining validation, a careless callback can also take a registration
+out: writing an unregistered `category`, an uncallable `execute_callback`, or a non-boolean
+`meta.public` makes `register()` fail the silent way described next. When an ability that should
+exist does not, an unrelated plugin's filter on this hook is a real suspect.
 
 ## How a bad registration fails
 
@@ -76,10 +131,10 @@ try {
 }
 ```
 
-So a missing `permission_callback`, a non-boolean `meta.public`, a malformed ability name, a
-duplicate name, or an unregistered `category` all produce the same observable result: **the
-ability simply is not there.** No exception reaches your code, nothing appears in the REST
-listing, and `wp_get_ability()` returns `null`.
+So a missing `permission_callback` (on a default-class registration), a non-boolean `meta.public`,
+a malformed ability name, a duplicate name, or an unregistered `category` all produce the same
+observable result: **the ability simply is not there.** No exception reaches your code, nothing
+appears in the REST listing, and `wp_get_ability()` returns `null`.
 
 Two consequences worth designing around:
 
@@ -111,10 +166,11 @@ identical from the REST endpoint, and only the first one leaves a notice.
 | `label` | **Required** | Human-readable name for UI (e.g., command palette). |
 | `description` | **Required** | What the ability does. |
 | `category` | **Required** | Category ID (must be registered first via `wp_abilities_api_categories_init`). |
-| `execute_callback` | **Required** | Function that runs when the ability is invoked. Receives mixed input (per `input_schema`), returns mixed result or `WP_Error`. |
-| `permission_callback` | **Required** | Function that checks whether the current user may execute. Receives the same mixed input as `execute_callback`; returns `bool` or `WP_Error`. There is no implicit default — omitting it means the ability is never registered (see "How a bad registration fails"). |
+| `execute_callback` | **Required** (unless `ability_class` is set — that exemption is **WP 7.0+**) | Function that runs when the ability is invoked. Receives mixed input (per `input_schema`), returns mixed result or `WP_Error`. |
+| `permission_callback` | **Required** (unless `ability_class` is set — that exemption is **WP 7.0+**) | Function that checks whether the current user may execute. Receives the same mixed input as `execute_callback`; returns `bool` or `WP_Error`. With the default `WP_Ability` class there is no implicit default — omitting it means the ability is never registered (see "How a bad registration fails"). |
 | `input_schema` | Optional | JSON Schema for expected input (enables validation). Required when the ability accepts input. |
 | `output_schema` | Optional | JSON Schema for returned output (enables validation of the result). |
+| `ability_class` | Optional (default `WP_Ability`) | Fully-qualified class name to instantiate instead of `WP_Ability`. Must extend `WP_Ability` — `WP_Abilities_Registry::register()` checks `is_a( $args['ability_class'], WP_Ability::class, true )` and `_doing_it_wrong()` + `return null` otherwise. On 7.0+ supplying it makes the subclass responsible for both callbacks (see below); on 6.9 both are still required. |
 | `meta.public` | Optional (default `false`, **WP 7.1+**) | General "this ability is meant for clients" declaration. Channel keys override it. Core resolves `show_in_rest = meta.show_in_rest ?? meta.public ?? false`. Has no effect on WP 6.9/7.0 core, but the MCP Adapter reads it on those versions too. |
 | `meta.show_in_rest` | Optional (default `false`) | Per-channel override for the `wp-abilities/v1` REST API namespace. On 7.1+ an explicit value always beats `meta.public`, in both directions. |
 | `meta.mcp.public` | Optional (default: `meta.public` on adapter 0.6.0+, `false` before) | Set `true` to expose the ability as a tool via the WordPress MCP adapter, or `false` to opt a `public` ability out. |
@@ -123,7 +179,50 @@ identical from the REST endpoint, and only the first one leaves a notice.
 | `meta.annotations.destructive` | **Strongly recommended** (default `null`) | `true` if the ability may perform destructive updates. `false` for additive-only updates. |
 | `meta.annotations.idempotent` | **Strongly recommended** (default `null`) | `true` if calling the ability repeatedly with the same arguments has no additional effect. |
 
-The three annotations under `meta.annotations` are *hints* for tooling and documentation — core does not enforce them at runtime, so a missing or `null` value is silently legal. That permissiveness is exactly why every registration should populate them explicitly: MCP / Command Palette / agent surfaces and review tooling reason about ability safety from these values *without* invoking the callback. A `readonly: null` ability is treated as "behavior unknown," which is a worse signal than either `true` or `false`. Treat the absence of an annotation as a bug, not a default.
+The three annotations under `meta.annotations` are hints in one sense only: core never *verifies* them — nothing checks that a `readonly: true` ability really only reads. Core does *enforce* them. Since 6.9, `WP_REST_Abilities_V1_Run_Controller::validate_request_method()` derives the `/run` route's single legal HTTP method from them (`readonly: true` → `GET`; `destructive` **and** `idempotent` → `DELETE`; anything else → `POST`) and returns `rest_ability_invalid_method` with HTTP 405 on a mismatch, before the permission callback runs. So a missing or `null` value is legal — it routes the ability to `POST` — but the annotations are part of the ability's HTTP contract, and changing one breaks every existing REST caller. See "The `/run` method is enforced, not conventional" in `rest-api.md`.
+
+Populate all three explicitly for the second reason as well: MCP / Command Palette / agent surfaces and review tooling reason about ability safety from these values *without* invoking the callback. A `readonly: null` ability is treated as "behavior unknown," which is a worse signal than either `true` or `false`. Treat the absence of an annotation as a bug, not a default.
+
+### `ability_class`: naming a subclass skips callback validation (WP 7.0+)
+
+`ability_class` is a **core** argument, documented on `wp_register_ability()` since 6.9.0 — not a
+convention invented by any plugin. The registry validates it, then removes it before instantiating:
+
+```php
+if ( isset( $args['ability_class'] ) && ! is_a( $args['ability_class'], WP_Ability::class, true ) ) {
+    _doing_it_wrong( __METHOD__, /* ... */, '6.9.0' );
+    return null;
+}
+$ability_class = $args['ability_class'] ?? WP_Ability::class;
+unset( $args['ability_class'] );
+```
+
+So it never becomes a property of the ability and never appears in REST output. The consequential
+part is what happens next. `WP_Ability::prepare_properties()` gates the callback checks on the
+instance being exactly `WP_Ability`:
+
+```php
+// If we are not overriding `ability_class` parameter during instantiation, then we need to validate the execute_callback.
+if ( get_class( $this ) === self::class && ( empty( $args['execute_callback'] ) || ! is_callable( $args['execute_callback'] ) ) ) {
+    throw new InvalidArgumentException( /* ... */ );
+}
+```
+
+The `permission_callback` check is gated identically. **Naming a subclass therefore skips both
+checks entirely**, and `execute_callback` / `permission_callback` stop being required at
+registration time. The subclass takes on that responsibility: it must either still pass both
+callbacks in `$args`, or override `do_execute()` and `check_permissions()`. Get it wrong and
+registration succeeds — the ability appears in `wp_get_abilities()` and in the REST listing — but
+every invocation fails at runtime with `WP_Error( 'ability_invalid_execute_callback' )` or
+`WP_Error( 'ability_invalid_permission_callback' )`. This is the one way to produce an ability that
+looks registered and is permanently broken: it moves a defect that `_doing_it_wrong()` would have
+flagged at registration into a `WP_Error` returned on every call.
+
+**The gate itself is 7.0+.** On WP 6.9 `prepare_properties()` validates `execute_callback` and
+`permission_callback` unconditionally — there is no `get_class( $this )` test — so a subclass
+registration that omits them is rejected the usual silent way: `_doing_it_wrong()`, `null`, no
+ability. `ability_class` works on 6.9; only the callback relaxation is newer. When 6.9 is a target,
+pass both callbacks in `$args` even when naming a subclass, or gate the pattern on core >= 7.0.
 
 ### Exposure keys: `public`, `show_in_rest`, `mcp.public`
 

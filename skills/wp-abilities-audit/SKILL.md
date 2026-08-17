@@ -41,16 +41,18 @@ the user's call; the workflow itself is plugin-agnostic.
 ## Prerequisites
 
 - `wp-project-triage` has run successfully and classified the plugin.
-- The plugin has at least one REST controller. If enumeration finds zero
-  controllers, the audit doesn't apply — see "Failure modes" below.
+- The plugin has at least one REST surface. If enumeration finds zero declared
+  controllers *and* zero implicit `show_in_rest` surface, the audit doesn't
+  apply — see "Failure modes" below.
 
 ## Procedure
 
 ### 1. Enumerate REST controllers
 
-Read `references/controller-enumeration.md` now — it covers the two observed
-enumeration paths (glob for standard layouts, grep as the universal fallback)
-and when to use each.
+Read `references/controller-enumeration.md` now — it covers the three
+enumeration paths (glob for standard layouts, grep as the universal fallback,
+and the implicit pass for core-derived `show_in_rest` routes) and when to use
+each. The implicit pass is additive: run it whatever the first two returned.
 
 Record every controller class + file + REST base + routes in a "Controller
 Inventory" table. The inventory is exhaustive even though only a subset
@@ -177,6 +179,12 @@ Set `reference_ability: true` on the first ability an implementer should
 land — typically the smallest, safest, highest-leverage read. This gives
 downstream workflows a deterministic starting point.
 
+Pick one that needs no required input: the reference ability must be
+invocable as `execute([])`, and `wp-abilities-verify` Lint 6 FAILs a
+registration whose reference ability declares a non-empty
+`input_schema.required`. A list ability whose filters are all optional
+qualifies; one that requires an id does not.
+
 ## Verification
 
 - The audit conforms to `references/audit-schema.md` (all required top-level
@@ -188,14 +196,18 @@ downstream workflows a deterministic starting point.
 - Every ability carries an `exposure` object, and every `destructive: true`
   ability resolves it to `mcp: allow` (with a rationale) or `mcp: deny` —
   never `inherit`.
-- The doc round-trips through the validator in `audit-schema.md` "Known
-  limitations" without errors.
+- The doc passes the validation procedure in
+  `../wp-abilities-verify/references/audit-schema-validation.md` (Steps 1-3)
+  with no FAIL entries.
 
 ## Failure modes / debugging
 
-- **Plugin has no REST controllers** — audit doesn't apply. Consider
-  hooks/filters-based abilities (out of scope for this skill's current
-  version) or skip abilities adoption for this plugin.
+- **Plugin has no REST controllers** — not a conclusion on its own. Run the
+  implicit pass first: a CPT-only plugin has a full REST surface with zero
+  `register_rest_route(` call sites. Only when the implicit pass also comes
+  back empty does the audit not apply — then consider hooks/filters-based
+  abilities (out of scope for this skill's current version) or skip abilities
+  adoption for this plugin.
 - **Plugin inherits controllers from another repo** (common for plugins
   extending core post-type-backed controllers like `WP_REST_Posts_Controller`,
   or extension plugins built on a parent's REST classes) — capture with
@@ -220,9 +232,9 @@ downstream workflows a deterministic starting point.
 ## Escalation
 
 - If the plugin uses an enumeration convention not covered by
-  `references/controller-enumeration.md` (neither the standard glob nor the
-  grep fallback produces a complete inventory), update that reference with
-  the new convention and open a PR so future audits cover it deterministically.
+  `references/controller-enumeration.md` (none of the three paths produces a
+  complete inventory), update that reference with the new convention and open
+  a PR so future audits cover it deterministically.
 - If capability tracing hits a mechanism not covered by
   `references/capability-gate-tracing.md`, extend that file rather than
   encoding the new case in the audit's "Notes and Surprises" only.

@@ -35,7 +35,10 @@ reachable by anything that can enumerate.
 ### 2. Exposure is declared, not inherited by accident
 
 For each registered ability, record the raw keys — `meta.public`, `meta.show_in_rest`,
-`meta.mcp.public` — as *present/absent*, not just their resolved boolean. Absent is the finding.
+`meta.mcp.public`, `meta.mcp.type` — as *present/absent*, not just their resolved boolean. Absent
+is the finding for the three exposure keys. `meta.mcp.type` is recorded for a different reason:
+absent is correct — both adapter read paths default to `tool` — and a value outside the enum is
+the finding.
 
 - `meta.public => true` **with no `meta.mcp.public` key** → WARN: "MCP exposure is inherited, not
   declared. On adapter 0.6.0+ this ability is served by the default MCP server. Add an explicit
@@ -45,6 +48,25 @@ For each registered ability, record the raw keys — `meta.public`, `meta.show_i
 
 The WARN is deliberately not a FAIL. Inheriting `meta.public` is legitimate and often intended —
 what is not legitimate is doing it silently.
+
+`meta.mcp.type` is the one key here that FAILs outright: **present with a value outside
+`tool|resource|prompt` → FAIL.** The adapter reads it on two paths that disagree.
+`McpAbilityHelperTrait::get_ability_mcp_type()` (v0.6.1) validates against that enum and returns
+`'tool'` for anything else, so `DiscoverAbilitiesAbility` lists the ability as a tool;
+`DefaultServerFactory::discover_abilities_by_type()` compares the raw `$meta['mcp']['type']` with
+strict `!==` and drops it from both the `resources` and the `prompts` list. A misspelled
+`'resources'` is therefore not hidden — it is silently promoted to a tool, enumerable through
+`mcp-adapter/discover-abilities` and executable through `mcp-adapter/execute-ability`, which
+checks MCP-public exposure only and never the type. The sole remaining gate is the ability's own
+`permission_callback`. Full trap writeup: `../../wp-abilities-api/references/mcp-exposure.md`.
+
+All four are the *declared* keys. `wp_register_ability_args` (core 6.9+) rewrites the whole args
+array before the ability is instantiated, so a listener — in this plugin or any other on the site
+— can change `meta.public` or `meta.mcp.public` after the literal you read. That is precisely why
+adapter 0.6.0+ resolves exposure from the stored ability through `McpAbilityExposure` instead of
+at registration time: no filter priority is guaranteed to run last. Grep for listeners per
+`static-enumeration.md`; when one exists, the static exposure verdict is advisory and only the
+runtime enumeration below is authoritative.
 
 ### 2a. Registration matches the audit's exposure decision
 
@@ -106,11 +128,12 @@ anything a filter changed after registration:
 # Effective REST exposure (WP 7.1+ resolution applied by core).
 wp eval 'foreach ( wp_get_abilities() as $a ) {
     $m = $a->get_meta();
-    printf( "%s public=%s show_in_rest=%s mcp=%s\n",
+    printf( "%s public=%s show_in_rest=%s mcp=%s type=%s\n",
         $a->get_name(),
         var_export( $m["public"] ?? null, true ),
         var_export( $m["show_in_rest"] ?? null, true ),
-        var_export( $m["mcp"]["public"] ?? null, true )
+        var_export( $m["mcp"]["public"] ?? null, true ),
+        var_export( $m["mcp"]["type"] ?? null, true )
     );
 }'
 ```
@@ -132,13 +155,17 @@ Add an `## Exposure` section to the report, between "Permission gates" and "Sche
 ```
 ## Exposure
 
-| Ability | public | show_in_rest | mcp.public | Effective REST | Effective MCP | Audit | Result |
-|---|---|---|---|---|---|---|---|
+| Ability | public | show_in_rest | mcp.public | mcp.type | Effective REST | Effective MCP | Audit | Result |
+|---|---|---|---|---|---|---|---|---|
 ```
 
 Fill "Effective MCP" against the adapter version the project depends on, and state that version
 in the section header. A verdict computed against the wrong adapter version is worse than no
 verdict, because it reads as confirmation.
+
+"mcp.type" holds the raw declared string, `—` when the key is absent. Do not normalize it to
+`tool` in the report: the whole point of the check is that the adapter does that for you on one
+path and not the other, so a row reading `resources` is the finding.
 
 The "Audit" column holds the recorded decision — `agent_facing/mcp` from the audit's `exposure`
 object (e.g. `true/allow`), `—` when no audit was supplied, or `n/a (pre-2026-08-15 schema)` when

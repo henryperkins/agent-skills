@@ -1,7 +1,7 @@
 ---
 name: wp-ai-connectors
 description: "Use when building or debugging a WordPress AI provider plugin, registering an AI service with the PHP AI Client, exposing it through Settings → Connectors, declaring model capabilities/options, or adding text, media, function-calling, or embedding support at the provider layer."
-compatibility: "Targets WordPress 7.0+ (PHP 7.4+); `application_password` connectors need core 7.1 (or 7.0 + Gutenberg 23.6+). Embedding-provider guidance requires PHP AI Client 1.4+, which core does NOT bundle through 7.1 — a provider needing it must ship the Composer package itself. Filesystem-based agent with bash + node. Some workflows require WP-CLI."
+compatibility: "Targets WordPress 7.0+ (PHP 7.4+); `application_password` connectors need core 7.1 (or 7.0 + Gutenberg 23.6+). Embedding-provider guidance requires PHP AI Client 1.4+, which core does NOT bundle through 7.1 — a provider needing it gates that surface at runtime rather than shipping the package itself. Filesystem-based agent with bash + node. Some workflows require WP-CLI."
 license: GPL-2.0-or-later
 ---
 
@@ -22,9 +22,9 @@ If the task is to *consume* AI features (build a summarization endpoint, add ima
 ## Inputs required
 
 - Repo root (run `wordpress-router` and `wp-project-triage` first).
-- Provider being integrated: name, ID slug (must match `/^[a-z0-9_-]+$/` — lowercase alphanumeric, hyphens, underscores), authentication method (`api_key` or `none`).
+- Provider being integrated: name, ID slug (must match `/^[a-z0-9_-]+$/` — lowercase alphanumeric, hyphens, underscores), authentication method (`api_key`, or `none` for a provider that should have no connector card).
 - Models the provider exposes, their generation capabilities, supported options, input/output modalities, and any embedding-dimension constraints.
-- Public credentials URL (where users go to get an API key) and a logo URL if you have one.
+- Public credentials URL (where users go to get an API key) and, if you have one, a logo file bundled inside the plugin directory — core derives the URL itself from a filesystem path, not from a URL you supply.
 
 ## Procedure
 
@@ -34,7 +34,7 @@ If the task is to *consume* AI features (build a summarization endpoint, add ima
 2. Confirm this is a *provider* plugin, not a *feature* plugin. The two have different shapes:
    - **Provider plugin**: registers with the `AiClient::defaultRegistry()` so other plugins can use the provider.
    - **Feature plugin**: calls `wp_ai_client_prompt()` to build something. That's `wp-ai-client` territory.
-3. Set the plugin header's version requirements. Recommended: `Requires at least: 7.0` and `Requires PHP: 7.4`. The official Anthropic/Google/OpenAI provider plugins set `Requires at least: 6.9` because they bundle `wordpress/php-ai-client` as a Composer dep and use a `class_exists()` guard at registration — choose that path only if you have a clear reason to support 6.9.
+3. Set the plugin header's version requirements. Recommended: `Requires at least: 7.0` and `Requires PHP: 7.4`. The official Anthropic/Google/OpenAI provider plugins set `Requires at least: 6.9` but do **not** ship the SDK: `wordpress/php-ai-client` appears only under `require-dev` plus a `suggest` entry ("Required. The core PHP AI Client SDK that this provider extends."), `/vendor` is listed in `.distignore`, the wp.org deploy workflow runs no `composer install`, and `src/autoload.php` is a hand-rolled PSR-4 loader for the plugin's own namespace. What makes 6.9 safe is the `if ( ! class_exists( AiClient::class ) ) { return; }` guard: the plugin activates and stays inert where no SDK exists, and Core supplies one from 7.0 on. Their readmes say it plainly — "For WordPress 6.9, the package must be installed." Target 6.9 only if you replicate that guard and accept a no-op plugin there.
 
 ### 1) Register with the PHP AI Client provider registry
 
@@ -82,7 +82,7 @@ An embedding model must implement both `ModelInterface` and `EmbeddingGeneration
 
 **This is a 1.4-only surface, and core does not ship it.** Verified against `wordpress-develop` branches `7.0` and `7.1` (RC3): the vendored `src/wp-includes/php-ai-client/` is pre-1.4 — no `src/Providers/Models/EmbeddingGeneration/`, no `EmbeddingResult`/`EmbeddingBuilder`, and no `ModelConfig::KEY_DIMENSIONS`, so `OptionEnum::dimensions()` does not resolve. The trap is that `CapabilityEnum::EMBEDDING_GENERATION` **is** present in the bundled enum, so declaring the capability looks fine right up until `EmbeddingGenerationModelInterface` fatals as an unknown interface.
 
-A provider plugin that offers embeddings must therefore require `wordpress/php-ai-client: ^1.4` as its own Composer dependency and load it from its bundle — the same pattern the flagship plugins already use for their SDK. Note that none of them exercise this path: Anthropic and Google constrain to `^0.4 || dev-trunk` and OpenAI to `^1.1`, and none implement an embedding model, so there is no in-project reference implementation to copy. Read `references/capabilities-declaration.md` for the exact enum, metadata, and model contract, and read the 1.4.0 tag of the SDK rather than core's copy.
+Do not bundle the SDK to close the gap. `WordPress/ai-provider-for-openai` 1.1.0 is the shipped precedent: `wordpress/php-ai-client: ^1.4` stays in `require-dev` (plus `suggest`) with `/vendor` in `.distignore`, and every 1.4-only symbol is gated at runtime — `interface_exists( EmbeddingGenerationModelInterface::class )` wraps both the `embeddingGeneration()` / `dimensions()` block in the metadata directory and the `OpenAiEmbeddingGenerationModel` branch of `createModel()`, so on a pre-1.4 SDK the plugin simply advertises no embeddings instead of fataling. Use `version_compare( AiClient::VERSION, '1.4.0', '>=' )` for surface that isn't a class or interface. Bundling is the riskier path, not the safe one: `wp-settings.php` requires `wp-includes/php-ai-client/autoload.php` before any plugin loads, so a second copy of `WordPress\AiClient\*` either loses the race or replaces core's SDK site-wide. The other flagships still pin `^0.4 || dev-trunk` in `require-dev` (Anthropic 1.0.3, Google 1.1.1 — Google's trunk has moved to `^1.3.1`) and implement no embedding model, which makes OpenAI 1.1.0's `OpenAiEmbeddingGenerationModel` (`@since 1.1.0`) the released model-side reference to copy. Read `references/capabilities-declaration.md` for the exact enum, metadata, and model contract, and read the 1.4.0 tag of the SDK rather than core's copy.
 
 ### 3) Let auto-discovery handle the connector
 
@@ -141,10 +141,11 @@ Check Settings → Connectors. You should see a card with your provider's name, 
 
 If the connector isn't showing up:
 
+- Confirm `var_dump( wp_supports_ai() )` is `true`. If it's false — `WP_AI_SUPPORT` defined falsey in `wp-config.php`, or a plugin/host filtering `wp_supports_ai` — `register()` returns `null` for every `ai_provider` connector with **no** `_doing_it_wrong()` (core treats a disabled AI surface as intentional), and `_wp_connectors_init()` skips AI discovery entirely. The tell is that the built-in Anthropic/Google/OpenAI cards are missing too.
 - Confirm the provider class actually registers — add a temporary `error_log()` in your registration callback and reload.
 - Confirm the registration runs *before* `_wp_connectors_init` (priority 15 on `init`). Use `init` priority 5 or earlier (anything ≤ 14).
 - Confirm the connector ID matches `/^[a-z0-9_-]+$/` — hyphens are allowed (normalized to underscores in the derived key names); an invalid ID (e.g. uppercase) triggers `_doing_it_wrong()` and `register()` returns `null`.
-- Confirm `type` is `ai_provider` so the connector is treated as an AI provider and discovered from the AI Client registry. (The admin screen actually renders a card for *any* connector whose `authentication.method` is `api_key` — the built-in Akismet connector is `type` `spam_filtering` and still appears — so a missing card isn't explained by `type` alone.)
+- Confirm `type` is `ai_provider` so the connector is treated as an AI provider and discovered from the AI Client registry. (The admin screen actually renders a card for *any* connector whose `authentication.method` is `api_key` — the built-in Akismet connector is `type` `spam_filtering` and still appears — so a missing card isn't explained by `type` alone. A `none`-auth connector is the reverse: it registers fine and `wp_get_connector()` returns it, but the screen assigns a render component only for `api_key` and `application_password`, so it never gets a card.)
 
 ## Verification
 
@@ -157,13 +158,13 @@ If the connector isn't showing up:
 
 ## Failure modes / debugging
 
-- **Connector doesn't appear**: registration runs too late (after `_wp_connectors_init`), or `type` isn't `ai_provider`, or ID has invalid characters.
+- **Connector doesn't appear**: registration runs too late (after `_wp_connectors_init`), or `type` isn't `ai_provider`, or ID has invalid characters, or `wp_supports_ai()` is false. The last one is the silent case — core deliberately skips `_doing_it_wrong()` there — and it takes the built-in AI connectors down with yours; check it with `var_dump( wp_supports_ai() )`.
 - **"Settings → Connectors shows the card but says no key configured" even though `MY_PROVIDER_API_KEY` is set**: confirm the constant/env var name matches `{PROVIDER_ID}_API_KEY` exactly (uppercased ID, `_API_KEY` suffix). The system does not respect alternate naming.
 - **Override not taking effect**: hooked too late, or hooked outside `wp_connectors_init`. Setting the registry instance outside `init` triggers `_doing_it_wrong()`.
 - **Duplicate-ID error during `register()`**: another plugin already registered that ID. Use `is_registered()` first; if you need to override, follow the unregister-modify-register pattern.
 - **Provider works locally but not on a managed host**: the host may have set `MY_PROVIDER_API_KEY` as a sealed env var. Env beats constant beats database — that's the intended priority and the host's value will win.
 - **Embedding model never resolves**: metadata is missing `CapabilityEnum::embeddingGeneration()`, the exact `OptionEnum::inputModalities()` combination, or `OptionEnum::dimensions()` for the requested value; do not substitute made-up capability names.
-- **`OptionEnum::dimensions()` throws, or `EmbeddingGenerationModelInterface` is "not found"**: the site is resolving core's bundled SDK, which is pre-1.4 through WP 7.1. `CapabilityEnum::embeddingGeneration()` resolving is not evidence the rest of the surface exists. Bundle `wordpress/php-ai-client: ^1.4` in your plugin.
+- **`OptionEnum::dimensions()` throws, or `EmbeddingGenerationModelInterface` is "not found"**: the site is resolving core's bundled SDK, which is pre-1.4 through WP 7.1. `CapabilityEnum::embeddingGeneration()` resolving is not evidence the rest of the surface exists. Gate the 1.4-only surface on `interface_exists( EmbeddingGenerationModelInterface::class )` so the model is never advertised there; don't bundle a second SDK copy to force it.
 - **Embedding generation resolves but fails at runtime**: the concrete model does not also implement `ModelInterface`, returned a different vector count than input count, or reported dimensions that do not match every vector.
 
 ## Escalation
