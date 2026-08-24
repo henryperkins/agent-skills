@@ -12,8 +12,11 @@
     "Step 7: Hook on init priority 5 so registration runs BEFORE _wp_connectors_init at priority 15",
     "Step 8: Note that the Connectors API auto-discovers the provider; do NOT manually call WP_Connector_Registry::register() for the new provider — that's only for overrides via wp_connectors_init",
     "Step 9: Document the API key naming convention: setting connectors_ai_mistral_api_key, env/constant MISTRAL_API_KEY",
-    "Step 10: Mention that Settings → Connectors only renders ai_provider type connectors with api_key/none auth in WP 7.0",
-    "Step 11: Point at the three flagship provider plugins (Anthropic/Google/OpenAI) as canonical bootstrap implementations"
+    "Step 10: Explain that WordPress 7.0 renders API-key connector cards; a none-auth connector registers but gets no built-in card, while WordPress 7.1 also renders application_password connectors",
+    "Step 11: Point at Anthropic 1.0.4, Google 1.1.1, and OpenAI 1.1.0 as the current flagship provider baselines",
+    "Step 12: Keep supported options model-aware; do not advertise sampling options for models that reject them (Anthropic 1.0.4 omits them for Claude Opus 4.7+ and Claude 5)",
+    "Step 13: Normalize empty tool-call arguments to the provider's required JSON object shape and test both outbound serialization and inbound parsing",
+    "Step 14: Gate PHP AI Client 1.4 embedding metadata and model creation at runtime with interface_exists( EmbeddingGenerationModelInterface::class ); Core 7.1 bundles 1.3.1 and must not fatal"
   ],
   "success_criteria": [
     "Routes to wp-ai-connectors skill",
@@ -23,6 +26,9 @@
     "Hooks on init at priority ≤ 14 (canonical: priority 5)",
     "Does not manually call WP_Connector_Registry::register() for the new provider (auto-discovery)",
     "Documents the connectors_ai_{id}_api_key naming convention and the env/constant/database priority order",
-    "References the official provider plugins (especially ai-provider-for-anthropic/plugin.php) as the canonical bootstrap"
+    "References the current official provider releases as canonical bootstrap and behavior sources",
+    "Uses model-aware option metadata instead of advertising one option set for every model",
+    "Handles empty tool-call arguments without encoding an empty array where the provider requires an object",
+    "Feature-detects the PHP AI Client 1.4 embedding interface before advertising or creating embedding models"
   ]
 }

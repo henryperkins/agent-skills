@@ -1,32 +1,29 @@
-/**
- * AI-powered skill update generator
- *
- * Analyzes upstream changes and generates updates to affected skills.
- * Designed to run in GitHub Actions with ANTHROPIC_API_KEY env var.
- *
- * Usage:
- *   node shared/scripts/ai-generate-updates.mjs
- *
- * Environment:
- *   ANTHROPIC_API_KEY - Required
- *   AI_DRY_RUN        - Set to "true" to skip writing files
- */
-
-import Anthropic from "@anthropic-ai/sdk";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { CORE_AI_UPSTREAMS } from "./core-ai-upstreams.mjs";
 
 const REPO_ROOT = process.cwd();
 const SKILLS_DIR = path.join(REPO_ROOT, "skills");
 const STATE_FILE = path.join(REPO_ROOT, ".github", "state", "last-sync.json");
+const RESULT_FILE = path.join(REPO_ROOT, ".github", "state", "generator-result.json");
+const SUMMARY_FILE = path.join(REPO_ROOT, ".github", "state", "update-summary.json");
 
-// Model selection: Sonnet 4 for balanced cost/performance
-const MODEL = "claude-sonnet-4-20250514";
+const HELP = `Usage: node shared/scripts/ai-generate-updates.mjs [options]
 
-/**
- * Load JSON file safely
- */
+Generate advisory, source-evidenced Core AI skill updates.
+
+Options:
+  --check-config  Inspect ANTHROPIC_API_KEY / ANTHROPIC_MODEL configuration without network access
+  --help          Show this help
+
+Environment:
+  ANTHROPIC_API_KEY  Required for generation; configure as a repository secret
+  ANTHROPIC_MODEL    Required for generation; configure as a repository variable
+  AI_DRY_RUN         Set to true to suppress skill and sync-state writes
+`;
+
 function loadJson(filePath) {
   try {
     return JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -35,432 +32,379 @@ function loadJson(filePath) {
   }
 }
 
-/**
- * Write JSON file with directory creation
- */
 function writeJson(filePath, data) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2) + "\n", "utf8");
+  fs.writeFileSync(filePath, `${JSON.stringify(data, null, 2)}\n`, "utf8");
 }
 
-/**
- * Get current upstream state hash for comparison
- */
-function getUpstreamStateHash(indices) {
-  const state = {
-    wpLatest: indices.wordpress?.latest ?? null,
-    gbLatest: indices.gutenberg?.latest?.tag ?? null,
-    gbRecentCount: indices.gutenberg?.recent?.length ?? 0,
-    mapRowCount: indices.map?.rows?.length ?? 0,
-  };
-  // Simple hash: JSON stringify and take first 16 chars of base64
-  const hash = Buffer.from(JSON.stringify(state)).toString("base64").slice(0, 16);
+function versionFromIndex(upstream, index) {
+  if (upstream.sourceType === "wordpress-version-check") {
+    return typeof index?.latest === "string" ? index.latest : null;
+  }
+  if (upstream.sourceType === "html-version-map") return null;
+  return typeof index?.latest?.tag === "string" ? index.latest.tag : null;
+}
+
+function releaseUrlFromIndex(upstream, index) {
+  return typeof index?.latest?.url === "string" ? index.latest.url : upstream.source;
+}
+
+export function buildUpstreamState(indices, registry = CORE_AI_UPSTREAMS) {
+  const versions = {};
+  let versionMapRowCount = 0;
+  for (const upstream of [...registry].sort((a, b) => a.id.localeCompare(b.id))) {
+    const index = indices[upstream.id];
+    if (upstream.sourceType === "html-version-map") {
+      versionMapRowCount = Array.isArray(index?.rows) ? index.rows.length : 0;
+    } else {
+      versions[upstream.id] = versionFromIndex(upstream, index);
+    }
+  }
+  return { schemaVersion: 2, versions, versionMapRowCount };
+}
+
+export function getUpstreamStateHash(indices, registry = CORE_AI_UPSTREAMS) {
+  const state = buildUpstreamState(indices, registry);
+  const hash = crypto.createHash("sha256").update(JSON.stringify(state)).digest("hex");
   return { hash, state };
 }
 
-/**
- * Load all current upstream indices
- */
-function loadUpstreamIndices() {
-  const byId = Object.fromEntries(
-    CORE_AI_UPSTREAMS.map((upstream) => [
-      upstream.id,
-      loadJson(path.join(REPO_ROOT, upstream.indexFile)),
-    ])
-  );
-  return {
-    ...byId,
-    // Transitional aliases retained until the complete state/hash rewrite.
-    wordpress: byId["wordpress-core"],
-    gutenberg: byId.gutenberg,
-    map: byId["wp-gutenberg-version-map"],
-  };
+function allAffectedSkills(registry) {
+  return [...new Set(registry.flatMap((upstream) => upstream.affectedSkills))].sort();
 }
 
-/**
- * Load last sync state
- */
-function loadLastSyncState() {
-  return loadJson(STATE_FILE) ?? { hash: null, state: null, lastSync: null };
-}
+export function detectUpstreamChanges(
+  lastSync,
+  currentState,
+  indices,
+  registry = CORE_AI_UPSTREAMS
+) {
+  const legacyHash = typeof lastSync?.hash === "string" && /^[A-Za-z0-9+/]{16}$/.test(lastSync.hash);
+  if (!lastSync?.state?.versions || lastSync.state.schemaVersion !== 2 || legacyHash) {
+    return [
+      {
+        type: legacyHash ? "state-schema-migration" : "initial-sync",
+        sourceId: null,
+        description: legacyHash
+          ? "Migrate the partial 16-character state hash to the complete Core AI source state"
+          : "Initialize the complete Core AI source state",
+        oldVersion: null,
+        newVersion: currentState.hash,
+        releaseUrl: null,
+        affectedSkills: allAffectedSkills(registry),
+        riskLevel: "medium",
+        taggedFiles: [],
+      },
+    ];
+  }
 
-/**
- * Save current sync state
- */
-function saveSyncState(hash, state, changes) {
-  writeJson(STATE_FILE, {
-    hash,
-    state,
-    lastSync: new Date().toISOString(),
-    lastChanges: changes,
-  });
-}
-
-/**
- * Detect what changed between last sync and current state
- */
-function detectChanges(lastState, currentState) {
   const changes = [];
-
-  if (!lastState.state) {
+  for (const upstream of registry) {
+    const isMap = upstream.sourceType === "html-version-map";
+    const oldVersion = isMap
+      ? lastSync.state.versionMapRowCount
+      : lastSync.state.versions[upstream.id] ?? null;
+    const newVersion = isMap
+      ? currentState.state.versionMapRowCount
+      : currentState.state.versions[upstream.id] ?? null;
+    if (oldVersion === newVersion) continue;
     changes.push({
-      type: "initial-sync",
-      description: "First sync - no previous state",
-      riskLevel: "low",
-    });
-    return changes;
-  }
-
-  const last = lastState.state;
-  const current = currentState.state;
-
-  // WordPress version change
-  if (last.wpLatest !== current.wpLatest) {
-    changes.push({
-      type: "wordpress-release",
-      description: `WordPress updated: ${last.wpLatest} → ${current.wpLatest}`,
-      oldVersion: last.wpLatest,
-      newVersion: current.wpLatest,
-      riskLevel: "medium",
-      affectedSkills: [
-        "wp-block-themes",
-        "wp-block-development",
-        "wp-plugin-development",
-      ],
+      type: isMap ? "version-map-update" : "upstream-release",
+      sourceId: upstream.id,
+      description: `${upstream.id} updated: ${oldVersion ?? "unknown"} → ${newVersion ?? "unknown"}`,
+      oldVersion,
+      newVersion,
+      releaseUrl: releaseUrlFromIndex(upstream, indices[upstream.id]),
+      affectedSkills: [...upstream.affectedSkills],
+      riskLevel: isMap ? "low" : "medium",
+      taggedFiles: [],
     });
   }
-
-  // Gutenberg version change
-  if (last.gbLatest !== current.gbLatest) {
-    changes.push({
-      type: "gutenberg-release",
-      description: `Gutenberg updated: ${last.gbLatest} → ${current.gbLatest}`,
-      oldVersion: last.gbLatest,
-      newVersion: current.gbLatest,
-      riskLevel: "medium",
-      affectedSkills: [
-        "wp-interactivity-api",
-        "wp-abilities-api",
-        "wp-block-development",
-      ],
-    });
-  }
-
-  // Map table updated (new mappings added)
-  if (last.mapRowCount !== current.mapRowCount) {
-    changes.push({
-      type: "version-map-update",
-      description: `WP↔Gutenberg mapping updated: ${last.mapRowCount} → ${current.mapRowCount} entries`,
-      riskLevel: "low",
-      affectedSkills: ["wordpress-router"],
-    });
-  }
-
   return changes;
 }
 
-/**
- * Load a skill's SKILL.md content
- */
+export function inspectConfiguration(environment = process.env) {
+  const model = String(environment.ANTHROPIC_MODEL ?? "").trim();
+  const apiKeyConfigured = String(environment.ANTHROPIC_API_KEY ?? "").trim() !== "";
+  return {
+    configured: apiKeyConfigured && model !== "",
+    apiKeyConfigured,
+    modelConfigured: model !== "",
+    model: model || null,
+    category: !apiKeyConfigured ? "missing-api-key" : model === "" ? "missing-model" : "configured",
+  };
+}
+
+function loadUpstreamIndices(repoRoot = REPO_ROOT, registry = CORE_AI_UPSTREAMS) {
+  return Object.fromEntries(
+    registry.map((upstream) => [
+      upstream.id,
+      loadJson(path.join(repoRoot, upstream.indexFile)),
+    ])
+  );
+}
+
 function loadSkillContent(skillName) {
-  const skillPath = path.join(SKILLS_DIR, skillName, "SKILL.md");
   try {
-    return fs.readFileSync(skillPath, "utf8");
+    return fs.readFileSync(path.join(SKILLS_DIR, skillName, "SKILL.md"), "utf8");
   } catch {
     return null;
   }
 }
 
-/**
- * Load all reference docs for a skill
- */
 function loadSkillReferences(skillName) {
-  const refsDir = path.join(SKILLS_DIR, skillName, "references");
-  const refs = {};
+  const references = {};
   try {
-    const files = fs.readdirSync(refsDir);
-    for (const file of files) {
+    for (const file of fs.readdirSync(path.join(SKILLS_DIR, skillName, "references"))) {
       if (file.endsWith(".md")) {
-        refs[file] = fs.readFileSync(path.join(refsDir, file), "utf8");
+        references[file] = fs.readFileSync(path.join(SKILLS_DIR, skillName, "references", file), "utf8");
       }
     }
   } catch {
-    // No references dir
+    // A skill may have no references directory.
   }
-  return refs;
+  return references;
 }
 
-/**
- * Build the prompt for AI analysis
- */
-function buildAnalysisPrompt(changes, indices) {
-  const changesSummary = changes
-    .map((c) => `- ${c.type}: ${c.description} (risk: ${c.riskLevel})`)
+function sourceContext(changes) {
+  return changes
+    .map(
+      (change) =>
+        `- source: ${change.sourceId ?? "registry-state"}\n  version: ${change.oldVersion ?? "unknown"} -> ${change.newVersion}\n  release: ${change.releaseUrl ?? "not available"}\n  affected skills: ${change.affectedSkills.join(", ")}\n  supplied tagged files: ${change.taggedFiles.length ? change.taggedFiles.join(", ") : "none"}`
+    )
     .join("\n");
+}
 
-  return `You are analyzing upstream changes to WordPress/Gutenberg to determine if skills need updates.
+export function buildAnalysisPrompt(changes) {
+  return `You are triaging upstream changes for WordPress Core AI skills.
 
-## Detected Changes
-${changesSummary}
+Source precedence is mandatory: tagged executable source, tests in that tag, release notes/changelog, then handbook prose. A changelog claim never overrides executable behavior.
 
-## Current Upstream State
-- WordPress latest: ${indices.wordpress?.latest ?? "unknown"}
-- Gutenberg latest: ${indices.gutenberg?.latest?.tag ?? "unknown"}
-- Gutenberg release URL: ${indices.gutenberg?.latest?.url ?? "unknown"}
+## Sources
+${sourceContext(changes)}
 
-## Task
-Analyze these changes and determine:
-1. Which skills are likely affected and why
-2. What specific updates might be needed (procedures, references, examples)
-3. Risk assessment for each potential update
+If no tagged files are supplied, do not speculate or propose file rewrites. Return review recommendations that name the tag and source areas a human or source-capable agent must inspect. If tagged files are supplied, cite only those files as inspected.
 
-Respond in JSON format:
+Respond as JSON:
 {
-  "analysis": "Brief overall analysis",
-  "skillUpdates": [
-    {
-      "skill": "skill-name",
-      "reason": "Why this skill is affected",
-      "suggestedChanges": ["List of specific changes to make"],
-      "riskLevel": "low|medium|high",
-      "priority": 1-5
-    }
-  ],
-  "skipUpdate": true/false,
-  "skipReason": "If skipping, explain why no updates are needed"
+  "analysis": "summary",
+  "skillUpdates": [{"skill":"name","reason":"why","riskLevel":"low|medium|high","priority":1,"taggedFilesInspected":["path"],"reviewRecommendation":"what remains"}],
+  "skipUpdate": true,
+  "skipReason": "reason"
 }`;
 }
 
-/**
- * Build prompt for generating skill updates
- */
-function buildUpdatePrompt(skillName, skillContent, references, changes, indices) {
-  const relevantChanges = changes.filter(
-    (c) => c.affectedSkills?.includes(skillName)
-  );
-
-  const refsSummary = Object.entries(references)
-    .map(([name, content]) => `### ${name}\n${content.slice(0, 2000)}...`)
+function buildUpdatePrompt(skillName, skillContent, references, relevantChanges) {
+  const referenceText = Object.entries(references)
+    .map(([name, content]) => `### ${name}\n${content.slice(0, 2000)}`)
     .join("\n\n");
+  return `Update the WordPress skill ${skillName} only when supplied tagged executable evidence supports the edit.
 
-  return `You are updating a WordPress development skill based on upstream changes.
+Source precedence: tagged executable source > tagged tests > release notes/changelog > handbook prose.
 
-## Skill: ${skillName}
+## Source changes
+${sourceContext(relevantChanges)}
 
-## Current SKILL.md
+## SKILL.md
 ${skillContent}
 
-## Current References (truncated)
-${refsSummary || "(no references)"}
+## References (truncated)
+${referenceText || "(none)"}
 
-## Relevant Changes
-${relevantChanges.map((c) => `- ${c.description}`).join("\n")}
+Without supplied tagged-file evidence, set skillUpdated=false and return a reviewRecommendation. Never invent a file as inspected.
 
-## Upstream Context
-- WordPress latest: ${indices.wordpress?.latest ?? "unknown"}
-- Gutenberg latest: ${indices.gutenberg?.latest?.tag ?? "unknown"}
-
-## Instructions
-1. Review the current skill content
-2. Identify what needs to change based on the upstream updates
-3. Generate updated content that:
-   - Preserves the existing structure and tone
-   - Updates version references if needed
-   - Adds notes about new features/changes if relevant
-   - Does NOT remove existing content unless it's deprecated
-
-Respond in JSON format:
+Respond as JSON:
 {
-  "skillUpdated": true/false,
-  "changes": [
-    {
-      "file": "SKILL.md or references/filename.md",
-      "description": "What changed",
-      "newContent": "Full new file content (only if changed)"
-    }
-  ],
-  "summary": "Brief summary of changes for PR description",
-  "noChangeReason": "If no changes needed, explain why"
+  "skillUpdated": false,
+  "taggedFilesInspected": [],
+  "changes": [{"file":"SKILL.md","description":"what changed","newContent":"full content"}],
+  "summary": "summary",
+  "reviewRecommendation": "source work still required",
+  "noChangeReason": "reason"
 }`;
 }
 
-/**
- * Call Claude API
- */
-async function callClaude(client, prompt, systemPrompt = null) {
-  const messages = [{ role: "user", content: prompt }];
-
+async function callClaude(client, model, prompt) {
   const response = await client.messages.create({
-    model: MODEL,
+    model,
     max_tokens: 8192,
-    system: systemPrompt ?? "You are a technical writer maintaining WordPress development skills documentation. Always respond with valid JSON.",
-    messages,
+    system: "You maintain WordPress development skills. Return valid JSON and never claim source inspection without supplied evidence.",
+    messages: [{ role: "user", content: prompt }],
   });
-
-  const text = response.content
-    .filter((b) => b.type === "text")
-    .map((b) => b.text)
+  const value = response.content
+    .filter((block) => block.type === "text")
+    .map((block) => block.text)
     .join("");
-
-  // Extract JSON from response (handle markdown code blocks)
-  const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) ||
-                    text.match(/```\s*([\s\S]*?)\s*```/) ||
-                    [null, text];
-
+  const match = value.match(/```json\s*([\s\S]*?)\s*```/) ?? value.match(/```\s*([\s\S]*?)\s*```/);
   try {
-    return JSON.parse(jsonMatch[1] || text);
-  } catch (e) {
-    console.error("Failed to parse Claude response as JSON:", text.slice(0, 500));
-    throw new Error(`Invalid JSON response from Claude: ${e.message}`);
+    return JSON.parse(match?.[1] ?? value);
+  } catch (error) {
+    throw new Error(`invalid-json-response: ${error.message}`);
   }
 }
 
-/**
- * Main execution
- */
-async function main() {
+function hasSuppliedTaggedEvidence(result, relevantChanges) {
+  const supplied = new Set(relevantChanges.flatMap((change) => change.taggedFiles));
+  const inspected = Array.isArray(result?.taggedFilesInspected) ? result.taggedFilesInspected : [];
+  return supplied.size > 0 && inspected.length > 0 && inspected.every((file) => supplied.has(file));
+}
+
+function safeChangePath(skill, relativeFile) {
+  const skillRoot = path.resolve(SKILLS_DIR, skill);
+  const filePath = path.resolve(skillRoot, relativeFile);
+  if (filePath !== skillRoot && !filePath.startsWith(`${skillRoot}${path.sep}`)) {
+    throw new Error(`unsafe-generated-path: ${relativeFile}`);
+  }
+  return filePath;
+}
+
+function classifyError(error) {
+  const value = String(error?.message ?? error).toLowerCase();
+  if (value.includes("anthropic_api_key") || value.includes("missing-api-key")) return "missing-api-key";
+  if (value.includes("anthropic_model") || value.includes("missing-model")) return "missing-model";
+  if (value.includes("401") || value.includes("authentication")) return "authentication";
+  if (value.includes("429") || value.includes("rate limit")) return "rate-limit";
+  if (value.includes("quota") || value.includes("credit")) return "quota";
+  if (value.includes("model") && (value.includes("access") || value.includes("not found"))) return "model-access";
+  if (value.includes("cannot find package")) return "dependency-missing";
+  if (value.includes("fetch") || value.includes("network")) return "network";
+  if (value.includes("invalid-json-response")) return "invalid-response";
+  return "generation-error";
+}
+
+function writeGeneratorResult(result) {
+  writeJson(RESULT_FILE, { timestamp: new Date().toISOString(), ...result });
+}
+
+function parseArguments(args) {
+  const options = { checkConfig: false, help: false };
+  for (const argument of args) {
+    if (argument === "--check-config") options.checkConfig = true;
+    else if (argument === "--help") options.help = true;
+    else {
+      const error = new Error(`Unknown argument: ${argument}`);
+      error.exitCode = 2;
+      throw error;
+    }
+  }
+  return options;
+}
+
+async function generate() {
+  const configuration = inspectConfiguration();
+  if (!configuration.apiKeyConfigured) throw new Error("missing-api-key: ANTHROPIC_API_KEY is required");
+  if (!configuration.modelConfigured) throw new Error("missing-model: ANTHROPIC_MODEL is required");
   const dryRun = process.env.AI_DRY_RUN === "true";
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.error("ERROR: ANTHROPIC_API_KEY environment variable is required");
-    process.exit(1);
-  }
-
-  const client = new Anthropic();
-
-  console.log("=== AI Skill Update Generator ===\n");
-
-  // 1. Load current state
-  console.log("Loading upstream indices...");
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const indices = loadUpstreamIndices();
   const currentState = getUpstreamStateHash(indices);
-  const lastState = loadLastSyncState();
-
-  console.log(`Current state hash: ${currentState.hash}`);
-  console.log(`Last sync hash: ${lastState.hash ?? "(none)"}\n`);
-
-  // 2. Detect changes
-  console.log("Detecting changes...");
-  const changes = detectChanges(lastState, currentState);
+  const lastSync = loadJson(STATE_FILE) ?? { hash: null, state: null };
+  const changes = detectUpstreamChanges(lastSync, currentState, indices);
 
   if (changes.length === 0) {
-    console.log("No changes detected. Exiting.");
-    process.exit(0);
+    writeGeneratorResult({ outcome: "no-change", errorCategory: null, changes: [] });
+    process.stdout.write("No upstream state changes detected.\n");
+    return;
   }
 
-  console.log(`Found ${changes.length} change(s):`);
-  for (const c of changes) {
-    console.log(`  - ${c.type}: ${c.description}`);
-  }
-  console.log();
-
-  // 3. AI analysis of impact
-  console.log("Analyzing impact with AI...");
-  const analysisPrompt = buildAnalysisPrompt(changes, indices);
-  const analysis = await callClaude(client, analysisPrompt);
-
-  console.log(`Analysis: ${analysis.analysis}\n`);
-
-  if (analysis.skipUpdate) {
-    console.log(`Skipping updates: ${analysis.skipReason}`);
-    saveSyncState(currentState.hash, currentState.state, changes);
-    process.exit(0);
-  }
-
-  // 4. Generate updates for affected skills
+  const analysis = await callClaude(client, configuration.model, buildAnalysisPrompt(changes));
+  const candidates = Array.isArray(analysis.skillUpdates) ? analysis.skillUpdates : [];
   const updates = [];
-  const skillsToUpdate = analysis.skillUpdates
-    .filter((s) => s.priority >= 3 || s.riskLevel !== "low")
-    .sort((a, b) => b.priority - a.priority);
+  const reviewRecommendations = [];
 
-  console.log(`Skills to update: ${skillsToUpdate.map((s) => s.skill).join(", ")}\n`);
-
-  for (const skillUpdate of skillsToUpdate) {
-    const { skill } = skillUpdate;
-    console.log(`Processing ${skill}...`);
-
-    const skillContent = loadSkillContent(skill);
-    if (!skillContent) {
-      console.log(`  Skill ${skill} not found, skipping.`);
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate.skill !== "string") continue;
+    const relevantChanges = changes.filter((change) => change.affectedSkills.includes(candidate.skill));
+    if (relevantChanges.length === 0) continue;
+    const skillContent = loadSkillContent(candidate.skill);
+    if (!skillContent) continue;
+    const result = await callClaude(
+      client,
+      configuration.model,
+      buildUpdatePrompt(candidate.skill, skillContent, loadSkillReferences(candidate.skill), relevantChanges)
+    );
+    if (!hasSuppliedTaggedEvidence(result, relevantChanges)) {
+      reviewRecommendations.push({
+        skill: candidate.skill,
+        recommendation:
+          result.reviewRecommendation ?? "Inspect tagged executable source before editing this skill.",
+      });
       continue;
     }
-
-    const references = loadSkillReferences(skill);
-    const updatePrompt = buildUpdatePrompt(
-      skill,
-      skillContent,
-      references,
-      changes,
-      indices
-    );
-
-    const updateResult = await callClaude(client, updatePrompt);
-
-    if (updateResult.skillUpdated && updateResult.changes?.length > 0) {
-      updates.push({
-        skill,
-        ...updateResult,
-      });
-      console.log(`  ${updateResult.changes.length} file(s) to update`);
-    } else {
-      console.log(`  No changes needed: ${updateResult.noChangeReason}`);
+    if (result.skillUpdated && Array.isArray(result.changes) && result.changes.length > 0) {
+      updates.push({ skill: candidate.skill, ...result });
     }
   }
-
-  // 5. Write updates
-  if (updates.length === 0) {
-    console.log("\nNo skill updates generated.");
-    saveSyncState(currentState.hash, currentState.state, changes);
-    process.exit(0);
-  }
-
-  console.log(`\n=== Writing ${updates.length} skill update(s) ===\n`);
 
   for (const update of updates) {
     for (const change of update.changes) {
-      const filePath = path.join(SKILLS_DIR, update.skill, change.file);
-      console.log(`Writing: ${filePath}`);
-      console.log(`  ${change.description}`);
-
-      if (!dryRun && change.newContent) {
+      const filePath = safeChangePath(update.skill, change.file);
+      if (!dryRun && typeof change.newContent === "string") {
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
         fs.writeFileSync(filePath, change.newContent, "utf8");
       }
     }
   }
 
-  // 6. Save state
-  saveSyncState(currentState.hash, currentState.state, changes);
-
-  // 7. Output summary for GitHub Actions
-  const summary = updates
-    .map((u) => `- **${u.skill}**: ${u.summary}`)
-    .join("\n");
-
-  console.log("\n=== Summary ===");
-  console.log(summary);
-
-  // Write summary to file for GitHub Actions to pick up
-  const summaryFile = path.join(REPO_ROOT, ".github", "state", "update-summary.md");
-  writeJson(summaryFile.replace(".md", ".json"), {
+  if (!dryRun) {
+    writeJson(STATE_FILE, {
+      ...currentState,
+      lastSync: new Date().toISOString(),
+      lastChanges: changes,
+    });
+  }
+  writeJson(SUMMARY_FILE, {
     timestamp: new Date().toISOString(),
     changes,
-    analysis: analysis.analysis,
-    updates: updates.map((u) => ({
-      skill: u.skill,
-      summary: u.summary,
-      files: u.changes.map((c) => c.file),
+    analysis: analysis.analysis ?? "",
+    updates: updates.map((update) => ({
+      skill: update.skill,
+      summary: update.summary,
+      files: update.changes.map((change) => change.file),
+      taggedFilesInspected: update.taggedFilesInspected,
     })),
+    reviewRecommendations,
   });
-
-  if (dryRun) {
-    console.log("\n(Dry run - no files were written)");
-  }
-
-  console.log("\nDone.");
+  writeGeneratorResult({
+    outcome: updates.length > 0 ? "updated" : "review-only",
+    errorCategory: null,
+    updateCount: updates.length,
+    reviewCount: reviewRecommendations.length,
+    dryRun,
+  });
+  process.stdout.write(
+    updates.length > 0
+      ? `Generated ${updates.length} source-evidenced skill update(s).\n`
+      : "No source-evidenced skill edits generated; review recommendations recorded.\n"
+  );
 }
 
-main().catch((err) => {
-  console.error("Fatal error:", err);
-  process.exit(1);
-});
+export async function runCli(args = process.argv.slice(2)) {
+  const options = parseArguments(args);
+  if (options.help) {
+    process.stdout.write(HELP);
+    return 0;
+  }
+  if (options.checkConfig) {
+    process.stdout.write(`${JSON.stringify(inspectConfiguration(), null, 2)}\n`);
+    return 0;
+  }
+  await generate();
+  return 0;
+}
+
+const invokedUrl = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : null;
+if (invokedUrl === import.meta.url) {
+  runCli()
+    .then((exitCode) => {
+      process.exitCode = exitCode;
+    })
+    .catch((error) => {
+      const category = classifyError(error);
+      writeGeneratorResult({ outcome: "failed", errorCategory: category });
+      process.stderr.write(`ERROR [${category}]: AI maintenance generation failed.\n`);
+      process.exitCode = error.exitCode ?? 1;
+    });
+}

@@ -1,7 +1,7 @@
 ---
 name: wp-abilities-audit
 description: Use when auditing a WordPress plugin's REST API surface for Abilities API candidates, planning registrations, or producing an abilities migration audit before implementation.
-compatibility: "Targets WordPress 6.9+ (PHP 7.2.24+). Filesystem-based agent with bash + node. Requires access to the plugin checkout; some workflows benefit from WP-CLI but don't require it."
+compatibility: "Targets WordPress 6.9+ (PHP 7.2.24+); WordPress Core verified through: 7.1; MCP Adapter verified through: 0.6.1. Filesystem-based agent with bash + node. Requires access to the plugin checkout; some workflows benefit from WP-CLI but don't require it."
 license: GPL-2.0-or-later
 ---
 

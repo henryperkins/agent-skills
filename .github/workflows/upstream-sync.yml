@@ -3,7 +3,11 @@ name: Upstream Sync
 on:
   workflow_dispatch:
   schedule:
-    - cron: "17 4 * * 1" # Mondays
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
   refresh:
@@ -15,27 +19,85 @@ jobs:
         with:
           node-version: 20
 
-      - name: Update indices
+      - name: Update every registry-owned index
         run: node shared/scripts/update-upstream-indices.mjs
 
-      - name: Create PR if changed
+      - name: Detect index changes
+        id: changes
+        run: |
+          if git diff --quiet shared/references/; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No upstream index changes detected; no pull request will be created."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --stat shared/references/
+          fi
+
+      - name: Run complete non-drift validation
+        if: steps.changes.outputs.changed == 'true'
+        run: node eval/harness/run.mjs --skip-upstream-drift
+
+      - name: Generate registry source inventory
+        if: steps.changes.outputs.changed == 'true'
+        run: node shared/scripts/core-ai-upstreams.mjs --format markdown > .github/state/upstream-sources.md
+
+      - name: Generate reviewer drift report
+        if: steps.changes.outputs.changed == 'true'
+        run: node shared/scripts/check-upstream-drift.mjs --format markdown --allow-drift > .github/state/upstream-drift.md
+
+      - name: Read reports for pull request body
+        if: steps.changes.outputs.changed == 'true'
+        id: reports
+        run: |
+          echo "sources<<EOF" >> "$GITHUB_OUTPUT"
+          cat .github/state/upstream-sources.md >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          echo "drift<<EOF" >> "$GITHUB_OUTPUT"
+          cat .github/state/upstream-drift.md >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Determine pull request token mode
+        if: steps.changes.outputs.changed == 'true'
+        id: token-mode
+        env:
+          UPSTREAM_SYNC_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN }}
+        run: |
+          if [ -n "$UPSTREAM_SYNC_TOKEN" ]; then
+            echo "mode=UPSTREAM_SYNC_TOKEN (normal pull_request checks should trigger)" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=GITHUB_TOKEN fallback. Normal pull_request workflows may not run recursively; this job performed complete non-drift validation and attached drift evidence." >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload sync evidence
+        if: steps.changes.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-sync-report
+          path: |
+            .github/state/upstream-sources.md
+            .github/state/upstream-drift.md
+          include-hidden-files: true
+
+      - name: Create pull request if changed
+        if: steps.changes.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v6
         with:
+          token: ${{ secrets.UPSTREAM_SYNC_TOKEN || secrets.GITHUB_TOKEN }}
           commit-message: "chore: refresh upstream indices"
-          title: "chore: refresh upstream indices"
+          title: "chore: refresh Core AI upstream indices"
           body: |
-            Automated refresh of upstream indices under `shared/references/`.
+            Automated deterministic refresh of registry-owned indices under `shared/references/`.
 
-            - WordPress core versions (from api.wordpress.org)
-            - Gutenberg releases (from GitHub Releases API)
-            - WordPress/ai (canonical AI plugin) releases (from GitHub Releases API)
-            - WordPress/mcp-adapter releases (from GitHub Releases API)
-            - wordpress/php-ai-client versions (from Packagist)
-            - WordPress ↔ Gutenberg mapping (from developer.wordpress.org docs)
+            Token mode: ${{ steps.token-mode.outputs.mode }}
 
-            If CI fails on this PR, the drift check caught a skill whose
-            declared canonical release now lags upstream — re-sync that skill
-            (see docs/upstream-sync.md) as a follow-up.
-          branch: chore/upstream-indices
+            ## Canonical source inventory
+
+            ${{ steps.reports.outputs.sources }}
+
+            ${{ steps.reports.outputs.drift }}
+
+            A red drift row means the index advanced beyond a skill's independent `verified through` marker. Update that skill on this branch from tagged executable source; do not merge the index alone while claiming alignment.
+          branch: chore/core-ai-upstream-indices
           delete-branch: true
-
+          add-paths: |
+            shared/references/**

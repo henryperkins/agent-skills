@@ -1,5 +1,7 @@
 # Exposure checks
 
+Verified unchanged in WordPress 7.1 final and MCP Adapter 0.6.1: Core REST still resolves `meta.show_in_rest ?? meta.public ?? false`, while the adapter resolves `meta.mcp.public ?? meta.public ?? false`. Exposure controls discovery, not authorization; every execution still reaches the ability's permission callback.
+
 Annotation correctness asks "does this ability do what it claims?". Exposure asks a different
 question: **"who can see it, and did anyone decide that on purpose?"**
 

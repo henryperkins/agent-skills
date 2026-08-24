@@ -3,7 +3,6 @@
   "name": "wordpress-skills",
   "displayName": "Agent Skills for WordPress",
   "description": "Expert WordPress development knowledge for AI coding assistants: Gutenberg blocks, block themes, plugin architecture, REST API, Abilities API, AI Client/Connectors, WP-CLI, performance, PHPStan, and Playground.",
-  "version": "1.9.0",
   "author": {
     "name": "WordPress Contributors",
     "url": "https://github.com/WordPress/agent-skills"
@@ -11,6 +10,7 @@
   "homepage": "https://github.com/WordPress/agent-skills",
   "repository": "https://github.com/henryperkins/agent-skills",
   "license": "GPL-2.0-or-later",
+  "version": "1.9.0",
   "keywords": [
     "wordpress",
     "gutenberg",

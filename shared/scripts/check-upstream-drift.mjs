@@ -1,162 +1,75 @@
-import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { CORE_AI_UPSTREAMS } from "./core-ai-upstreams.mjs";
+import {
+  collectUpstreamDrift,
+  formatDriftJson,
+  formatDriftMarkdown,
+  formatDriftText,
+} from "./upstream-drift-lib.mjs";
 
-/**
- * Compares committed upstream release indices against the versions skills
- * declare as canonical, so CI turns red when a skill lags upstream.
- *
- * Deterministic and offline: this reads only committed files. The indices
- * are refreshed by `shared/scripts/update-upstream-indices.mjs` (the
- * Upstream Sync workflow opens a PR with the refreshed index); once a newer
- * release lands in the index, this check fails until the skill is re-synced
- * and its declared canonical release is bumped.
- */
+const HELP = `Usage: node shared/scripts/check-upstream-drift.mjs [options]
 
-const CHECKS = [
-  {
-    name: "wp-ai-plugin vs WordPress/ai releases",
-    indexFile: "shared/references/ai-plugin-releases.json",
-    skillFile: "skills/wp-ai-plugin/SKILL.md",
-    // Matches the frontmatter compatibility line, e.g.
-    // "(current canonical release: v1.2.0)".
-    skillPattern: /current canonical release:\s*v?(\d+(?:\.\d+)+)/,
-    hint: "Re-sync skills/wp-ai-plugin to the newer release (verify against the tagged source per docs/upstream-sync.md), then bump the 'current canonical release' marker in its SKILL.md compatibility line.",
-  },
-  {
-    // The adapter is versioned independently of core and has already reversed
-    // its ability-exposure default once (0.6.0 made `meta.public` grant MCP
-    // exposure). Guidance written against an older adapter is not merely stale,
-    // it inverts a security-relevant default — so this surface needs a gate.
-    name: "wp-abilities-api vs WordPress/mcp-adapter releases",
-    indexFile: "shared/references/mcp-adapter-releases.json",
-    skillFile: "skills/wp-abilities-api/SKILL.md",
-    // Matches the frontmatter compatibility line, e.g.
-    // "current canonical release: v0.6.1".
-    skillPattern: /current canonical release:\s*v?(\d+(?:\.\d+)+)/,
-    hint: "Re-verify skills/wp-abilities-api against the newer MCP Adapter release — especially McpAbilityExposure::is_public() and create_server() — then update references/mcp-exposure.md and bump the 'current canonical release' marker in the SKILL.md compatibility line.",
-  },
-  {
-    // The abilities skills carry a large WP 7.1 surface (the execution
-    // lifecycle hooks, meta.public, wp_get_abilities() args, typed REST
-    // inputs) that was verified against the 7.1 *branch* while it was still
-    // a release candidate. Branch content moves until it ships, so the gate
-    // fires when a new core minor actually releases and someone has to
-    // re-verify against the released build.
-    //
-    // Minor granularity on purpose: a patch release almost never touches this
-    // surface, and firing on every 7.0.x would train people to ignore the gate.
-    name: "wp-abilities-api vs released WordPress core",
-    indexFile: "shared/references/wordpress-core-versions.json",
-    skillFile: "skills/wp-abilities-api/SKILL.md",
-    // Matches the frontmatter compatibility line, e.g.
-    // "(core verified through: 7.0)".
-    skillPattern: /core verified through:\s*(\d+\.\d+)/,
-    // This index stores `latest` as a plain version string, not a release object.
-    latestFrom: (index) => (typeof index?.latest === "string" ? index.latest : null),
-    granularity: "minor",
-    hint: "A new WordPress minor has shipped. Re-verify the 7.1+ surface in skills/wp-abilities-api (and the exposure rules in wp-abilities-verify) against the released branch rather than the pre-release one, then bump the 'core verified through' marker in the SKILL.md compatibility line.",
-  },
-  {
-    // wp-ai-client's most load-bearing claim is a boundary between two moving
-    // versions: what the standalone `wordpress/php-ai-client` package exposes
-    // versus what core actually bundles (1.4.0 vs 1.3.1 — embeddings and the
-    // EmbeddingBuilder surface exist only on the standalone side). The skill
-    // enumerates that delta feature by feature, so a new standalone release
-    // silently invalidates both halves of the boundary: the delta grows and
-    // "what core does not yet expose" stops being the full list.
-    //
-    // This gate watches the standalone package only. The core-bundled half of
-    // the marker moves with core, which the released-core gate above already
-    // covers; re-verifying either side means re-reading both.
-    name: "wp-ai-client vs WordPress/php-ai-client releases",
-    indexFile: "shared/references/php-ai-client-releases.json",
-    skillFile: "skills/wp-ai-client/SKILL.md",
-    // Matches the frontmatter compatibility line, e.g.
-    // "PHP AI Client verified through: 1.4.0 (core-bundled: 1.3.1)." — the
-    // captured version is the standalone one; the parenthetical is prose.
-    skillPattern: /PHP AI Client verified through:\s*(\d+(?:\.\d+)+)/,
-    hint: "A newer standalone php-ai-client has shipped. Re-verify the core-bundled vs standalone boundary in skills/wp-ai-client (the AiClient::VERSION constants in WordPress/php-ai-client and in core's src/wp-includes/php-ai-client/), update the enumerated delta, then bump the 'PHP AI Client verified through' marker in the SKILL.md compatibility line.",
-  },
-];
+Compare every registry-declared Core AI skill marker with its committed index.
 
-function parseVersion(value) {
-  return String(value)
-    .replace(/^v/, "")
-    .split(".")
-    .map((n) => Number.parseInt(n, 10) || 0);
+Options:
+  --format text|markdown|json  Output format (default: text)
+  --allow-drift               Report all drift but exit successfully
+  --help                      Show this help
+`;
+
+function usageError(message) {
+  const error = new Error(message);
+  error.exitCode = 2;
+  return error;
 }
 
-function compareVersions(a, b, granularity = "patch") {
-  const depth = granularity === "minor" ? 2 : Infinity;
-  const pa = parseVersion(a).slice(0, depth);
-  const pb = parseVersion(b).slice(0, depth);
-  const len = Math.max(pa.length, pb.length);
-  for (let i = 0; i < len; i += 1) {
-    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
-    if (d !== 0) return d;
+export function parseArguments(args) {
+  const options = { format: "text", allowDrift: false, help: false };
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index];
+    if (argument === "--help") {
+      options.help = true;
+    } else if (argument === "--allow-drift") {
+      options.allowDrift = true;
+    } else if (argument === "--format") {
+      const format = args[index + 1];
+      if (!format) throw usageError("--format requires text, markdown, or json");
+      options.format = format;
+      index += 1;
+    } else if (argument.startsWith("--format=")) {
+      options.format = argument.slice("--format=".length);
+    } else {
+      throw usageError(`Unknown argument: ${argument}`);
+    }
   }
-  return 0;
+  if (!["text", "markdown", "json"].includes(options.format)) {
+    throw usageError(`Unsupported format: ${options.format}`);
+  }
+  return options;
 }
 
-function main() {
-  const repoRoot = process.cwd();
-  const failures = [];
-
-  for (const check of CHECKS) {
-    const indexPath = path.join(repoRoot, check.indexFile);
-    const skillPath = path.join(repoRoot, check.skillFile);
-
-    if (!fs.existsSync(indexPath)) {
-      failures.push(
-        `[${check.name}] Missing index ${check.indexFile} — run \`node shared/scripts/update-upstream-indices.mjs\`.`
-      );
-      continue;
-    }
-    if (!fs.existsSync(skillPath)) {
-      failures.push(`[${check.name}] Missing skill file ${check.skillFile}.`);
-      continue;
-    }
-
-    const latestFrom = check.latestFrom ?? ((index) => index?.latest?.tag ?? null);
-
-    let latestTag = null;
-    try {
-      const index = JSON.parse(fs.readFileSync(indexPath, "utf8"));
-      latestTag = latestFrom(index) ?? null;
-    } catch {
-      failures.push(`[${check.name}] Could not parse ${check.indexFile} as JSON.`);
-      continue;
-    }
-    if (!latestTag) {
-      failures.push(`[${check.name}] ${check.indexFile} has no usable latest version.`);
-      continue;
-    }
-
-    const skillText = fs.readFileSync(skillPath, "utf8");
-    const match = skillText.match(check.skillPattern);
-    if (!match) {
-      failures.push(
-        `[${check.name}] ${check.skillFile} does not declare a canonical release matching ${check.skillPattern}.`
-      );
-      continue;
-    }
-
-    const declared = match[1];
-    if (compareVersions(latestTag, declared, check.granularity) > 0) {
-      failures.push(
-        `[${check.name}] Upstream latest is ${latestTag} but the skill declares ${declared}. ${check.hint}`
-      );
-    }
+export function runCli(args = process.argv.slice(2), repoRoot = process.cwd()) {
+  const options = parseArguments(args);
+  if (options.help) {
+    process.stdout.write(HELP);
+    return 0;
   }
 
-  if (failures.length > 0) {
-    for (const f of failures) {
-      process.stderr.write(`DRIFT: ${f}\n`);
-    }
-    process.exit(1);
-  }
+  const report = collectUpstreamDrift(repoRoot, CORE_AI_UPSTREAMS);
+  if (options.format === "markdown") process.stdout.write(formatDriftMarkdown(report));
+  else if (options.format === "json") process.stdout.write(formatDriftJson(report));
+  else process.stdout.write(formatDriftText(report));
 
-  process.stdout.write("OK: upstream drift checks passed.\n");
+  return report.failures.length > 0 && !options.allowDrift ? 1 : 0;
 }
 
-main();
+const invokedUrl = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : null;
+if (invokedUrl === import.meta.url) {
+  try {
+    process.exitCode = runCli();
+  } catch (error) {
+    process.stderr.write(`ERROR: ${error.message}\n\n${HELP}`);
+    process.exitCode = error.exitCode ?? 1;
+  }
+}

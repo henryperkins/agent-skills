@@ -1,7 +1,7 @@
 ---
 name: wp-abilities-verify
 description: Use when verifying a WordPress plugin's Abilities API registrations, callback behavior, permissions, exposure metadata (meta.public / show_in_rest / meta.mcp.public), schemas, annotations, or an audit produced by wp-abilities-audit.
-compatibility: "Targets WordPress 6.9+ plugins (PHP 7.2.24+). Requires a runnable environment (wp-env, docker-based dev stack, or equivalent) for runtime mode; static mode runs entirely from the plugin checkout with no env. Filesystem-based agent with bash + node."
+compatibility: "Targets WordPress 6.9+ plugins (PHP 7.2.24+); WordPress Core verified through: 7.1; MCP Adapter verified through: 0.6.1. Requires a runnable environment (wp-env, docker-based dev stack, or equivalent) for runtime mode; static mode runs entirely from the plugin checkout with no env. Filesystem-based agent with bash + node."
 license: GPL-2.0-or-later
 ---
 

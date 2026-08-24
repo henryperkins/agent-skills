@@ -1,104 +1,109 @@
-# Upstream sync (automation plan)
+# Core AI upstream synchronization
 
-Goal: when upstream changes (WordPress core releases, Gutenberg releases, docs updates), the repo should **regenerate indexes** and (eventually) **open PRs** that update affected skills/references.
+Core AI maintenance has two deliberately separate paths:
 
-## What to automate first (low risk)
+- The **deterministic** path discovers releases, normalizes indices, reports drift, and opens an index-only pull request. It is authoritative and never needs an AI provider.
+- The **advisory** path may propose skill edits only when tagged-source evidence is supplied. Failure, missing configuration, a review-only result, or zero edits can never discard deterministic index changes.
 
-1. **Indexes and matrices**
-   - WordPress core version list (latest stable + recent).
-   - Gutenberg releases list (latest stable + recent).
-   - WordPress ↔ Gutenberg mapping table (derived from canonical docs where available).
-2. **Routing metadata refresh**
-   - Update `shared/references/*.json` files only.
+## Source registry
 
-This keeps automation deterministic and reviewable before it starts rewriting skill prose.
+`shared/scripts/core-ai-upstreams.mjs` exports `CORE_AI_UPSTREAMS`, the only release-source inventory. It contains nine release sources plus the official WordPress↔Gutenberg version map:
 
-## Later automation (higher risk)
+1. WordPress Core version-check API
+2. Gutenberg releases
+3. WordPress/ai releases
+4. MCP Adapter releases
+5. `wordpress/php-ai-client` on Packagist
+6. standalone WP AI Client releases
+7. Anthropic provider releases
+8. Google provider releases
+9. OpenAI provider releases
+10. the WordPress↔Gutenberg mapping document
 
-- “Reference chunk regeneration” from upstream docs into `skills/*/references/*.md`.
-- Task-shaped deltas (e.g. a new Gutenberg package, new block APIs, changes in theme.json schema).
-- Semi-automated PRs that include:
-  - regenerated references
-  - updated checklists
-  - updated eval scenarios
+Each registry entry owns an index file, source type, affected skills, and zero or more exact `verified through` declarations. Do not add a private source list to a workflow or consumer. Generate a reviewable inventory with:
 
-## Scripts
+```bash
+node shared/scripts/core-ai-upstreams.mjs --format markdown
+```
 
-- `shared/scripts/update-upstream-indices.mjs`
-  - Fetches upstream sources and rewrites JSON indexes in `shared/references/`.
-  - Covers WordPress core versions, Gutenberg releases, WordPress/ai (canonical AI plugin) releases, WordPress/mcp-adapter releases, `wordpress/php-ai-client` versions, and the WP↔Gutenberg mapping.
-  - `php-ai-client` is read from **Packagist**, not GitHub Releases: Packagist is the authoritative index for a Composer package, and its per-version `time` matches each tag's commit date. `WordPress/php-ai-client` does also publish GitHub Releases, so that endpoint would work — Packagist is the better source here, not the only available one.
-- `shared/scripts/check-upstream-drift.mjs`
-  - Offline check (run by `eval/harness/run.mjs` and therefore CI): compares the committed release indexes against the canonical release each skill declares. Four gates:
-    - `ai-plugin-releases.json` → the `current canonical release:` marker in `skills/wp-ai-plugin/SKILL.md`.
-    - `mcp-adapter-releases.json` → the `current canonical release:` marker in `skills/wp-abilities-api/SKILL.md`.
-    - `wordpress-core-versions.json` → the `core verified through:` marker in `skills/wp-abilities-api/SKILL.md`, at minor granularity.
-    - `php-ai-client-releases.json` → the `PHP AI Client verified through:` marker in `skills/wp-ai-client/SKILL.md`.
-  - When the Upstream Sync workflow's refresh PR lands a newer release, CI turns red until the affected skill is re-synced against the tagged source and its marker is bumped. This converts "someone notices the skill is stale" into a forced, reviewable follow-up.
+## Deterministic refresh
 
-## CI / PR bot design (recommended)
+Run:
 
-- Schedule a workflow (daily/weekly).
-- Run `shared/scripts/update-upstream-indices.mjs`.
-- If `git diff` is non-empty, open a PR with:
-  - a summary of changes
-  - links to upstream release notes
-  - a checklist for human review (“does this impact blocks/themes/plugin workflows?”)
+```bash
+node shared/scripts/update-upstream-indices.mjs
+node eval/harness/run.mjs --skip-upstream-drift
+node shared/scripts/check-upstream-drift.mjs --format markdown --allow-drift
+```
 
-## Validation
+The updater fetches every source concurrently and normalizes every payload before writing any index. GitHub error objects, empty stable-release arrays, missing Packagist packages, and an unparseable mapping all fail before the first write. Drafts and prereleases are excluded, versions sort numerically, and output is bounded and deterministic.
 
-- Always run `node eval/harness/run.mjs`.
-- Optional: use Agent Skills reference validator:
-  - `skills-ref validate skills/<skill-name>`
+`--skip-upstream-drift` skips only the expected “index advanced before skill marker” failure. Frontmatter, scenario, parser, registry, release-conformance, and quality checks still run. The default harness remains strict.
 
-The updater is transactional with respect to parsing: it fetches and normalizes every source before writing any index. If the canonical WordPress/Gutenberg mapping cannot be parsed into at least one row, the command exits non-zero and preserves the checked-in indexes. Never accept `table-not-found` or an empty `rows` array as a successful refresh.
+### Reading a red drift report
 
-## Canonical sources
+A red drift row is a review requirement, not an updater failure. It names one upstream and one independently versioned skill whose marker is behind. Patch releases are checked for package/plugin sources; WordPress Core is checked at minor granularity.
 
-The automation should prefer canonical sources and avoid scraping where possible.
+On the refresh branch:
 
-- WordPress core releases and API endpoints (official WordPress APIs)
-- Gutenberg releases (GitHub releases)
-- WordPress developer docs (used for the WP↔Gutenberg mapping when no API exists)
+1. Open the release tag named in the report.
+2. Resolve behavior in this order: tagged executable source, tagged tests, release notes/changelog, then handbook prose.
+3. Update only the affected skill and one-hop references; keep historical claims explicitly versioned.
+4. Update that skill's exact frontmatter marker.
+5. Run the strict harness and any live smoke test named by the skill.
+6. Commit the release metadata with shipped skill changes so marketplace consumers receive them.
 
-### Abilities API specifically
+Do not make the drift green by editing a marker without source review.
 
-The Abilities API is core from WordPress 6.9. Its canonical sources, in priority order:
+## Upstream Sync workflow
 
-1. **Core source** — `src/wp-includes/abilities-api.php` and `src/wp-includes/abilities-api/`
-   in `WordPress/wordpress-develop`. The `@since` tags are the authority on which surface belongs
-   to which release.
-2. **Make/Core dev notes** — the per-release notes carry the rationale and the Trac tickets.
-3. **`developer.wordpress.org/apis/abilities-api/`** — the handbook; correct but less current than
-   the source during a release cycle.
-4. **Gutenberg `packages/abilities` and `packages/core-abilities`** for the client-side API.
+`.github/workflows/upstream-sync.yml` runs weekly and supports manual dispatch. A no-change rerun creates no pull request. When indices change it:
 
-Two adjacent projects version independently and must be tracked separately:
+1. runs complete non-drift validation;
+2. generates the source inventory and `upstream-drift.md` from the registry;
+3. uploads both as workflow evidence;
+4. embeds both in the pull request body; and
+5. limits the automated commit to `shared/references/**`.
 
-- **`WordPress/mcp-adapter`** — not core, ships no part of WordPress. It has already reversed an
-  ability-exposure default once (0.6.0), so a stale pin here inverts security-relevant guidance
-  rather than merely aging. `check-upstream-drift.mjs` gates it against the marker in
-  `skills/wp-abilities-api/SKILL.md`.
-- **`WordPress/ai`** — hosts abilities proposed for core but not yet merged.
+This makes the refresh pull request self-validating even when GitHub declines to start another workflow recursively.
 
-#### Read the release branch, not `trunk`
+### Pull request token setup
 
-Once a release branches, `trunk` moves on and stops describing it. Verifying "what WP 7.1 does"
-against `trunk` is only accidentally correct, and silently stops being correct the moment 7.2
-lands a change. Read `wordpress-develop` at the **release branch** (`7.1`, `7.0`, `6.9`), and
-diff branches when you need to know which release introduced a behavior rather than trusting a
-single `@since` tag.
+Prefer a fine-grained PAT or GitHub App installation token stored as the Actions secret `UPSTREAM_SYNC_TOKEN`. Grant only the target repository's:
 
-`check-upstream-drift.mjs` carries a third check for this: it compares the released core version
-in `shared/references/wordpress-core-versions.json` against the `core verified through:` marker
-in `skills/wp-abilities-api/SKILL.md`, at **minor** granularity. A patch release stays quiet; a
-new minor turns CI red, because that is when a large pre-release-verified surface needs
-re-checking against a shipped build. The abilities skills currently describe a 7.1 surface
-verified against the `7.1` branch at RC3, so the gate fires when 7.1 ships stable.
+- Contents: read and write
+- Pull requests: read and write
 
-The **`WordPress/abilities-api` feature plugin is archived** (5 February 2026, read-only; last
-tagged release the `v0.5.0-rc` prerelease of 14 November 2025, last stable `v0.4.0`). It is not a
-source for current behavior and must not be recommended as a pre-6.9 shim. Its version numbers
-are also not comparable to the MCP Adapter's — both are in `0.x` and the two `0.5.0`s are
-unrelated releases of different projects.
+Set an owner and expiry, rotate the token on the repository's normal secret-rotation schedule, and revoke it immediately if ownership changes. Never put the token in repository variables, logs, or workflow artifacts.
 
+If `UPSTREAM_SYNC_TOKEN` is absent, the workflow falls back to `GITHUB_TOKEN`. Pull requests created with that token may not trigger normal `pull_request` workflows recursively, so the workflow discloses fallback mode and performs validation/reporting before PR creation.
+
+## AI maintenance configuration
+
+The separate AI Skill Maintenance workflow needs:
+
+- Actions secret `ANTHROPIC_API_KEY`
+- Actions variable `ANTHROPIC_MODEL`
+
+Inspect configuration without a network call or exposing the key:
+
+```bash
+node shared/scripts/ai-generate-updates.mjs --check-config
+```
+
+The generator hashes the complete sorted registry state with SHA-256. Every Core AI release source changes that state and uses the registry's affected-skill list. Without supplied tagged-file evidence, it records a review recommendation instead of rewriting a skill. Its error artifact contains only a redacted category such as `missing-api-key`, `rate-limit`, or `model-access`.
+
+If generation fails, is skipped, or produces no edits, the workflow validates and opens the index-only path with the drift report. It must never describe that PR as skill alignment.
+
+## Safe reruns
+
+- Re-running either workflow is safe: deterministic JSON makes an unchanged run a no-op.
+- Do not delete a refresh branch to hide red drift; update the named skill on that branch or close the PR with a recorded reason.
+- If one source endpoint is temporarily unavailable, rerun later. Never hand-author an empty index.
+- A successful advisory dry run is still not approval to merge generated prose; tagged citations and live verification remain required.
+
+## Abilities source priority
+
+The Abilities API is in Core from WordPress 6.9. Use `wordpress-develop` release branches (`7.1`, `7.0`, `6.9`) rather than `trunk` to answer release-specific questions. The archived `WordPress/abilities-api` feature plugin is not a current behavior source or pre-6.9 shim.
+
+For external exposure, MCP Adapter is independently versioned and security-sensitive. Its 0.6.0 release changed fallback exposure to `meta.mcp.public ?? meta.public ?? false`, so Core and MCP markers must remain independent. Gutenberg's `packages/abilities` and `packages/core-abilities` remain the canonical client-side source.

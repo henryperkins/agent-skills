@@ -2,6 +2,8 @@
 
 The end-to-end shape of a WordPress AI provider plugin in WP 7.0+.
 
+Verified release baselines: `ai-provider-for-anthropic` v1.0.4, Google 1.1.1, and OpenAI 1.1.0.
+
 ## Two registries, one flow
 
 There are two registries involved. You only register against the first one:
@@ -94,7 +96,7 @@ When in doubt, copy from `wordpress/ai-provider-for-anthropic`, `wordpress/ai-pr
 
 ## Canonical bootstrap (adapted from `ai-provider-for-anthropic`)
 
-This mirrors the `plugin.php` from `WordPress/ai-provider-for-anthropic` v1.0.3 (reformatted to WordPress-style spacing; the upstream file uses tight PSR-12 spacing — e.g. `if (!class_exists(AiClient::class))`). Copy this shape — it's the documented pattern across all three flagship plugins (the registration shape is identical even though their version numbers aren't in lockstep; `1.0.3` here is Anthropic's, while Google was at `1.1.0` when last checked):
+This mirrors the `plugin.php` from `WordPress/ai-provider-for-anthropic` v1.0.4 (reformatted to WordPress-style spacing; the upstream file uses tight PSR-12 spacing — e.g. `if (!class_exists(AiClient::class))`). Copy this shape — the registration shape is identical across the current Anthropic 1.0.4, Google 1.1.1, and OpenAI 1.1.0 releases:
 
 ```php
 <?php
@@ -104,7 +106,7 @@ This mirrors the `plugin.php` from `WordPress/ai-provider-for-anthropic` v1.0.3 
  * Description: AI Provider for Anthropic for the WordPress AI Client.
  * Requires at least: 6.9
  * Requires PHP: 7.4
- * Version: 1.0.3
+ * Version: 1.0.4
  * Author: WordPress AI Team
  * Author URI: https://make.wordpress.org/ai/
  * License: GPL-2.0-or-later

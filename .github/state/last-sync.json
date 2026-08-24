@@ -1,6 +1,25 @@
 {
-  "hash": null,
-  "state": null,
-  "lastSync": null,
-  "lastChanges": null
+  "hash": "2efcf8468d625119c4aa61cf7d5c6af96793e975144071ddd63b851be59d9928",
+  "state": {
+    "schemaVersion": 2,
+    "versions": {
+      "anthropic-provider": "1.0.4",
+      "google-provider": "1.1.1",
+      "gutenberg": "v23.8.0",
+      "mcp-adapter": "v0.6.1",
+      "openai-provider": "1.1.0",
+      "php-ai-client": "1.4.0",
+      "wordpress-ai-plugin": "1.3.0",
+      "wordpress-core": "7.1",
+      "wp-ai-client": "0.4.0"
+    },
+    "versionMapRowCount": 24
+  },
+  "lastSync": "2026-08-24T20:28:06Z",
+  "lastChanges": [
+    {
+      "type": "manual-rebaseline",
+      "description": "Initialized complete Core AI source state after the 2026-08-24 tagged-source audit."
+    }
+  ]
 }

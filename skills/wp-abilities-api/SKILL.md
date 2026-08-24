@@ -1,7 +1,7 @@
 ---
 name: wp-abilities-api
 description: "Use when working with the WordPress Abilities API (wp_register_ability, wp_register_ability_category, wp_get_abilities, /wp-json/wp-abilities/v1/*, @wordpress/abilities, @wordpress/core-abilities) including defining abilities, categories, meta, the meta.public and show_in_rest exposure flags, filtered ability discovery, permissions checks for clients, the WP 7.1+ execution lifecycle hooks (wp_ability_invoked, wp_pre_execute_ability, wp_ability_validate_input/output, wp_ability_permission_result, wp_before_execute_ability, wp_after_execute_ability), the WP 7.0+ client-side JS API (registerAbility, executeAbility, the core/abilities store), and exposing abilities to external AI agents via the MCP Adapter (Claude Desktop, Cursor, ChatGPT)."
-compatibility: "Targets WordPress 6.9+ (PHP 7.2.24+); sections marked WP 7.1+ describe APIs that do not exist on 6.9/7.0. The 7.1 surface was verified against the `7.1` branch at RC3, not a released build — core verified through: 7.0. MCP Adapter guidance tracks the current canonical release: v0.6.1 (requires PHP 7.4+). Filesystem-based agent with bash + node. Some workflows require WP-CLI."
+compatibility: "Targets WordPress 6.9+ (PHP 7.2.24+); sections marked WP 7.1+ do not exist on 6.9/7.0. WordPress Core verified through: 7.1; Gutenberg verified through: 23.8.0 (`packages/abilities` and `packages/core-abilities`); MCP Adapter verified through: 0.6.1 (requires PHP 7.4+). Filesystem-based agent with bash + node. Some workflows require WP-CLI."
 license: GPL-2.0-or-later
 ---
 

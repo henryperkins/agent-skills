@@ -5,6 +5,7 @@ Embedding generation arrived in `wordpress/php-ai-client` 1.4.0. It is a standal
 ## Version boundary
 
 - WordPress 7.0 through 7.0.4 and 7.1 all bundle PHP AI Client 1.3.1 (`AiClient::VERSION`). Its prompt builder can report embedding capability, but that package version has no generation path.
+- The canonical WordPress/ai 1.3.0 plugin does not activate a replacement generation path on stock Core: its `SDK_Overlay::register()` call is commented out in `ai.php`. Its embedding helpers therefore feature-detect as unsupported. Do not load a second unprefixed SDK to work around that boundary; see `../../wp-ai-plugin/references/hooks-and-filters.md` for the plugin-specific contract.
 - Do not load the unprefixed standalone 1.4 package beside Core's bundled copy. Both use the same namespaces.
 - On stock Core, wait for the bundled dependency to update. If an earlier Core version must use 1.4 behavior, isolate/prefix the dependency or call a separate service rather than relying on Composer load order.
 - In a standalone PHP application where WordPress Core is not loading the SDK, require `wordpress/php-ai-client:^1.4` and register a compatible provider before using `AiClient::input()`.

@@ -14,7 +14,10 @@
     "Step 8: Confirm output written to shared/references/ai-provider-google-releases.json",
     "Step 9: Confirm output written to shared/references/ai-provider-openai-releases.json",
     "Step 10: Verify deterministic formatting, numeric version sorting, stable-only GitHub releases, and bounded recent lists",
-    "Step 11: Parse the mapping by the WordPress Version and Gutenberg Version header labels even when Gutenberg is the first column"
+    "Step 11: Parse the mapping by the WordPress Version and Gutenberg Version header labels even when Gutenberg is the first column",
+    "Step 12: Before opening a refresh PR, run node eval/harness/run.mjs --skip-upstream-drift so expected marker drift is the only skipped gate",
+    "Step 13: Generate upstream-drift.md with --format markdown --allow-drift and generate the source inventory from CORE_AI_UPSTREAMS",
+    "Step 14: Include and upload both reports, and use UPSTREAM_SYNC_TOKEN when configured so normal pull_request checks can run; disclose the GITHUB_TOKEN fallback"
   ],
   "success_criteria": [
     "Update script runs successfully",
@@ -24,6 +27,8 @@
     "Data reflects latest upstream releases",
     "Mapping output contains at least one row and includes WordPress 7.0.X mapped to Gutenberg 22.6",
     "Drafts, prereleases, GitHub error objects, empty stable arrays, and missing Packagist packages cannot replace good indices",
-    "Any fetch or normalization failure happens before the first index write"
+    "Any fetch or normalization failure happens before the first index write",
+    "A changed-index PR is self-validating and names every independently stale skill without claiming alignment",
+    "A no-change manual rerun creates no pull request"
   ]
 }

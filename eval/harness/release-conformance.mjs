@@ -2,6 +2,24 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { parseWpGutenbergMapFromHtml } from "../../shared/scripts/upstream-index-lib.mjs";
+import { CORE_AI_UPSTREAMS } from "../../shared/scripts/core-ai-upstreams.mjs";
+import {
+  normalizeWpVersionCheckPayload,
+  normalizeGitHubReleases,
+  normalizePackagistVersions,
+  updateUpstreamIndicesFromPayloads,
+} from "../../shared/scripts/update-upstream-indices.mjs";
+import {
+  collectUpstreamDriftFromData,
+  formatDriftJson,
+  formatDriftMarkdown,
+} from "../../shared/scripts/upstream-drift-lib.mjs";
+import {
+  buildUpstreamState,
+  detectUpstreamChanges,
+  getUpstreamStateHash,
+  inspectConfiguration,
+} from "../../shared/scripts/ai-generate-updates.mjs";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -154,10 +172,385 @@ export function assertRelease190(repoRoot) {
   ]);
 }
 
+export function assertCoreAiUpstreamRegistry(repoRoot) {
+  const requiredIds = new Set([
+    "wordpress-core",
+    "gutenberg",
+    "wordpress-ai-plugin",
+    "mcp-adapter",
+    "php-ai-client",
+    "wp-ai-client",
+    "anthropic-provider",
+    "google-provider",
+    "openai-provider",
+    "wp-gutenberg-version-map",
+  ]);
+  const ids = new Set();
+  const files = new Set();
+  const sources = new Set();
+
+  for (const upstream of CORE_AI_UPSTREAMS) {
+    assert(requiredIds.delete(upstream.id), `Unexpected or duplicate Core AI upstream id: ${upstream.id}`);
+    assert(!ids.has(upstream.id), `Duplicate Core AI upstream id: ${upstream.id}`);
+    assert(!files.has(upstream.indexFile), `Duplicate Core AI upstream index: ${upstream.indexFile}`);
+    assert(!sources.has(upstream.source), `Duplicate Core AI upstream source: ${upstream.source}`);
+    ids.add(upstream.id);
+    files.add(upstream.indexFile);
+    sources.add(upstream.source);
+
+    assert(Array.isArray(upstream.affectedSkills) && upstream.affectedSkills.length > 0, `${upstream.id} must affect at least one skill`);
+    for (const skill of upstream.affectedSkills) {
+      assert(fs.existsSync(path.join(repoRoot, "skills", skill, "SKILL.md")), `${upstream.id} names unknown skill: ${skill}`);
+    }
+    assert(Array.isArray(upstream.declarations), `${upstream.id} must declare a declarations array`);
+    for (const declaration of upstream.declarations) {
+      assert(upstream.affectedSkills.includes(declaration.skill), `${upstream.id} declaration names an unaffected skill: ${declaration.skill}`);
+      assert(typeof declaration.label === "string" && declaration.label !== "", `${upstream.id} declaration must have a label`);
+      assert(["minor", "patch"].includes(declaration.granularity), `${upstream.id} declaration has invalid granularity`);
+    }
+
+    const index = readJson(repoRoot, upstream.indexFile);
+    assert(index.source === upstream.source, `${upstream.indexFile} source must match the Core AI registry`);
+    if (upstream.sourceType === "wordpress-version-check") {
+      assert(typeof index.latest === "string" && /^\d+(?:\.\d+)+$/.test(index.latest), `${upstream.indexFile} must have a parseable latest version`);
+    } else if (upstream.sourceType === "html-version-map") {
+      assert(Array.isArray(index.rows) && index.rows.length > 0, `${upstream.indexFile} must have mapping rows`);
+    } else {
+      assert(typeof index.latest?.tag === "string" && /^v?\d+(?:\.\d+)+$/.test(index.latest.tag), `${upstream.indexFile} must have a parseable latest tag`);
+    }
+  }
+  assert(requiredIds.size === 0, `Missing Core AI upstream ids: ${[...requiredIds].join(", ")}`);
+  requireIncludes(repoRoot, "eval/scenarios/upstream-sync-indices.json", [
+    "all ten Core AI upstreams",
+    "wp-ai-client-releases.json",
+    "ai-provider-anthropic-releases.json",
+    "ai-provider-google-releases.json",
+    "ai-provider-openai-releases.json",
+    "before writing any index",
+  ]);
+  requireIncludes(repoRoot, "shared/scripts/check-upstream-drift.mjs", [
+    "collectUpstreamDrift",
+    "formatDriftMarkdown",
+    "formatDriftJson",
+    '"--format"',
+    '"--allow-drift"',
+    '"--help"',
+  ]);
+  requireExcludes(repoRoot, "shared/scripts/check-upstream-drift.mjs", [
+    "const CHECKS",
+    "gate above already covers",
+  ]);
+  const driftHelp = spawnSync(
+    "node",
+    [path.join(repoRoot, "shared/scripts/check-upstream-drift.mjs"), "--help"],
+    { cwd: repoRoot, encoding: "utf8" }
+  );
+  assert(driftHelp.status === 0 && driftHelp.stdout.includes("--allow-drift"), "Drift CLI --help must succeed");
+  const invalidDriftArgument = spawnSync(
+    "node",
+    [path.join(repoRoot, "shared/scripts/check-upstream-drift.mjs"), "--unknown-option"],
+    { cwd: repoRoot, encoding: "utf8" }
+  );
+  assert(invalidDriftArgument.status === 2, "Unknown drift CLI arguments must exit 2");
+  assert(!invalidDriftArgument.stderr.includes("at file:"), "Drift CLI usage errors must not print a stack trace");
+}
+
+function expectThrow(callback, message) {
+  let error = null;
+  try {
+    callback();
+  } catch (caught) {
+    error = caught;
+  }
+  assert(error, message);
+}
+
+export function assertUpstreamNormalization(repoRoot) {
+  expectThrow(
+    () => normalizeGitHubReleases({ message: "rate limited" }),
+    "GitHub error objects must fail normalization"
+  );
+  expectThrow(() => normalizeGitHubReleases([]), "Empty GitHub release arrays must fail normalization");
+  expectThrow(
+    () => normalizePackagistVersions({ packages: {} }, "wordpress/php-ai-client"),
+    "Missing Packagist packages must fail normalization"
+  );
+  expectThrow(
+    () => normalizeWpVersionCheckPayload({ offers: [] }),
+    "Empty WordPress version-check offers must fail normalization"
+  );
+
+  const releases = normalizeGitHubReleases([
+    { tag_name: "v1.0.9", name: "older", published_at: "2026-01-01T00:00:00Z", html_url: "https://example.test/1.0.9" },
+    { tag_name: "v2.0.0", draft: true, name: "draft" },
+    { tag_name: "v1.1.0-beta.1", prerelease: true, name: "prerelease" },
+    { tag_name: "v1.0.10", name: "newer", published_at: "2026-01-02T00:00:00Z", html_url: "https://example.test/1.0.10" },
+  ]);
+  assert(releases.latest.tag === "v1.0.10", "GitHub releases must sort numeric versions newest-first");
+  assert(
+    releases.latest.name === "newer" &&
+      releases.latest.publishedAt === "2026-01-02T00:00:00Z" &&
+      releases.latest.url === "https://example.test/1.0.10",
+    "GitHub release tags, names, dates, and URLs must survive normalization"
+  );
+  assert(releases.recent.length === 2, "GitHub drafts and prereleases must be excluded");
+
+  const wordpress = normalizeWpVersionCheckPayload({
+    offers: [{ version: "7.0.4" }, { version: "7.0.10" }],
+  });
+  assert(wordpress.latest === "7.0.10", "WordPress versions must sort numerically");
+
+  const packagist = normalizePackagistVersions(
+    {
+      packages: {
+        "wordpress/php-ai-client": [
+          { version: "1.4.9", time: "2026-01-01T00:00:00+00:00" },
+          { version: "dev-trunk", time: "2026-01-03T00:00:00+00:00" },
+          { version: "1.4.10", time: "2026-01-02T00:00:00+00:00" },
+        ],
+      },
+    },
+    "wordpress/php-ai-client"
+  );
+  assert(packagist.latest.tag === "1.4.10", "Packagist versions must sort numerically");
+  assert(packagist.latest.publishedAt.endsWith("Z"), "Packagist UTC dates must normalize to Z");
+
+  const registry = [
+    { id: "good", indexFile: "good.json", source: "https://example.test/good", sourceType: "github-releases" },
+    { id: "bad", indexFile: "bad.json", source: "https://example.test/bad", sourceType: "github-releases" },
+  ];
+  const payloads = new Map([
+    ["good", [{ tag_name: "1.0.0", html_url: "https://example.test/good/1.0.0" }]],
+    ["bad", { message: "upstream error" }],
+  ]);
+  let writes = 0;
+  expectThrow(
+    () => updateUpstreamIndicesFromPayloads(repoRoot, payloads, { registry, writeJsonImpl: () => { writes += 1; } }),
+    "One invalid source must fail the update"
+  );
+  assert(writes === 0, "One invalid source must leave every index untouched");
+
+  requireIncludes(repoRoot, "shared/scripts/update-upstream-indices.mjs", ["CORE_AI_UPSTREAMS"]);
+  requireExcludes(repoRoot, "shared/scripts/update-upstream-indices.mjs", ["const SOURCES"]);
+  requireIncludes(repoRoot, "shared/scripts/ai-generate-updates.mjs", ["CORE_AI_UPSTREAMS"]);
+  requireExcludes(repoRoot, "shared/scripts/ai-generate-updates.mjs", [
+    'path.join(REFERENCES_DIR, "wordpress-core-versions.json")',
+    'path.join(REFERENCES_DIR, "gutenberg-releases.json")',
+    'path.join(REFERENCES_DIR, "wp-gutenberg-version-map.json")',
+    "claude-sonnet-4-20250514",
+    '.toString("base64").slice(0, 16)',
+  ]);
+  requireIncludes(repoRoot, "shared/scripts/ai-generate-updates.mjs", [
+    'from "node:crypto"',
+    'createHash("sha256")',
+    "ANTHROPIC_MODEL",
+    "--check-config",
+    "tagged executable source",
+    "taggedFilesInspected",
+    "reviewRecommendation",
+    "source-evidenced",
+  ]);
+  requireIncludes(repoRoot, ".github/workflows/ai-skill-maintenance.yml", [
+    "ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}",
+    "continue-on-error: true",
+    "generation_outcome",
+    "generator-result.json",
+    "node eval/harness/run.mjs --skip-upstream-drift",
+    "--format markdown --allow-drift",
+    "AI generation is advisory",
+    "actions/upload-artifact@v4",
+  ]);
+  requireIncludes(repoRoot, ".github/workflows/upstream-sync.yml", [
+    "node eval/harness/run.mjs --skip-upstream-drift",
+    "--format markdown --allow-drift",
+    "core-ai-upstreams.mjs --format markdown",
+    "upstream-drift.md",
+    "actions/upload-artifact@v4",
+    "secrets.UPSTREAM_SYNC_TOKEN || secrets.GITHUB_TOKEN",
+    "Normal pull_request workflows may not run recursively",
+  ]);
+  requireIncludes(repoRoot, "docs/upstream-sync.md", [
+    "CORE_AI_UPSTREAMS",
+    "nine release sources",
+    "deterministic",
+    "advisory",
+    "UPSTREAM_SYNC_TOKEN",
+    "fine-grained",
+    "rotate",
+    "--skip-upstream-drift",
+    "red drift",
+  ]);
+}
+
+export function assertIndependentUpstreamDrift() {
+  const baselines = {
+    "wordpress-core": "7.1",
+    gutenberg: "23.8.0",
+    "wordpress-ai-plugin": "1.3.0",
+    "mcp-adapter": "0.6.1",
+    "php-ai-client": "1.4.0",
+    "wp-ai-client": "0.4.0",
+    "anthropic-provider": "1.0.4",
+    "google-provider": "1.1.1",
+    "openai-provider": "1.1.0",
+  };
+  const indices = Object.fromEntries(
+    CORE_AI_UPSTREAMS.map((upstream) => [
+      upstream.id,
+      upstream.sourceType === "wordpress-version-check"
+        ? { latest: baselines[upstream.id] }
+        : upstream.sourceType === "html-version-map"
+          ? { rows: [{ wordpress: "7.1.X", gutenberg: "23.6" }] }
+          : { latest: { tag: baselines[upstream.id] } },
+    ])
+  );
+  const markersBySkill = {};
+  for (const upstream of CORE_AI_UPSTREAMS) {
+    for (const declaration of upstream.declarations) {
+      (markersBySkill[declaration.skill] ??= []).push(
+        `${declaration.label}: ${baselines[upstream.id]}`
+      );
+    }
+  }
+  const skillTexts = Object.fromEntries(
+    Object.entries(markersBySkill).map(([skill, markers]) => [
+      skill,
+      `---\nname: ${skill}\ncompatibility: "${markers.join("; ")}"\n---\n`,
+    ])
+  );
+
+  const clean = collectUpstreamDriftFromData(indices, skillTexts, CORE_AI_UPSTREAMS);
+  assert(clean.failures.length === 0, "Aligned Core AI drift fixtures must pass");
+
+  const driftedSkills = (upstreamId, version, texts = skillTexts) => {
+    const fixture = structuredClone(indices);
+    const upstream = CORE_AI_UPSTREAMS.find((candidate) => candidate.id === upstreamId);
+    if (upstream.sourceType === "wordpress-version-check") fixture[upstreamId].latest = version;
+    else fixture[upstreamId].latest.tag = version;
+    return collectUpstreamDriftFromData(fixture, texts, CORE_AI_UPSTREAMS).failures
+      .filter((failure) => failure.upstreamId === upstreamId)
+      .map((failure) => failure.skill)
+      .sort();
+  };
+
+  const coreTexts = { ...skillTexts };
+  coreTexts["wp-abilities-api"] = coreTexts["wp-abilities-api"].replace(
+    "WordPress Core verified through: 7.1",
+    "WordPress Core verified through: 7.2"
+  );
+  assert(
+    JSON.stringify(driftedSkills("wordpress-core", "7.2", coreTexts)) ===
+      JSON.stringify(["wp-abilities-audit", "wp-abilities-verify", "wp-ai-client", "wp-ai-connectors", "wp-ai-plugin"]),
+    "A current wp-abilities-api Core marker must not cover the other five Core AI skills"
+  );
+  assert(
+    JSON.stringify(driftedSkills("mcp-adapter", "0.6.2")) ===
+      JSON.stringify(["wp-abilities-api", "wp-abilities-audit", "wp-abilities-verify"]),
+    "MCP Adapter drift must reach every exposure consumer"
+  );
+  assert(JSON.stringify(driftedSkills("php-ai-client", "1.4.1")) === JSON.stringify(["wp-ai-client", "wp-ai-connectors"]), "PHP AI Client drift must reach both consumers");
+  assert(JSON.stringify(driftedSkills("wp-ai-client", "0.4.1")) === JSON.stringify(["wp-ai-client"]), "WP AI Client drift must be independent");
+  assert(JSON.stringify(driftedSkills("wordpress-ai-plugin", "1.3.1")) === JSON.stringify(["wp-ai-plugin"]), "AI plugin drift must be independent");
+  assert(JSON.stringify(driftedSkills("gutenberg", "23.9.0")) === JSON.stringify(["wp-abilities-api", "wp-ai-plugin"]), "Gutenberg drift must reach Abilities and Knowledge consumers");
+  for (const [id, version] of [
+    ["anthropic-provider", "1.0.5"],
+    ["google-provider", "1.1.2"],
+    ["openai-provider", "1.1.1"],
+  ]) {
+    assert(JSON.stringify(driftedSkills(id, version)) === JSON.stringify(["wp-ai-connectors"]), `${id} drift must be independent`);
+  }
+
+  assert(formatDriftMarkdown(clean).includes("| Upstream | Latest | Skill |"), "Markdown drift report must contain the complete table");
+  assert(JSON.parse(formatDriftJson(clean)).checks.length === clean.checks.length, "JSON drift report must preserve every check");
+}
+
+export function assertCompleteMaintenanceState() {
+  const baselines = {
+    "wordpress-core": "7.1",
+    gutenberg: "23.8.0",
+    "wordpress-ai-plugin": "1.3.0",
+    "mcp-adapter": "0.6.1",
+    "php-ai-client": "1.4.0",
+    "wp-ai-client": "0.4.0",
+    "anthropic-provider": "1.0.4",
+    "google-provider": "1.1.1",
+    "openai-provider": "1.1.0",
+  };
+  const nextVersions = {
+    "wordpress-core": "7.2",
+    gutenberg: "23.8.1",
+    "wordpress-ai-plugin": "1.3.1",
+    "mcp-adapter": "0.6.2",
+    "php-ai-client": "1.4.1",
+    "wp-ai-client": "0.4.1",
+    "anthropic-provider": "1.0.5",
+    "google-provider": "1.1.2",
+    "openai-provider": "1.1.1",
+  };
+  const indices = Object.fromEntries(
+    CORE_AI_UPSTREAMS.map((upstream) => [
+      upstream.id,
+      upstream.sourceType === "wordpress-version-check"
+        ? { latest: baselines[upstream.id] }
+        : upstream.sourceType === "html-version-map"
+          ? { rows: [{ wordpress: "7.1.X", gutenberg: "23.6" }] }
+          : { latest: { tag: baselines[upstream.id], url: `https://example.test/${upstream.id}/${baselines[upstream.id]}` } },
+    ])
+  );
+  const baseline = getUpstreamStateHash(indices, CORE_AI_UPSTREAMS);
+  assert(buildUpstreamState(indices, CORE_AI_UPSTREAMS).schemaVersion === 2, "Maintenance state must use schema version 2");
+  assert(/^[a-f0-9]{64}$/.test(baseline.hash), "Maintenance state must use a SHA-256 hash");
+
+  for (const upstream of CORE_AI_UPSTREAMS.filter((candidate) => candidate.sourceType !== "html-version-map")) {
+    const changedIndices = structuredClone(indices);
+    if (upstream.sourceType === "wordpress-version-check") changedIndices[upstream.id].latest = nextVersions[upstream.id];
+    else changedIndices[upstream.id].latest.tag = nextVersions[upstream.id];
+    const changedState = getUpstreamStateHash(changedIndices, CORE_AI_UPSTREAMS);
+    assert(changedState.hash !== baseline.hash, `${upstream.id} must change the maintenance state hash`);
+    const changes = detectUpstreamChanges(
+      { hash: baseline.hash, state: baseline.state },
+      changedState,
+      changedIndices,
+      CORE_AI_UPSTREAMS
+    );
+    const change = changes.find((candidate) => candidate.sourceId === upstream.id);
+    assert(change, `${upstream.id} must produce an independent maintenance change`);
+    assert(
+      JSON.stringify([...change.affectedSkills].sort()) === JSON.stringify([...upstream.affectedSkills].sort()),
+      `${upstream.id} must use registry-declared affected skills`
+    );
+  }
+
+  const core = CORE_AI_UPSTREAMS.find((upstream) => upstream.id === "wordpress-core");
+  assert(core.affectedSkills.length === 6, "A Core release must reach all six Core AI skills");
+  const changedMap = structuredClone(indices);
+  changedMap["wp-gutenberg-version-map"].rows.push({ wordpress: "7.2.X", gutenberg: "24.0" });
+  assert(
+    getUpstreamStateHash(changedMap, CORE_AI_UPSTREAMS).hash !== baseline.hash,
+    "A version-map row change must change the maintenance state hash"
+  );
+  const migration = detectUpstreamChanges(
+    { hash: "YWJjZGVmZ2hpamts", state: { wpLatest: "7.0" } },
+    baseline,
+    indices,
+    CORE_AI_UPSTREAMS
+  );
+  assert(migration[0]?.type === "state-schema-migration", "Legacy 16-character state hashes must migrate once");
+
+  const missing = inspectConfiguration({});
+  assert(!missing.configured && missing.category === "missing-api-key", "Config checks must classify a missing API key");
+  const configured = inspectConfiguration({ ANTHROPIC_API_KEY: "test-only", ANTHROPIC_MODEL: "test-model" });
+  assert(configured.configured && !JSON.stringify(configured).includes("test-only"), "Config checks must never expose the API key");
+}
+
 export function runReleaseConformance(repoRoot) {
   assertPluginVersionFresh(repoRoot);
   assertMarketplaceVersionMatches(repoRoot);
   assertRelease190(repoRoot);
+  assertUpstreamNormalization(repoRoot);
+  assertIndependentUpstreamDrift();
+  assertCompleteMaintenanceState();
+  assertCoreAiUpstreamRegistry(repoRoot);
   assert(
     IMMEDIATE_UNWATCH_PATTERN.test("const unwatch = watch( () => { return cleanup; } );\n// Dispose later.\nunwatch();"),
     "Immediate-unwatch regression fixture must exercise the structural check"
@@ -324,8 +717,10 @@ export function runReleaseConformance(repoRoot) {
     "is not a key the core Abilities API defines",
   ]);
   requireIncludes(repoRoot, "skills/wp-abilities-api/SKILL.md", [
+    "WordPress Core verified through: 7.1",
+    "Gutenberg verified through: 23.8.0",
     "MCP Adapter 0.6.1 requires PHP 7.4+",
-    "current canonical release: v0.6.1",
+    "MCP Adapter verified through: 0.6.1",
     "upgrade the site runtime or stop before installing the adapter",
     "Read `references/mcp-exposure.md` before giving installation, bootstrap, or server code.",
     "composer require automattic/jetpack-autoloader",
@@ -337,6 +732,14 @@ export function runReleaseConformance(repoRoot) {
     "released adapter 0.5.0 reads that key and nothing else",
     // The feature plugin was archived 2026-02-05; core is the only source.
     "you may need the Abilities API plugin/package rather than relying on core",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-abilities-audit/SKILL.md", [
+    "WordPress Core verified through: 7.1",
+    "MCP Adapter verified through: 0.6.1",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-abilities-verify/SKILL.md", [
+    "WordPress Core verified through: 7.1",
+    "MCP Adapter verified through: 0.6.1",
   ]);
   // WP 7.1 defines meta.public in core (WP_Ability::DEFAULT_PUBLIC), resolved
   // in prepare_properties(). The registration reference must not deny it.
@@ -366,6 +769,8 @@ export function runReleaseConformance(repoRoot) {
   requireIncludes(repoRoot, "skills/wp-abilities-verify/references/exposure-checks.md", [
     "meta.mcp.public ?? meta.public ?? false",
     "adapter 0.6.0",
+    "Verified unchanged in WordPress 7.1 final",
+    "MCP Adapter 0.6.1",
   ]);
   requireExcludes(repoRoot, "skills/wp-ai-plugin/references/experiments-framework.md", [
     "MCP Adapter 0.5.0 uses explicit",
@@ -386,6 +791,9 @@ export function runReleaseConformance(repoRoot) {
   ]);
 
   requireIncludes(repoRoot, "skills/wp-ai-client/SKILL.md", [
+    "WordPress Core verified through: 7.1",
+    "PHP AI Client verified through: 1.4.0 standalone",
+    "WP AI Client verified through: 0.4.0 standalone",
     "is_wp_error( $result )",
     "get_error_message()",
     "PHP AI Client 1.3.1",
@@ -393,6 +801,8 @@ export function runReleaseConformance(repoRoot) {
     "AiClient::generateEmbeddingResult()",
   ]);
   requireIncludes(repoRoot, "skills/wp-ai-client/references/embedding-builder.md", [
+    "SDK_Overlay::register()",
+    "commented out",
     "usingModelPreference()",
     "AiClient::generateEmbeddings()",
     "BeforeGenerateEmbeddingEvent",
@@ -411,7 +821,8 @@ export function runReleaseConformance(repoRoot) {
     requireExcludes(repoRoot, file, ["v1.0.2", "'1.0.2'"]);
   }
   requireIncludes(repoRoot, "skills/wp-ai-plugin/SKILL.md", [
-    "current canonical release: v1.3.0",
+    "AI plugin verified through: 1.3.0",
+    "Gutenberg verified through: 23.8.0",
     "wpai_feature_custom-abilities_enabled",
   ]);
   requireIncludes(repoRoot, "skills/wp-ai-plugin/references/experiments-framework.md", [
@@ -488,10 +899,34 @@ export function runReleaseConformance(repoRoot) {
     "all five are present",
   ]);
   requireIncludes(repoRoot, "skills/wp-ai-connectors/references/capabilities-declaration.md", [
+    "Anthropic 1.0.4",
+    "Claude Opus 4.7",
+    "Claude 5",
+    "empty tool-call arguments",
     "CapabilityEnum::embeddingGeneration()",
     "OptionEnum::dimensions()",
     "EmbeddingGenerationModelInterface",
     "supportedOptions",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-ai-connectors/SKILL.md", [
+    "WordPress Core verified through: 7.1",
+    "PHP AI Client verified through: 1.4.0",
+    "Anthropic provider verified through: 1.0.4",
+    "Google provider verified through: 1.1.1",
+    "OpenAI provider verified through: 1.1.0",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-ai-connectors/references/provider-registration.md", [
+    "ai-provider-for-anthropic` v1.0.4",
+    "Google 1.1.1",
+    "OpenAI 1.1.0",
+  ]);
+  requireIncludes(repoRoot, "eval/scenarios/ai-connectors-register-provider.json", [
+    "Anthropic 1.0.4",
+    "Google 1.1.1",
+    "OpenAI 1.1.0",
+    "empty tool-call arguments",
+    "model-aware",
+    "interface_exists( EmbeddingGenerationModelInterface::class )",
   ]);
   requireIncludes(repoRoot, "skills/wordpress-router/references/decision-tree.md", [
     "EmbeddingBuilder",

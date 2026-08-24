@@ -175,8 +175,13 @@ WP AI Client lack committed release indices and independent drift gates.
   Gutenberg list is incomplete.
 - check-upstream-drift.mjs incorrectly claims the wp-abilities-api Core gate
   covers the Core half of wp-ai-client.
-- The five most recent scheduled AI Skill Maintenance runs failed at Generate
-  skill updates. Authenticated failure-log classification remains Task 8.
+- The five most recent scheduled AI Skill Maintenance runs (2026-07-27 through
+  2026-08-24) all failed at **Generate skill updates** with the same redacted
+  category: missing `ANTHROPIC_API_KEY`. Index refresh succeeded first, but both
+  PR jobs were skipped, so the deterministic refresh was discarded. Repository
+  owner action: configure the `ANTHROPIC_API_KEY` Actions secret before a live AI
+  run. Code action: preflight configuration and make the index-only path run on
+  generation failure, skip, or zero edits.
 - An index PR created with GITHUB_TOKEN may not trigger the ordinary pull
   request workflow. The refresh workflow needs its own validation/report and
   an optional App/PAT token path.
@@ -195,4 +200,3 @@ WP AI Client lack committed release indices and independent drift gates.
 | Incomplete and failing AI generator | 8 |
 | Refresh PR validation/trigger gap | 9 |
 | Coordinated release metadata | 10 |
-

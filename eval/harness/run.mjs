@@ -3,6 +3,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { runSkillQuality, validateSkillBounds } from "./skill-quality.mjs";
 import { runReleaseConformance } from "./release-conformance.mjs";
+import { CORE_AI_UPSTREAMS } from "../../shared/scripts/core-ai-upstreams.mjs";
 
 function readUtf8(filePath) {
   return fs.readFileSync(filePath, "utf8");
@@ -91,7 +92,10 @@ function runJsonCommand(command, args, cwd) {
   }
 }
 
-function main() {
+function main(args = process.argv.slice(2)) {
+  const unknownArgs = args.filter((argument) => argument !== "--skip-upstream-drift");
+  assert(unknownArgs.length === 0, `Unknown harness argument(s): ${unknownArgs.join(", ")}`);
+  const skipDrift = args.includes("--skip-upstream-drift");
   const repoRoot = process.cwd();
   const upstreamIndexLib = path.join(
     repoRoot,
@@ -161,11 +165,23 @@ function main() {
   // each skill declares. Turns red when the Upstream Sync workflow lands a
   // newer release than a skill documents.
   const driftScript = path.join(repoRoot, "shared", "scripts", "check-upstream-drift.mjs");
-  if (fs.existsSync(driftScript)) {
-    const drift = spawnSync("node", [driftScript], { cwd: repoRoot, encoding: "utf8" });
+  if (fs.existsSync(driftScript) && !skipDrift) {
+    const drift = runJsonCommand(
+      "node",
+      [driftScript, "--format", "json", "--allow-drift"],
+      repoRoot
+    );
+    const expectedChecks = CORE_AI_UPSTREAMS.reduce(
+      (total, upstream) => total + upstream.declarations.length,
+      0
+    );
     assert(
-      drift.status === 0,
-      `Upstream drift check failed:\n${(drift.stderr || drift.stdout || "").trim()}`
+      drift.checks?.length === expectedChecks,
+      `Upstream drift report is incomplete (expected ${expectedChecks}, found ${drift.checks?.length ?? 0})`
+    );
+    assert(
+      Array.isArray(drift.failures) && drift.failures.length === 0,
+      `Upstream drift check failed:\n${drift.failures?.map((failure) => failure.message).join("\n") ?? "invalid report"}`
     );
   }
 

@@ -1,3 +1,6 @@
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+
 /**
  * Canonical metadata for every upstream that can change the Core AI skills.
  *
@@ -122,3 +125,28 @@ export const CORE_AI_UPSTREAMS = Object.freeze([
     declarations: [],
   },
 ]);
+
+export function formatCoreAiSourceList(registry = CORE_AI_UPSTREAMS) {
+  return `${registry
+    .map(
+      (upstream) =>
+        `- **${upstream.id}** (${upstream.sourceType}): ${upstream.source}`
+    )
+    .join("\n")}\n`;
+}
+
+function runCli(args = process.argv.slice(2)) {
+  if (args.length === 1 && args[0] === "--help") {
+    process.stdout.write("Usage: node shared/scripts/core-ai-upstreams.mjs --format markdown\n");
+    return 0;
+  }
+  if (args.length === 2 && args[0] === "--format" && args[1] === "markdown") {
+    process.stdout.write(formatCoreAiSourceList());
+    return 0;
+  }
+  process.stderr.write("ERROR: expected --format markdown (or --help)\n");
+  return 2;
+}
+
+const invokedUrl = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : null;
+if (invokedUrl === import.meta.url) process.exitCode = runCli();

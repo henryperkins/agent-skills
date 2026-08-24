@@ -45,6 +45,12 @@ new SupportedOption( OptionEnum::dimensions(), array( 256, 512, 1024 ) );
 
 Declare input modalities with `OptionEnum::inputModalities()` and output modalities with `OptionEnum::outputModalities()`. Supported input values are lists of exact modality combinations. A model supporting text-only, image-only, and mixed text/image input must list all three combinations; the mixed combination does not imply either single-modality combination. Use unrestricted support only when the provider genuinely accepts every combination.
 
+## Model-aware options and empty tool calls
+
+Provider metadata must be model-aware. Anthropic 1.0.4 stopped advertising `temperature`, `topP`, and `topK` for Claude Opus 4.7 and later Opus 4.x models, and for every Claude 5 model, because those models reject non-default sampling values. Unknown major-version-5-or-newer model IDs are treated conservatively. Apply the same rule in a custom provider: advertise an option only for models that accept it, so automatic selection cannot choose a model that will reject the resolved config.
+
+Function-call conversion also needs an explicit empty-value contract. Anthropic 1.0.4 converts null or empty tool-call arguments to an empty JSON object (`{}`) on outbound `tool_use.input`, because the API rejects an empty JSON array (`[]`), then normalizes an empty object/array response back to null SDK arguments. When implementing function calling, test both directions and preserve the provider's required JSON object shape; “no arguments” must not become the wrong container type.
+
 ## Embedding provider contract (PHP AI Client 1.4+)
 
 > **Core does not bundle this.** WP 7.0 and 7.1 vendor a pre-1.4 SDK: `src/wp-includes/php-ai-client/` has no `src/Providers/Models/EmbeddingGeneration/`, no `EmbeddingResult`/`EmbeddingBuilder`, and no `ModelConfig::KEY_DIMENSIONS` (so `OptionEnum::dimensions()` does not resolve). `CapabilityEnum::EMBEDDING_GENERATION` *is* in the bundled enum, which makes the surface look present. Keep `wordpress/php-ai-client: ^1.4` in `require-dev` and gate everything below on `interface_exists( EmbeddingGenerationModelInterface::class )` — the pattern `WordPress/ai-provider-for-openai` 1.1.0 ships — rather than bundling a second SDK copy that would collide with the one `wp-settings.php` already autoloads.
