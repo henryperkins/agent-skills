@@ -1,7 +1,7 @@
 {
   "name": "Add an internal-link suggestion Experiment to the canonical AI plugin",
   "skills": ["wordpress-router", "wp-project-triage", "wp-ai-plugin", "wp-abilities-api"],
-  "query": "I want to add an Experiment to the canonical WordPress AI plugin (the one at github.com/WordPress/ai, version 1.2.0) that suggests internal links for a post based on its content. It should appear in Settings → AI like the other Experiments, register an Ability so it's also reachable via REST and MCP, and respect the site's Guidelines if they're configured. Walk me through the structure.",
+  "query": "I want to add an Experiment to the canonical WordPress AI plugin (the one at github.com/WordPress/ai, version 1.3.0) that suggests internal links for a post based on its content. It should appear in Settings → AI like the other Experiments, register an Ability so it's also reachable via REST and MCP, and respect the site's Guidelines if they're configured. Walk me through the structure.",
   "expected_behavior": [
     "Step 1: Run wordpress-router to classify repo kind",
     "Step 2: Run wp-project-triage to detect that this is the AI plugin source (or a downstream plugin extending it)",
@@ -16,8 +16,9 @@
     "Step 11: Create a paired Internal_Links_Ability extending WordPress\\AI\\Abstracts\\Abstract_Ability with input_schema, output_schema, execute_callback, permission_callback, meta",
     "Step 12: Override guideline_categories() on the Ability to return ['site', 'copy'] — Abstract_Ability handles the Guidelines integration automatically via load_system_instruction_from_file()",
     "Step 13: Test: Settings → AI shows the Experiment; toggle persists; with AI plugin disabled, downstream code no-ops cleanly",
-    "Step 14: Check current 1.2.0 capabilities before adding duplicates: sixteen built-in Experiments; core/read-content, core/read-settings, core/read-users, ai/get-post-details, and ai/get-post-terms; conditional Feature/Experiment Abilities; advanced feature settings; and wpai_default_request_timeout",
-    "Step 15: Keep release boundaries honest: the generic wpai_system_instruction filter ships in 0.7.0 and is still present in 1.2.0, while ability-scoped system-instruction, prompt, and prompt-builder filters are develop-only until released"
+    "Step 14: Check current 1.3.0 capabilities before adding duplicates: nineteen built-in Experiments including Content Translation, Slug Generation, and Custom Abilities; advanced feature settings; settings import/export; Site Health; request logging; and wpai_default_request_timeout",
+    "Step 15: Treat core/read-content, core/read-settings, core/read-users, ai/get-post-details, and ai/get-post-terms as gated by the Custom Abilities toggle in 1.3.0, not always registered",
+    "Step 16: Keep release boundaries honest: the generic wpai_system_instruction filter ships in 0.7.0, and the ability-scoped system-instruction, prompt, and prompt-builder filters ship in 1.3.0"
   ],
   "success_criteria": [
     "Routes to wp-ai-plugin (and wp-abilities-api for the Ability step)",
@@ -32,8 +33,8 @@
     "Knows the WPAI_* constant names: WPAI_VERSION, WPAI_PLUGIN_FILE, WPAI_PLUGIN_DIR, WPAI_PLUGIN_URL (NOT WPAI_FILE/WPAI_PATH/WPAI_URL — those are wrong)",
     "Acknowledges that there is no AI-plugin-specific dashboard widgets framework — uses standard wp_add_dashboard_widget() if needed",
     "Recognizes Type_Ahead, Key_Encryption, and Suggest_Reply as current built-in Experiments",
-    "Recognizes the five always-registered utility/read Abilities (core/read-content, core/read-settings, core/read-users, ai/get-post-details, ai/get-post-terms), distinguishes conditional Feature/Experiment Abilities, and does not re-register shipped IDs blindly",
+    "Recognizes that Custom Abilities gates core/read-content, core/read-settings, core/read-users, ai/get-post-details, and ai/get-post-terms in 1.3.0, and does not re-register shipped IDs blindly",
     "Uses wpai_default_request_timeout and documented settings filters rather than inventing extension hooks",
-    "Presents wpai_system_instruction as shipped in 0.7.0 and still present in 1.2.0, but does not present the post-1.2.0 ability-scoped filters as released"
+    "Presents wpai_system_instruction as shipped in 0.7.0 and the three ability-scoped prompt filters as shipped in 1.3.0"
   ]
 }

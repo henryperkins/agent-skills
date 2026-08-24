@@ -1,5 +1,5 @@
 {
-  "name": "Expose a custom post type to core/read-content and use AI plugin 1.2.0 features",
+  "name": "Legacy AI plugin 1.2.0: expose a custom post type to core/read-content",
   "skills": ["wordpress-router", "wp-project-triage", "wp-ai-plugin", "wp-abilities-api"],
   "query": "Our site runs the canonical WordPress AI plugin 1.2.0 and our own plugin registers a 'recipe' custom post type. Three asks: (1) make recipes readable by AI agents through the AI plugin's read abilities, (2) let comment moderators generate reply suggestions, and (3) raise the request timeout for image generation to 60 seconds. What's the right integration?",
   "expected_behavior": [

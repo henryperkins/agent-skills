@@ -387,13 +387,26 @@ export function runReleaseConformance(repoRoot) {
   ]) {
     requireExcludes(repoRoot, file, ["v1.0.2", "'1.0.2'"]);
   }
+  requireIncludes(repoRoot, "skills/wp-ai-plugin/SKILL.md", [
+    "current canonical release: v1.3.0",
+    "wpai_feature_custom-abilities_enabled",
+  ]);
   requireIncludes(repoRoot, "skills/wp-ai-plugin/references/experiments-framework.md", [
-    "v1.2.0",
+    "v1.3.0",
+    "nineteen entries",
     "Type_Ahead",
     "Key_Encryption",
     "Suggest_Reply",
+    "Content_Translation",
+    "Slug_Generation",
+    "Custom_Abilities",
+    "wpai_feature_custom-abilities_enabled",
+    "wpai_gated_abilities",
     "core/read-content",
+    "core/read-settings",
     "core/read-users",
+    "ai/get-post-details",
+    "ai/get-post-terms",
   ]);
   requireIncludes(repoRoot, "skills/wp-ai-plugin/references/hooks-and-filters.md", [
     "wpai_default_request_timeout",
@@ -405,6 +418,22 @@ export function runReleaseConformance(repoRoot) {
     // error into place — the version marker for a hook is only as good as the
     // tag someone actually read.
     "The global `wpai_system_instruction` hook ships in v0.7.0",
+    "wpai_{$ability_slug}_system_instruction",
+    "wpai_{$ability_slug}_prompt",
+    "wpai_{$ability_slug}_prompt_builder",
+    "wpai_gated_abilities",
+    "WordPress\\AI\\log_ai_request()",
+    "SDK_Overlay::register()",
+    "commented out",
+    "ai_embeddings_unsupported",
+  ]);
+  requireExcludes(repoRoot, "skills/wp-ai-plugin/references/experiments-framework.md", [
+    "Added after v1.2.0 (unreleased on `develop`)",
+    "ability-scoped prompt extension points to `Abstract_Ability` after the v1.2.0 tag",
+  ]);
+  requireExcludes(repoRoot, "skills/wp-ai-plugin/references/hooks-and-filters.md", [
+    "Other `develop`-only hooks (unreleased after v1.2.0)",
+    "Ability-scoped prompt filters (`develop`, unreleased after v1.2.0)",
   ]);
   requireIncludes(repoRoot, "skills/wp-ai-plugin/references/guidelines-integration.md", [
     "that hook ships in v0.7.0",
