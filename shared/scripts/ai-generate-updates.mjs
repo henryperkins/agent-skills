@@ -15,9 +15,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import fs from "node:fs";
 import path from "node:path";
+import { CORE_AI_UPSTREAMS } from "./core-ai-upstreams.mjs";
 
 const REPO_ROOT = process.cwd();
-const REFERENCES_DIR = path.join(REPO_ROOT, "shared", "references");
 const SKILLS_DIR = path.join(REPO_ROOT, "skills");
 const STATE_FILE = path.join(REPO_ROOT, ".github", "state", "last-sync.json");
 
@@ -62,10 +62,18 @@ function getUpstreamStateHash(indices) {
  * Load all current upstream indices
  */
 function loadUpstreamIndices() {
+  const byId = Object.fromEntries(
+    CORE_AI_UPSTREAMS.map((upstream) => [
+      upstream.id,
+      loadJson(path.join(REPO_ROOT, upstream.indexFile)),
+    ])
+  );
   return {
-    wordpress: loadJson(path.join(REFERENCES_DIR, "wordpress-core-versions.json")),
-    gutenberg: loadJson(path.join(REFERENCES_DIR, "gutenberg-releases.json")),
-    map: loadJson(path.join(REFERENCES_DIR, "wp-gutenberg-version-map.json")),
+    ...byId,
+    // Transitional aliases retained until the complete state/hash rewrite.
+    wordpress: byId["wordpress-core"],
+    gutenberg: byId.gutenberg,
+    map: byId["wp-gutenberg-version-map"],
   };
 }
 

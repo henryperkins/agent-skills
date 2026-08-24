@@ -2,25 +2,28 @@
   "name": "Upstream indices update",
   "kind": "repository-infrastructure",
   "skills": [],
-  "query": "Update the repository's upstream indices so they reflect the latest WordPress and Gutenberg releases.",
+  "query": "Update the repository's indices for all ten Core AI upstreams without risking a partial refresh.",
   "expected_behavior": [
     "Step 1: Run update script: node shared/scripts/update-upstream-indices.mjs",
-    "Step 2: Verify script fetches from WordPress.org and GitHub APIs",
-    "Step 3: Confirm output written to shared/references/wordpress-core-versions.json",
-    "Step 4: Confirm output written to shared/references/gutenberg-releases.json",
-    "Step 5: Confirm output written to shared/references/wp-gutenberg-version-map.json",
-    "Step 6: Verify deterministic output (stable formatting)",
-    "Step 7: Verify limited list sizes for performance",
-    "Step 8: Parse the mapping by the WordPress Version and Gutenberg Version header labels even when Gutenberg is the first column",
-    "Step 9: If no valid mapping rows can be parsed, exit non-zero before writing any of the three checked-in JSON files"
+    "Step 2: Read source metadata from CORE_AI_UPSTREAMS rather than maintaining another hard-coded source list",
+    "Step 3: Fetch all ten Core AI upstreams: Core, Gutenberg, WordPress/ai, MCP Adapter, PHP AI Client, WP AI Client, Anthropic, Google, OpenAI, and the WP↔Gutenberg map",
+    "Step 4: Fetch and normalize every response before writing any index; one failed source must leave every committed index untouched",
+    "Step 5: Confirm the existing Core, Gutenberg, AI plugin, MCP Adapter, PHP AI Client, and version-map indices are updated",
+    "Step 6: Confirm output written to shared/references/wp-ai-client-releases.json",
+    "Step 7: Confirm output written to shared/references/ai-provider-anthropic-releases.json",
+    "Step 8: Confirm output written to shared/references/ai-provider-google-releases.json",
+    "Step 9: Confirm output written to shared/references/ai-provider-openai-releases.json",
+    "Step 10: Verify deterministic formatting, numeric version sorting, stable-only GitHub releases, and bounded recent lists",
+    "Step 11: Parse the mapping by the WordPress Version and Gutenberg Version header labels even when Gutenberg is the first column"
   ],
   "success_criteria": [
     "Update script runs successfully",
-    "All three JSON files updated in shared/references/",
+    "All ten registry-owned JSON files are updated in shared/references/",
     "Output is deterministic and stable",
     "List sizes are limited for performance",
     "Data reflects latest upstream releases",
     "Mapping output contains at least one row and includes WordPress 7.0.X mapped to Gutenberg 22.6",
-    "A missing or changed mapping table fails without replacing good indexes with table-not-found or an empty rows array"
+    "Drafts, prereleases, GitHub error objects, empty stable arrays, and missing Packagist packages cannot replace good indices",
+    "Any fetch or normalization failure happens before the first index write"
   ]
 }

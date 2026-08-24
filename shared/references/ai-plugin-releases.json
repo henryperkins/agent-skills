@@ -1,12 +1,18 @@
 {
   "source": "https://api.github.com/repos/WordPress/ai/releases?per_page=30",
   "latest": {
-    "tag": "1.2.0",
-    "name": "1.2.0",
-    "publishedAt": "2026-07-14T20:12:47Z",
-    "url": "https://github.com/WordPress/ai/releases/tag/1.2.0"
+    "tag": "1.3.0",
+    "name": "1.3.0",
+    "publishedAt": "2026-08-18T21:04:32Z",
+    "url": "https://github.com/WordPress/ai/releases/tag/1.3.0"
   },
   "recent": [
+    {
+      "tag": "1.3.0",
+      "name": "1.3.0",
+      "publishedAt": "2026-08-18T21:04:32Z",
+      "url": "https://github.com/WordPress/ai/releases/tag/1.3.0"
+    },
     {
       "tag": "1.2.0",
       "name": "1.2.0",
