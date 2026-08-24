@@ -344,3 +344,16 @@ Two method changes came out of the second pass and are worth keeping:
 Still unexamined: `tests/phpunit/tests/abilities-api/`. The test suite is listed as a canonical
 source above but has not been read end to end; it is the natural place to settle behavior the
 source leaves ambiguous, and the obvious starting point for a third pass.
+
+## Revalidation addendum — 2026-08-24
+
+This audit remains a historical record of the 2026-08-15 prerelease state. WordPress 7.1 shipped
+on 2026-08-19. A byte-for-byte comparison of the RC3 and final packages found the audited
+Abilities API entry points, implementation directory, three REST controllers, core ability
+registrations, Connectors files, AI Client bootstrap, and vendored PHP AI Client identical.
+The behavior above therefore remains valid; only the prerelease/verification markers are stale.
+
+Gutenberg 23.8.0 removes import-group comments and updates package metadata in
+`packages/abilities` and `packages/core-abilities` without changing their executable contracts.
+The current source matrix and the remaining independent-drift-gate work are recorded in
+[`core-ai-skills-audit-2026-08-24.md`](core-ai-skills-audit-2026-08-24.md).

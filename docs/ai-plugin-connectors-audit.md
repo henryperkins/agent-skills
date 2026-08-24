@@ -388,3 +388,18 @@ The version gate is history-based (`lastBump..HEAD`), so it is satisfied by comm
 alongside the content it ships — which is its stated intent — not by editing the manifests alone.
 Plugin version bumped 1.4.0 → 1.5.0 in both `.claude-plugin/plugin.json` and
 `.claude-plugin/marketplace.json` to cover `065cd5b`'s six files plus this pass's three.
+
+## Revalidation addendum — 2026-08-24
+
+This audit remains a historical record of the 2026-08-15 release state. WordPress 7.1,
+Gutenberg 23.8.0, WordPress/ai 1.3.0, and updated provider releases have since shipped. The
+current evidence matrix and open remediation work are in
+[`core-ai-skills-audit-2026-08-24.md`](core-ai-skills-audit-2026-08-24.md).
+
+The final WordPress 7.1 package is byte-identical to RC3 across the audited Abilities API,
+Connectors, AI Client, REST-controller, and vendored PHP AI Client paths, so those behavioral
+findings remain valid. Gutenberg 23.8.0 leaves the Knowledge files unchanged and makes no
+behavioral change to the Abilities packages. WordPress/ai 1.3.0 does change the plugin contract:
+Custom Abilities now gates the five read/utility abilities, and features previously described
+here as develop-only have shipped. Provider baselines are now Anthropic 1.0.4, Google 1.1.1, and
+OpenAI 1.1.0.
