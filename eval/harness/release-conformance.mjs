@@ -462,6 +462,31 @@ export function runReleaseConformance(repoRoot) {
     "that hook ships in v0.7.0",
     "wpai_{$ability_slug}_system_instruction",
   ]);
+  requireIncludes(repoRoot, "eval/playground/ai-plugin-smoke/blueprint.json", [
+    '"wp": "7.1"',
+    '"wpai_feature_custom-abilities_enabled": "0"',
+    '"wpai_feature_custom-abilities_enabled": "1"',
+    "wpai_skill_smoke_record_state( 'disabled' )",
+    "wpai_skill_smoke_record_state( 'enabled' )",
+  ]);
+  requireIncludes(repoRoot, "eval/playground/ai-plugin-smoke/run.sh", [
+    'const gated = ["read_content", "read_users", "read_settings", "get_post_details", "get_post_terms"]',
+    'versionAtLeast(r.wpai_version, "1.3.0")',
+    "disabled",
+    "enabled",
+  ]);
+  requireIncludes(repoRoot, "eval/playground/ai-plugin-smoke/mu-plugins/wpai-skill-smoke.php", [
+    "function wpai_skill_smoke_record_state( $phase )",
+    "'custom_abilities_feature'",
+    "'ai/get-post-details'",
+    "'ai/get-post-terms'",
+  ]);
+  requireIncludes(repoRoot, "eval/playground/ai-plugin-smoke/README.md", [
+    "WordPress 7.1",
+    "AI plugin 1.3.0",
+    "all five are absent",
+    "all five are present",
+  ]);
   requireIncludes(repoRoot, "skills/wp-ai-connectors/references/capabilities-declaration.md", [
     "CapabilityEnum::embeddingGeneration()",
     "OptionEnum::dimensions()",
