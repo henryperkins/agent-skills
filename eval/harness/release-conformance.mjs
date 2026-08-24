@@ -132,9 +132,32 @@ export function assertMarketplaceVersionMatches(repoRoot) {
   );
 }
 
+export function assertRelease190(repoRoot) {
+  const plugin = readJson(repoRoot, PLUGIN_MANIFEST);
+  const marketplace = readJson(repoRoot, MARKETPLACE_MANIFEST);
+  const entry = marketplace.plugins?.find((candidate) => candidate?.name === plugin.name);
+
+  assert(plugin.version === "1.9.0", `${PLUGIN_MANIFEST} must declare release version 1.9.0`);
+  assert(entry?.version === "1.9.0", `${MARKETPLACE_MANIFEST} must list "${plugin.name}" at version 1.9.0`);
+
+  const notes = "docs/release-notes-1.9.0.md";
+  assert(fs.existsSync(path.join(repoRoot, notes)), `${notes} must exist for release 1.9.0`);
+  requireIncludes(repoRoot, notes, [
+    "WordPress/ai 1.3.0",
+    "Custom Abilities",
+    "WordPress 7.1",
+    "Gutenberg 23.8.0",
+    "embedding overlay",
+    "two-state",
+    "drift",
+    "maintenance",
+  ]);
+}
+
 export function runReleaseConformance(repoRoot) {
   assertPluginVersionFresh(repoRoot);
   assertMarketplaceVersionMatches(repoRoot);
+  assertRelease190(repoRoot);
   assert(
     IMMEDIATE_UNWATCH_PATTERN.test("const unwatch = watch( () => { return cleanup; } );\n// Dispose later.\nunwatch();"),
     "Immediate-unwatch regression fixture must exercise the structural check"

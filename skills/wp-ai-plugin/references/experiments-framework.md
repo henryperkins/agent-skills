@@ -1,6 +1,6 @@
 # Experiments framework
 
-The conceptual model and lifecycle for AI plugin Experiments, anchored to `WordPress/ai` v1.2.0 source.
+The conceptual model and lifecycle for AI plugin Experiments, anchored to the `WordPress/ai` v1.3.0 tag.
 
 ## What an Experiment is
 
@@ -12,7 +12,7 @@ Three stability levels exist (declared in `load_metadata()` or defaulted):
 - **`'stable'`** — graduated through testing and contributor consensus
 - **`'deprecated'`** — slated for removal
 
-Image Generation is a stable Feature (promoted from `'experimental'` to `'stable'` in v0.8.0, #418; registered via `Loader::get_default_features()`) — and at v1.2.0 it holds the tree's only `'stability' => 'stable'` declaration. No registered Experiment sets the key at all, Title Generation included, so all sixteen fall back to `'experimental'`. The value is visible, not inert: the AI Status dashboard widget calls `Registry::get_features_by_stability()` to split its two lists, so a `'stable'` Feature lands in the **Features** column and everything else in the **Experiments** column (and `get_stability()` also rides along in the Settings → AI payload). In v1.0.0, the *Review Notes* and *Refine from Notes* experiments were renamed to **Editorial Notes** (`editorial-notes`) and **Editorial Updates** (`editorial-updates`) respectively. The path is experimental → stable → potentially core.
+Image Generation is a stable Feature (promoted in v0.8.0, #418; registered via `Loader::get_default_features()`) — and at v1.3.0 it holds the tree's only `'stability' => 'stable'` declaration. No registered Experiment sets the key, so all nineteen fall back to `'experimental'`. The AI Status widget uses `Registry::get_features_by_stability()` to split its lists; the value is not cosmetic. In v1.0.0, *Review Notes* and *Refine from Notes* became **Editorial Notes** (`editorial-notes`) and **Editorial Updates** (`editorial-updates`). The path is experimental → stable → potentially core.
 
 ## The contract (`Abstract_Feature`)
 
@@ -20,14 +20,14 @@ From `includes/Abstracts/Abstract_Feature.php`:
 
 - **`final public function __construct()`** — do not override. Calls `static::get_id()` and `$this->load_metadata()` to populate properties.
 - **`abstract public static function get_id(): string`** — return a unique slug-style ID. Called statically.
-- **`abstract protected function load_metadata(): array`** — return `['label', 'description', 'category', 'stability'?, 'image'?, 'capability'?]`. `label` and `description` are required; missing them throws `InvalidArgumentException`. `category` defaults to `Feature_Category::OTHER` if empty, `stability` to `'experimental'`, `image` to `''`, and **`capability` to `'text_generation'`** — the last is a live default, not an inert one: it is surfaced through `get_capability()` into the Settings → AI screen, so a Feature that needs no model should declare `'capability' => 'none'`. Values used in the 1.2.0 tree: `'none'`, `'vision'`, `'image_generation'`, `'text_generation'`.
+- **`abstract protected function load_metadata(): array`** — return `['label', 'description', 'category', 'stability'?, 'image'?, 'capability'?]`. `label` and `description` are required; missing them throws `InvalidArgumentException`. `category` defaults to `Feature_Category::OTHER` if empty, `stability` to `'experimental'`, `image` to `''`, and **`capability` to `'text_generation'`**. The capability feeds Settings → AI, so a Feature that needs no model should declare `'capability' => 'none'`. Values used in the 1.3.0 tree: `'none'`, `'vision'`, `'image_generation'`, `'text_generation'`.
 - **`abstract public function register(): void`** — set up hooks. Called by `Loader::initialize_features()` only if `is_enabled()` returns true.
 - **`final public function is_enabled(): bool`** — returns `is_globally_enabled() && is_individually_enabled()`, cached on the instance; cannot be overridden. The per-feature logic lives in `is_individually_enabled()` (added 1.0.1): it reads the `wpai_feature_{$id}_enabled` option and runs the `wpai_feature_{$id}_enabled` filter (plus the deprecated legacy filter). `is_globally_enabled()` (added 1.0.1) checks the global features toggle.
 - **`public function register_settings(): void`** — optional override. Use `register_setting()` for custom feature settings.
 - **`public function get_settings_fields(): array`** — optional override. Return field definitions for the DataForm UI on the AI settings page.
 - **`final public static function get_field_option_name( string $option_name ): string`** — generates `wpai_feature_{$id}_field_{$option_name}`. Use for namespaced option storage.
 
-The interface (`Contracts\Feature`) lists twelve public methods (unchanged as of v1.2.0): `get_id` (static), `get_label`, `get_description`, `get_category`, `get_stability`, `register`, `is_globally_enabled` (added v1.0.1), `is_individually_enabled` (added v1.0.1), `is_enabled`, `get_settings_fields_metadata` (added v0.7.0), `get_image` (added v0.8.0), and `get_capability` (added v0.9.0).
+The interface (`Contracts\Feature`) lists twelve public methods (unchanged as of v1.3.0): `get_id` (static), `get_label`, `get_description`, `get_category`, `get_stability`, `register`, `is_globally_enabled`, `is_individually_enabled`, `is_enabled`, `get_settings_fields_metadata`, `get_image`, and `get_capability`.
 
 ## The canonical example
 
@@ -74,23 +74,24 @@ Use this action for normal downstream registration as well as custom constructio
 
 ### Built-in Experiments
 
-The plugin's own Experiments are registered via `Experiments::register_default_experiment_classes()` hooked to `wpai_default_feature_classes` at priority 9. `Experiments::EXPERIMENT_CLASSES` at the **v1.2.0 tag** has sixteen entries:
+The plugin's own Experiments are registered via `Experiments::register_default_experiment_classes()` hooked to `wpai_default_feature_classes` at priority 9. `Experiments::EXPERIMENT_CLASSES` at the **v1.3.0 tag** has nineteen entries:
 
 ```
-Abilities_Explorer, Connector_Approval, AI_Request_Logging,
-Content_Classification, Content_Resizing, Excerpt_Generation,
-Alt_Text_Generation, Meta_Description, Editorial_Notes,
-Editorial_Updates, Summarization, Title_Generation, Type_Ahead,
-Comment_Moderation, Key_Encryption, Suggest_Reply
+Abilities_Explorer, Custom_Abilities, AI_Request_Logging,
+Connector_Approval, Key_Encryption, Comment_Moderation,
+Suggest_Reply, Alt_Text_Generation, Content_Classification,
+Content_Resizing, Summarization, Content_Translation,
+Editorial_Notes, Editorial_Updates, Excerpt_Generation,
+Meta_Description, Slug_Generation, Title_Generation, Type_Ahead
 ```
 
-On `develop` the list is **nineteen** — the same sixteen plus `Content_Translation`, `Slug_Generation`, and `Custom_Abilities` — and has been reordered so admin-category Experiments lead. `Example_Experiment` exists in the tree as an authoring template and is deliberately not registered.
+`Example_Experiment` exists in the tree as an authoring template and is deliberately not registered.
 
 Plus the internal `Image_Generation` Feature (registered separately as a stable Feature in `Loader::get_default_features()`).
 
 ### Built-in Abilities
 
-The v1.2.0 plugin directly registers five non-Experiment utility/read Abilities:
+The v1.3.0 plugin gates five non-Experiment utility/read Abilities behind the `Custom_Abilities` Experiment:
 
 - `core/read-content`
 - `core/read-settings`
@@ -98,13 +99,13 @@ The v1.2.0 plugin directly registers five non-Experiment utility/read Abilities:
 - `ai/get-post-details`
 - `ai/get-post-terms`
 
-Feature and Experiment Abilities, including the three Image Generation Abilities (`ai/image-generation`, `ai/image-import`, `ai/image-prompt-generation`) and `ai/comment-analysis`, are conditional on those Features being enabled. Resolve an Ability with `wp_get_ability()` on or after `wp_abilities_api_init`; do not assume a conditional ID exists. The exposed post types and settings used by the read Abilities depend on `show_in_abilities`, so do not assume every object is exposed or re-register these IDs blindly.
+They register only when both the global feature switch and `wpai_feature_custom-abilities_enabled` are true. `Custom_Abilities::register()` reads `Gated_Abilities::get_all()`, runs the `Show_In_Abilities` polyfill if any member requires core-object exposure, then registers each member. Third parties filter the class-string list through `wpai_gated_abilities`; invalid classes fail with `_doing_it_wrong()`.
 
-On `develop` even the five above become conditional — see "Added after v1.2.0" below.
+Other Feature and Experiment Abilities, including the three Image Generation Abilities (`ai/image-generation`, `ai/image-import`, `ai/image-prompt-generation`) and `ai/comment-analysis`, remain conditional on their own Features. Resolve an Ability with `wp_get_ability()` on or after `wp_abilities_api_init`; do not assume a conditional ID exists or re-register a shipped ID blindly.
 
 ### Advanced feature settings
 
-Features supply advanced settings through their own metadata and settings-field methods. Use the documented `wpai_settings_feature_groups` and `wpai_settings_feature_metadata` filters to extend that existing metadata. `wpai_feature_{$id}_settings` is only available when a specific Feature applies it (Type Ahead does in v1.2.0); it is not a universal framework filter. There is no separate public registry for advanced settings to invent.
+Features supply advanced settings through their own metadata and settings-field methods. Use `wpai_settings_feature_groups` and `wpai_settings_feature_metadata` to extend that data. `wpai_feature_{$id}_settings` exists only where a Feature applies it (Type Ahead does in v1.3.0); it is not a universal framework filter.
 
 ### Added in v1.2.0
 
@@ -114,7 +115,7 @@ Features supply advanced settings through their own metadata and settings-field 
   - **`core/read-users`** (`includes/Abilities/Users/Users.php`, category `user`) — fetch a single readable user by ID, email, username, or slug, or a paginated collection filtered by roles, published-post authorship, or included IDs; field-level access is enforced per user (#774).
 - The `show_in_abilities` polyfill (`includes/Abilities/Show_In_Abilities.php`) now also marks curated **post types** (previously only settings), so `core/read-content` returns data on a stock site until WordPress core ships the flag natively — after which core owns it, like `show_in_rest`.
 
-### Added after v1.2.0 (unreleased on `develop`)
+### Added in v1.3.0
 
 - **`Content_Translation`** (`content-translation`, `Experiment_Category::EDITOR`) — translates paragraph and heading blocks into a different language, and registers the paired `ai/content-translation` Ability (#747, merged 2026-07-29). Requires a connector with text-generation support.
 
@@ -129,20 +130,18 @@ Features supply advanced settings through their own metadata and settings-field 
 
   Codes are normalised with `sanitize_key()`, entries with a non-string or empty label are discarded, and a non-array return value is ignored entirely so the language picker and the ability schema keep working. The filtered list feeds the ability's input schema, so adding a language your provider cannot handle produces runtime failures rather than a validation error.
 
-  The class carries `@since x.x.x` placeholders — it is on `develop` but not in any tagged release, and the CHANGELOG's `[Unreleased]` section has not been updated to mention it. Treat it as unavailable when targeting 1.2.0.
-
 - **`Custom_Abilities`** (`custom-abilities`, `Experiment_Category::ADMIN`, `capability` `'none'`) — a single toggle that gates *all* of the plugin's custom Abilities. Its `register()` pulls `Gated_Abilities::get_all()` and registers each one, running the `Show_In_Abilities` polyfill first when any gated ability needs core objects exposed. `Gated_Abilities::GATED_ABILITY_CLASSES` currently holds `Post_Utilities`, `Read_Settings`, `Read_Users`, `Read_Content` — i.e. exactly the five IDs that 1.2.0 registers unconditionally (`core/read-content`, `core/read-settings`, `core/read-users`, `ai/get-post-details`, `ai/get-post-terms`). Third parties add their own via the `wpai_gated_abilities` filter.
 
-  This is a behavioral inversion, not an addition: if it ships, those Ability IDs are absent until a site admin enables the Experiment, and the `show_in_abilities` polyfill goes with them. Any downstream code that resolves `core/read-content` must handle null, and anything relying on the polyfill to expose curated core objects must not assume it ran.
+  This is a behavioral inversion from 1.2.0: those Ability IDs are absent until a site admin enables the Experiment through `wpai_feature_custom-abilities_enabled`, and the `show_in_abilities` polyfill goes with them. Any downstream resolver must handle null.
 
 - **`Slug_Generation`** — generates post-slug suggestions; `wpai_slug_generation_number_of_suggestions` filters how many.
 
-- **Ability-scoped prompt hooks** — `wpai_{$ability_slug}_system_instruction`, `wpai_{$ability_slug}_prompt`, and `wpai_{$ability_slug}_prompt_builder`. The global `wpai_system_instruction` hook has shipped since v0.7.0 and is present in v1.2.0; only the scoped family is new on `develop`.
+- **Ability-scoped prompt hooks** — `wpai_{$ability_slug}_system_instruction`, `wpai_{$ability_slug}_prompt`, and `wpai_{$ability_slug}_prompt_builder`. The global `wpai_system_instruction` hook has shipped since v0.7.0; the scoped family ships in 1.3.0.
 - **Settings import/export** — authenticated `GET /ai/v1/settings/export` and `POST /ai/v1/settings/import` endpoints, both gated by `manage_options`, using schema version 1 and excluding credential-like settings.
 - **Site Health integration** — an AI Plugin debug section and a direct credential-status test that does not expose secrets.
 - **Content Classification controls** — available-term, minimum-confidence, and candidate-pool-size filters plus richer taxonomy descriptors.
 
-The `develop` branch still declares plugin version `1.2.0`, and these additions carry `@since x.x.x` placeholders. Do not infer a future release number; keep them behind release or capability detection until tagged.
+These entries are in the 1.3.0 tag even where an individual docblock still carries an `@since x.x.x` placeholder. For release availability, the executable tag is authoritative.
 
 ## The enabled-state model
 

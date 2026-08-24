@@ -1,6 +1,6 @@
 # Hooks, filters, constants, and gates
 
-The public extension surface of the AI plugin v1.2.0, plus additions explicitly marked as unreleased on `develop`. Anchored to source — the source is canonical.
+The public extension surface of the AI plugin v1.3.0, anchored to the tagged executable source.
 
 ## Constants (v0.6.0+)
 
@@ -8,7 +8,7 @@ Defined in `ai.php` `constants()`. The 0.6.0 release renamed the family from `AI
 
 | Constant | Source | Use |
 | --- | --- | --- |
-| `WPAI_VERSION` | `'1.2.0'` (string literal) | Version detection in downstream code |
+| `WPAI_VERSION` | `'1.3.0'` (string literal) | Version detection in downstream code |
 | `WPAI_PLUGIN_FILE` | `__FILE__` (ai.php) | The main plugin file path |
 | `WPAI_PLUGIN_DIR` | `plugin_dir_path( WPAI_PLUGIN_FILE )` | Filesystem path to the plugin directory |
 | `WPAI_PLUGIN_URL` | `plugin_dir_url( WPAI_PLUGIN_FILE )` | URL to the plugin directory (for asset references) |
@@ -17,7 +17,7 @@ Defined in `ai.php` `constants()`. The 0.6.0 release renamed the family from `AI
 Use these in downstream plugins to detect the AI plugin's presence and version, and to reference its assets when integrating with its UI.
 
 ```php
-if ( defined( 'WPAI_VERSION' ) && version_compare( WPAI_VERSION, '1.2.0', '>=' ) ) {
+if ( defined( 'WPAI_VERSION' ) && version_compare( WPAI_VERSION, '1.3.0', '>=' ) ) {
     // Use the current canonical AI plugin extension surface.
 }
 ```
@@ -46,6 +46,8 @@ The AI plugin uses this gate internally before initializing experiments (#268). 
 - `WordPress\AI\format_guidelines_for_prompt( array $categories, ?string $block_name = null ): string` — convenience wrapper around `Guidelines::get_instance()->format_for_prompt()`.
 - `WordPress\AI\get_post_context( int $post_id ): array` — associative post-context array for prompts (callers read keys like `$context['content']`); it is **not** a pre-formatted string.
 - `WordPress\AI\get_preferred_models_for_text_generation(): array` — returns the plugin's preferred model list for `using_model_preference()`.
+- `WordPress\AI\log_ai_request()` — public v1.3.0 API for MCP servers and Ability consumers. It accepts `array $data` and returns `string|false`; the result is false while request logging is inactive or the write fails. Required data includes `type`, `operation`, and `status`.
+- `WordPress\AI\supports_embedding_generation(): bool` and `WordPress\AI\generate_embeddings()` — declared in v1.3.0, but unavailable on stock WordPress 7.1 because `SDK_Overlay::register()` is commented out in `ai.php`. Without `EmbeddingBuilder`, support is false and generation returns `WP_Error` code `ai_embeddings_unsupported`. Feature-detect at runtime.
 
 These are namespaced functions in `WordPress\AI`. Import as `use function WordPress\AI\normalize_content;` (or use the fully qualified name).
 
@@ -62,7 +64,7 @@ These are namespaced functions in `WordPress\AI`. Import as `use function WordPr
 
 ### The rest of the deprecated `ai_experiments_*` surface
 
-The per-feature toggle above is the one you meet in `Abstract_Feature`, but it isn't the only survivor. `includes/Deprecated.php` shims **nine** more — seven filters and **two actions** — all tagged `'0.6.0'` and still firing in v1.2.0. Each maps to a modern replacement:
+The per-feature toggle above is the one you meet in `Abstract_Feature`, but it isn't the only survivor. `includes/Deprecated.php` shims **nine** more — seven filters and **two actions** — all tagged `'0.6.0'` and still firing in v1.3.0. Each maps to a modern replacement:
 
 | Deprecated | Kind | Replacement |
 | --- | --- | --- |
@@ -83,7 +85,7 @@ Two details that matter when debugging:
 - **The last two are actions, fired via `do_action_deprecated`.** They are the deprecated forms of the two hooks this skill documents as the primary downstream extension points. `add_filter( 'ai_experiments_register_experiments', … )` will not behave like the modern `wpai_register_features` action — grepping only for `apply_filters_deprecated` misses both.
 - **Every shim is conditional.** Each is registered as a callback on its *modern* hook and guarded by `has_filter()` / `has_action()`, so the legacy name only fires when a legacy callback is actually attached. A silent legacy hook means nothing is listening, not that the shim was removed.
 
-These fire a deprecation notice and are not a migration target — they exist so pre-0.6.0 code keeps working. Read them only when debugging why an old filter still appears to have an effect. Note that the in-tree `@todo` and the notice text both say "will be removed in v1.0"; they survived v1.0 and are still present in v1.2.0, so treat the stated removal target as unreliable in both directions.
+These fire a deprecation notice and are not a migration target — they exist so pre-0.6.0 code keeps working. Read them only when debugging why an old filter still appears to have an effect. The in-tree `@todo` and notice say "will be removed in v1.0"; they survive in v1.3.0, so treat that removal target as stale.
 
 ### Guidelines
 
@@ -99,7 +101,8 @@ These fire a deprecation notice and are not a migration target — they exist so
 | `wpai_default_request_timeout` (v1.2.0+) | `includes/helpers.php` | Per-request timeout, filtered as `( int $default_timeout, string $feature_id )`; used for the image-generation request. ⚠️ The 1.2.0 changelog/`readme.txt` call this `wp_ai_client_default_request_timeout` — that name is in *no* plugin PHP (most likely the core AI Client's own filter); the plugin applies `wpai_default_request_timeout`. |
 | `wpai_settings_feature_groups` | Settings → AI feature metadata | Extend or adjust feature groups |
 | `wpai_settings_feature_metadata` | Settings → AI feature metadata | Extend metadata supplied by Features |
-| `wpai_feature_{$id}_settings` | A Feature that explicitly applies the hook | Adjust that Feature's settings; this is not a universal framework hook (v1.2.0's Type Ahead Feature applies it) |
+| `wpai_feature_{$id}_settings` | A Feature that explicitly applies the hook | Adjust that Feature's settings; this is not a universal framework hook (v1.3.0's Type Ahead Feature applies it) |
+| `wpai_bulk_action_max_items` (v1.3.0+) | `get_bulk_action_max_items()` | Maximum items per bulk action as `( int $max_items, string $feature_id )`; default 100 and clamped to at least 1 |
 
 Advanced settings are Feature-provided metadata on the existing Settings → AI surface. These filters extend that data; they do not establish a separate public settings registry.
 
@@ -121,20 +124,25 @@ Version-marked per row — these did not all arrive together.
 | `wpai_has_ai_credentials` (v0.7.0+) | `WordPress\AI\has_ai_credentials()` | auto-detected bool | The credential-detection sibling of the row above, filtered as `( bool $has_credentials, array $connectors )`. The detection loop skips every connector whose auth method isn't `api_key`, so an OAuth connector must claim itself here or the site reads as unconfigured — it gates the AI Status widget's "Configure an AI provider" step, Settings → AI's `hasCredentials`, and Comment Moderation's provider check |
 | `wpai_is_{$connector_slug}_connector_configured` (v0.9.0+) | AI Status dashboard widget | connector's detected bool | Correct dashboard status for connectors whose configuration cannot be inferred from API-key/OAuth data; filtered as `( bool $configured, array $connector_data )` |
 | `wpai_comment_moderation_moderate_guests` (v1.1.0+) | Comment Moderation experiment | setting value (default yes) | Override whether guest comments are auto-moderated |
-| `wpai_content_translation_languages` | `Content_Translation/Languages.php` | built-in language map | Add or remove target languages for Content Translation. Codes pass through `sanitize_key()`; entries with a non-string or empty label are dropped; a non-array return is ignored. `develop` only — not in 1.2.0 |
+| `wpai_content_translation_languages` (v1.3.0+) | `Content_Translation/Languages.php` | built-in language map | Add or remove target languages. Codes pass through `sanitize_key()`; invalid labels are dropped and a non-array return is ignored |
 
-### Other `develop`-only hooks (unreleased after v1.2.0)
+### WordPress/ai 1.3.0 filters
 
-| Filter | Where | Use |
+| Filter | Signature/default | Use |
 | --- | --- | --- |
-| `wpai_gated_abilities` | `Abilities\Gated\Gated_Abilities::get_all()` | Add an `Abstract_Gated_Ability` to the set that registers when the `custom-abilities` Experiment is on. This is also the hook that makes the read/utility Abilities conditional — see `references/experiments-framework.md` |
-| `wpai_remove_data_on_uninstall` | uninstall routine | Opt in/out of deleting plugin data on uninstall |
-| `wpai_slug_generation_number_of_suggestions` | Slug Generation experiment | How many slug suggestions to request |
-| `wpai_content_classification_candidate_pool_size` | Content Classification experiment | Size of the candidate term pool before ranking |
+| `wpai_gated_abilities` | array of class strings extending `Abstract_Gated_Ability` | Add/remove/replace the classes that register only while Custom Abilities is on |
+| `wpai_remove_data_on_uninstall` | bool, default true | Preserve plugin data on deletion by returning false; evaluated per site on multisite |
+| `wpai_slug_generation_number_of_suggestions` | int, default 3; clamped 1–10 | Control slug suggestions |
+| `wpai_content_classification_available_terms` | `( array $terms, string $taxonomy, string $strategy )` | Replace/suppress the candidate terms placed in the prompt |
+| `wpai_content_classification_min_confidence` | `( float $threshold, string $taxonomy, string $strategy )`; default 0.6, clamped 0–1 | Drop low-confidence suggestions before sorting/limiting |
+| `wpai_content_classification_candidate_pool_size` | `( int $limit, string $taxonomy )`; default 100 and non-positive falls back to 100 | Bound existing terms fetched for the candidate pool |
+| `wpai_alt_text_allowed_image_mime_types` | list of MIME types | Restrict safe/provider-supported image types accepted from custom references |
+| `wpai_alt_text_image_download_timeout` | `( int $seconds, string $url )`; default 30 | Bound remote image download time |
+| `wpai_alt_text_image_max_download_bytes` | `( int $bytes, string $url )`; default 20 MiB | Bound remote image size |
 
 ### Global Ability system instruction (v0.7.0+)
 
-The global `wpai_system_instruction` hook ships in v0.7.0 (`@since 0.7.0` on `Abstract_Ability::get_system_instruction()`, unchanged through v1.2.0). It runs after Guidelines are appended and filters the final system instruction for every `Abstract_Ability`:
+The global `wpai_system_instruction` hook ships in v0.7.0 (`@since 0.7.0` on `Abstract_Ability::get_system_instruction()`, unchanged through v1.3.0). It runs after Guidelines are appended and filters the final system instruction for every `Abstract_Ability`:
 
 ```php
 apply_filters( 'wpai_system_instruction', string $instruction, string $name, array $data );
@@ -142,9 +150,9 @@ apply_filters( 'wpai_system_instruction', string $instruction, string $name, arr
 
 It is not Ability-ID-scoped; inspect `$name` and `$data` when a change should apply selectively.
 
-### Ability-scoped prompt filters (`develop`, unreleased after v1.2.0)
+### Ability-scoped prompt filters (v1.3.0+)
 
-Commit `1aabfe3` / PR #770 added uniform Ability-scoped prompt extension points to `Abstract_Ability` after the v1.2.0 tag. Do not recommend these scoped hooks for a site pinned to v1.2.0.
+PR #770 added uniform Ability-scoped prompt extension points to `Abstract_Ability`; they ship in v1.3.0.
 
 | Filter | Filtered value | Additional arguments |
 | --- | --- | --- |
@@ -159,6 +167,19 @@ grep -rn "apply_filters" wp-content/plugins/ai/includes/Abilities/
 ```
 
 That gives you every Ability-level filter with file/line context.
+
+## 1.3.0 migrations and deprecations
+
+- The upgrade routine renames `ai_generated` → `wpai_generated`, `ai_generated_summary` → `wpai_generated_summary`, and comment meta `ai_note` → `wpai_note`. If the destination already exists it is authoritative and the old duplicate is removed.
+- `WordPress\AI\Services\AI_Service` and `WordPress\AI\get_ai_service()` are deprecated; call `wp_ai_client_prompt()` directly.
+- `wpai_meta_description_result_temperature` fires only through `apply_filters_deprecated()` and its value is unused. Remove integrations instead of migrating to another temperature hook.
+- Settings import/export ships at `GET /wp-json/ai/v1/settings/export` and `POST /wp-json/ai/v1/settings/import`. Both require `manage_options`, use schema version 1, and exclude option-name segments indicating keys, tokens, secrets, credentials, passwords, or auth.
+
+## 1.3.0 security boundaries
+
+- Bulk Alt Text and Summarization requests require their nonce; do not bypass the built-in handlers with an unauthenticated proxy.
+- Custom image URLs for Alt Text Generation must remain public, preserve the verified final URL, use an allowed MIME type, and obey the timeout/size filters above. The XML/prompt wrapper is not a substitute for URL validation.
+- Sanitize content sent to or rendered from an LLM in the context where it is used, and escape admin output. Do not treat a model response as trusted HTML.
 
 ## Actions
 
