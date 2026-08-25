@@ -790,6 +790,35 @@ export function assertAbilitiesApiPrecision(repoRoot) {
   ]);
 }
 
+/**
+ * Audit and verification contracts that must not be ambiguous.
+ *
+ * An audit lint that grades the wrong way is worse than no lint: it signs off a
+ * reference ability that cannot be executed, or reports "registration is broken"
+ * for an ability that registered fine and was filtered out of the ecosystem view.
+ */
+export function assertAbilitiesAuditVerifyPrecision(repoRoot) {
+  requireIncludes(repoRoot, "skills/wp-abilities-audit/references/capability-gate-tracing.md", [
+    "map_meta_cap defaults to true only for the built-in post and page capability types",
+    "edit_others_shop_orders",
+  ]);
+  requireExcludes(repoRoot, "skills/wp-abilities-audit/references/capability-gate-tracing.md", [
+    "writes gate on `edit_shop_orders`",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-abilities-audit/references/audit-schema.md", [
+    "A single-capability string is canonical and does not emit WARN",
+    "Only the legacy slash-separated compound string emits WARN",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-abilities-verify/references/schema-lints.md", [
+    "missing `input_schema`",
+    "ability_missing_input_schema",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-abilities-verify/references/exposure-checks.md", [
+    "filtered view",
+    "WP_Abilities_Registry::get_instance()->get_all_registered()",
+  ]);
+}
+
 export function runReleaseConformance(repoRoot) {
   assertPluginVersionFresh(repoRoot);
   assertMarketplaceVersionMatches(repoRoot);
@@ -801,6 +830,7 @@ export function runReleaseConformance(repoRoot) {
   assertAiMaintenanceWorkflow(repoRoot);
   assertLocalRuntimeHygiene(repoRoot);
   assertAbilitiesApiPrecision(repoRoot);
+  assertAbilitiesAuditVerifyPrecision(repoRoot);
   assert(
     IMMEDIATE_UNWATCH_PATTERN.test("const unwatch = watch( () => { return cleanup; } );\n// Dispose later.\nunwatch();"),
     "Immediate-unwatch regression fixture must exercise the structural check"

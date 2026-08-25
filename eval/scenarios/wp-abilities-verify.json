@@ -1,6 +1,12 @@
 {
   "name": "Verify abilities registrations and catch a readonly-but-writes violation",
-  "skills": ["wordpress-router", "wp-abilities-verify", "wp-abilities-audit", "wp-abilities-api", "wp-project-triage"],
+  "skills": [
+    "wordpress-router",
+    "wp-abilities-verify",
+    "wp-abilities-audit",
+    "wp-abilities-api",
+    "wp-project-triage"
+  ],
   "query": "I have a WordPress plugin checkout with 7 registered abilities — 6 read abilities annotated readonly: true and 1 write ability annotated readonly: false, destructive: true. One of the six read abilities accidentally calls $wpdb->update(...) inside its execute callback after a recent refactor. I also have an audit doc at ~/vault/plans/2026-04-20-abilities-audit-<plugin>.md that declared the expected annotations before the refactor. Run wp-abilities-verify in static mode against the plugin checkout and write the structured report to ~/vault/plans/2026-04-20-verify-<plugin>.md.",
   "expected_behavior": [
     "Step 1: Route to wp-abilities-verify because the task is 'verify abilities registrations'",
@@ -11,7 +17,10 @@
     "Step 6: Return OK on the adversarial check for the other 5 readonly abilities and OK (write path confirmed) for the write ability (readonly=false annotation acknowledged; check only applies when readonly=true)",
     "Step 7: Run schema lints and permission roundtrip in static-only mode",
     "Step 8: Cross-reference error codes (non-vocabulary codes WARN, not FAIL)",
-    "Step 9: Write a structured markdown report at the user-specified path with Last updated header and Status: FAIL"
+    "Step 9: Write a structured markdown report at the user-specified path with Last updated header and Status: FAIL",
+    "Step 10: FAIL a reference_ability: true ability that declares no input_schema, because WP_Ability::validate_input() guards on null === $input and execute(array()) therefore returns WP_Error( 'ability_missing_input_schema' )",
+    "Step 11: Before claiming registration is broken, compare wp_get_abilities() — the ecosystem-filtered view — against the raw WP_Abilities_Registry::get_instance()->get_all_registered() surface",
+    "Step 12: Report 'the registration hook is not firing' only when the ability is absent from the raw registry; when it is raw-only, name the wp_get_abilities_item_include or wp_get_abilities_result filtering path to investigate instead"
   ],
   "success_criteria": [
     "Routes to wp-abilities-verify skill",
@@ -21,6 +30,9 @@
     "The other 5 read abilities each have a passing readonly row",
     "The write ability has no FAIL in the annotation-correctness table",
     "Audit doc validation section confirms well-formedness or flags specific mismatches",
-    "Report header notes Static Mode so reader knows runtime checks weren't executed"
+    "Report header notes Static Mode so reader knows runtime checks weren't executed",
+    "Fails the schema-less reference ability rather than passing it as 'input_schema is optional'",
+    "Enumerates the raw registry alongside wp_get_abilities() before diagnosing a static/runtime mismatch",
+    "Does not conclude registration is broken from absence in wp_get_abilities() alone"
   ]
 }

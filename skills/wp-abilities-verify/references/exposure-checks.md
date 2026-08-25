@@ -124,7 +124,32 @@ a plugin defect — but a plugin that expects to be installed on multi-user site
 ## Runtime enumeration
 
 Static parsing gives you the declared keys. Runtime gives you the resolved truth, including
-anything a filter changed after registration:
+anything a filter changed after registration.
+
+**`wp_get_abilities()` is the ecosystem-filtered view, not the registry.** On WP 7.1+ it always
+runs a filter pipeline, even when called with no arguments: the declarative `category` /
+`namespace` / `meta` filters, the caller's `item_include_callback`, the
+`wp_get_abilities_item_include` filter, the caller's `result_callback`, and finally the
+`wp_get_abilities_result` filter. Any plugin on the site can remove an ability from that view
+without touching registration. The raw, unfiltered surface is
+`WP_Abilities_Registry::get_instance()->get_all_registered()`.
+
+Compare both before diagnosing a static/runtime mismatch:
+
+```php
+$filtered = wp_get_abilities();
+$registry = WP_Abilities_Registry::get_instance();
+$raw      = $registry ? $registry->get_all_registered() : array();
+```
+
+- **Absent from `$raw`** → the ability really did not register. Now it is fair to report that the
+  registration hook is not firing, and to check hook timing, plugin activation, and the
+  `_doing_it_wrong()` log for a rejected name or missing `permission_callback`.
+- **Present in `$raw`, absent from `$filtered`** → registration worked. Report which filtering
+  path needs investigation — a `wp_get_abilities_item_include` or `wp_get_abilities_result`
+  callback, or a declarative arg the caller passed — and do not call this a registration failure.
+- `get_instance()` can return `null` before the registry bootstraps, which is why the null guard
+  above matters; an unguarded call reads as "nothing registered".
 
 ```bash
 # Effective REST exposure (WP 7.1+ resolution applied by core).

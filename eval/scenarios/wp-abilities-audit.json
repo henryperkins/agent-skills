@@ -1,6 +1,11 @@
 {
   "name": "Produce an Abilities API audit doc for a plugin with a non-standard REST layout",
-  "skills": ["wordpress-router", "wp-project-triage", "wp-abilities-audit", "wp-abilities-api"],
+  "skills": [
+    "wordpress-router",
+    "wp-project-triage",
+    "wp-abilities-audit",
+    "wp-abilities-api"
+  ],
   "query": "I'm working on a plugin checkout that currently registers zero abilities. Its REST controllers live under `includes/api/` (not the standard `includes/admin/` layout) and extend a post-type-backed base controller for a custom post type with distinct read and write capabilities. Produce a Phase-1 Abilities API audit doc at `~/notes/2026-04-20-abilities-audit-<plugin>.md` so we can hand it to engineering for implementation.",
   "expected_behavior": [
     "Step 1: Run wordpress-router to classify the repo, then route to wp-abilities-audit",
@@ -11,7 +16,10 @@
     "Step 6: Mark inherited routes with backing.inherited_from and null line numbers per audit-schema.md",
     "Step 7: Write the audit doc to the user-provided output path, NOT into the plugin worktree",
     "Step 8: Include at least one entry in surfaced_gaps for a high-leverage zero-arg candidate or a backing: null gap",
-    "Step 9: For each proposed ability, record the implementation-readiness fields per audit-schema.md: use_case_fit (one-sentence workflow), side_effects (array; empty list is a load-bearing fact, not a missing value), seed_data_needs (representative-data shape or null)"
+    "Step 9: For each proposed ability, record the implementation-readiness fields per audit-schema.md: use_case_fit (one-sentence workflow), side_effects (array; empty list is a load-bearing fact, not a missing value), seed_data_needs (representative-data shape or null)",
+    "Step 10: When the plugin is post-type-backed, record the author-sensitive write capability as edit_others_<type>s (for a shop_order-style type, edit_others_shop_orders) and never edit_<type>s, which is the author-insensitive primitive that also aliases create_posts",
+    "Step 11: State the map_meta_cap rule exactly: Core defaults it to true only for the built-in post and page capability types, in WP_Post_Type::set_props(), and only when no capabilities array was passed; a custom capability_type must opt in explicitly",
+    "Step 12: Use a single capability string as the canonical capability_gate for a one-capability plugin without emitting WARN, and reserve the {read, write, confirmed, verified_at} object for gates whose read and write genuinely differ; only the legacy slash-separated compound string is WARN"
   ],
   "success_criteria": [
     "Routes to wp-abilities-audit skill",
@@ -21,6 +29,9 @@
     "surfaced_gaps array has at least one entry",
     "Controller Inventory table lists every controller grep enumerated",
     "Notes and Surprises section captures at least one judgment call",
-    "Every entry in proposed_abilities populates use_case_fit, side_effects, and seed_data_needs (the implementation-readiness fields)"
+    "Every entry in proposed_abilities populates use_case_fit, side_effects, and seed_data_needs (the implementation-readiness fields)",
+    "Names edit_others_shop_orders as the author-sensitive write capability and does not present edit_shop_orders as author-sensitive",
+    "States the map_meta_cap default rule with its actual condition rather than asserting it is never or always true for custom types",
+    "Does not warn on a single-capability capability_gate string, and does not invent a bespoke capability-gate shape"
   ]
 }

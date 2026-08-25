@@ -62,9 +62,18 @@ Plugin-specific capabilities (e.g. WooCommerce's `manage_woocommerce`,
 `edit_shop_orders`) are equally valid — substitute your plugin's caps. The
 shape is the contract; the literal cap names are project-specific.
 
-A legacy compound-string form exists in the wild (`"<read_cap> / <write_cap>"`)
-and is accepted for backwards compatibility, but the structured form above is
-the preferred representation for new audits.
+Three forms exist, and validators grade them differently. Be unambiguous about
+which is which:
+
+| Form | Example | Verdict |
+|---|---|---|
+| Single capability string | `capability_gate: manage_options` | **Canonical.** No warning. |
+| Structured object | `{read, write, confirmed, verified_at}` | **Canonical** for compound gates. No warning. |
+| Legacy slash-separated compound string | `"read_private_pages / edit_others_pages"` | Accepted, **WARN**. |
+
+A single-capability string is canonical and does not emit WARN — a one-capability plugin should use it, and adding a `{read, write}` object whose two values are the same capability is noise, not rigor.
+
+Only the legacy slash-separated compound string emits WARN, because a downstream consumer has to heuristically split it. Use the object form when — and only when — read and write genuinely resolve to different capabilities.
 
 ## `proposed_abilities` — array
 
@@ -297,14 +306,17 @@ overrides. Safe to treat `manage_options` as the single gate.
 
 Documented so downstream skills have an explicit contract:
 
-- **`capability_gate` string-with-inline-comment form** loses data when parsed
-  by strict YAML parsers (comments are dropped). The structured object form is
-  preferred; string form is accepted for backwards compatibility.
+- **`capability_gate` string-with-inline-comment form** loses provenance when
+  parsed by strict YAML parsers (comments are dropped). The capability itself
+  survives, so this is a provenance limitation, not a grading one — a single
+  capability string remains canonical and unwarned. Move the provenance into
+  the object form's `verified_at` when it must be machine-readable.
 - **Legacy compound-string `capability_gate`** — the `"<read_cap> / <write_cap>"`
-  form predates the structured `{read, write}` object and is still accepted
-  for backwards compatibility. Validators (e.g. `wp-abilities-verify`)
-  emit WARN on this form to nudge migration to the structured shape;
-  they do NOT FAIL. New audits should use the object form.
+  form predates the structured `{read, write}` object. It is still accepted
+  for backwards compatibility, and it is the **only** `capability_gate` form
+  validators (e.g. `wp-abilities-verify`) warn on; they do NOT FAIL. A single
+  capability string is not this form and must not be warned on. New compound
+  audits should use the object form.
 - **`return_type` is hint-only.** Prose for the human auditor; not
   machine-parseable. Downstream skills use runtime `is_wp_error(...)` and
   `instanceof WP_REST_Response` checks regardless of what this field says.

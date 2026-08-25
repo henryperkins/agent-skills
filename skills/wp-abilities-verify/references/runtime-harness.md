@@ -66,7 +66,26 @@ Any "no" answer halts the harness.
 
 ## Check 1 — ability names match source-expected list
 
-Enumerate runtime abilities and diff against the static inventory from
+`wp_get_abilities()` is the ecosystem-**filtered view**, not the registry: on
+WP 7.1+ it always runs its filter pipeline, so another plugin's
+`wp_get_abilities_item_include` or `wp_get_abilities_result` callback can hide a
+correctly registered ability from it. Enumerate **both** surfaces before
+diagnosing anything:
+
+```bash
+<env-cli> wp --user=admin eval '
+$filtered = wp_get_abilities();
+$registry = WP_Abilities_Registry::get_instance();
+$raw      = $registry ? $registry->get_all_registered() : array();
+printf( "filtered=%d raw=%d" . PHP_EOL, count( $filtered ), count( $raw ) );
+print_r( array_values( array_diff( array_keys( (array) $raw ), array_keys( (array) $filtered ) ) ) );
+'
+```
+
+Anything printed by that `array_diff` registered successfully and was filtered
+out afterwards. Do not report it as a registration failure.
+
+Then diff the runtime names against the static inventory from
 `static-enumeration.md`:
 
 ```bash
@@ -85,8 +104,15 @@ echo implode( PHP_EOL, $names ) . PHP_EOL;
 
 Compare against the static inventory:
 
-- Source contains ability, runtime missing → FAIL. Registration hook
-  isn't firing; check init hook timing and plugin activation.
+- Source contains ability, absent from **`$raw`** → FAIL. Only now is
+  "the registration hook is not firing" a supportable claim; check init
+  hook timing, plugin activation, and the `_doing_it_wrong()` log for a
+  rejected name or a missing `permission_callback`.
+- Source contains ability, present in `$raw` but absent from the
+  filtered view → WARN, and report *which* filtering path to
+  investigate (`wp_get_abilities_item_include`,
+  `wp_get_abilities_result`, or a declarative arg the caller passed).
+  This is not a registration failure and must not be reported as one.
 - Runtime contains ability, source missing → WARN. Dynamic registration
   path the enumerator couldn't follow. Document but don't block.
 - Counts match → OK.

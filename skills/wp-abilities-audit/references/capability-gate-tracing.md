@@ -81,6 +81,43 @@ grep -rn "register_post_type\s*(\s*['\"]<cpt_name>['\"]" .
 #     primitive caps (read_private_<type>s, edit_others_<type>s).
 ```
 
+### `map_meta_cap` is not a safe assumption — read the registration
+
+In WordPress Core, map_meta_cap defaults to true only for the built-in post and page capability types. The rule lives in `WP_Post_Type::set_props()`:
+
+```php
+// Back compat with quirky handling in version 3.0. #14122.
+if ( empty( $args['capabilities'] )
+    && null === $args['map_meta_cap'] && in_array( $args['capability_type'], array( 'post', 'page' ), true )
+) {
+    $args['map_meta_cap'] = true;
+}
+
+// If not set, default to false.
+if ( null === $args['map_meta_cap'] ) {
+    $args['map_meta_cap'] = false;
+}
+```
+
+Read that literally, because two details decide real audits:
+
+- It tests the **capability type**, not whether the post type is built-in. And
+  `capability_type` itself defaults to `'post'`, so a custom post type registered
+  with no capability argument at all silently gets `map_meta_cap = true` without
+  opting in.
+- A custom `capability_type` — `'shop_order'`, `'book'` — never gets it by
+  default and **must opt in explicitly**. So must any registration that passes a
+  non-empty `capabilities` array, even with `capability_type => 'post'`.
+- The `in_array()` is strict, so the array form `array( 'post', 'posts' )` does
+  not qualify either.
+
+`get_post_type_capabilities()` does *not* special-case `'post'`/`'page'`; it
+branches only on the boolean `set_props()` already resolved. With
+`map_meta_cap = false`, the `cap` object never gains `read_post` / `edit_post` /
+`delete_post`, `map_meta_cap()` appends an undefined capability, and the check
+fails closed — which reads like correct denial in testing and is actually a
+misconfiguration. Record the registration you read, not the shape you expected.
+
 Dynamic resolution typically lands at:
 
 - **Collection read** (GET list): `get_items_permissions_check()` checks
@@ -185,8 +222,18 @@ private-item reads resolve to `read_private_pages` and writes gate on
 
 Example B — WooCommerce-style sidebar. WooCommerce's `shop_subscription` is
 registered with `capability_type='shop_order'`, so private-item reads resolve
-to `read_private_shop_orders` and writes gate on `edit_shop_orders`.
+to `read_private_shop_orders` and author-sensitive writes gate on
+`edit_others_shop_orders`.
 Mechanically identical to Example A; the cap names are project-specific.
+
+Do not substitute `edit_shop_orders` here. That name is
+`$post_type->cap->edit_posts` — the author-**insensitive** primitive, checked
+only when the user *is* the order's author (and aliased to `create_posts`).
+WooCommerce uses it as a blanket "may work with orders at all" gate with no post
+ID. The author-sensitive primitive is `edit_others_shop_orders`, reached only on
+the not-the-author branch of `map_meta_cap()`. Recording the wrong one in an
+audit produces an ability whose `permission_callback` lets any user holding the
+base capability edit another customer's order.
 WooCommerce also exposes a helper `wc_rest_check_post_permissions()` that
 wraps the same core machinery — the helper is convenience; the underlying
 mechanism is core's `map_meta_cap()`.

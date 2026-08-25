@@ -33,7 +33,9 @@ each ability against a live environment.
   via source inspection, runs the adversarial correctness check, runs
   schema and permission lints, and validates audit docs.
 - **Runtime mode** — requires a running env. Does everything static
-  does PLUS: `wp_get_abilities()` for authoritative enumeration,
+  does PLUS: `wp_get_abilities()` (the ecosystem-filtered view) plus
+  `WP_Abilities_Registry::get_instance()->get_all_registered()` (the raw
+  registry) for authoritative enumeration,
   executes each ability with curated inputs, confirms permission
   roundtrip against real users, and runs a twin-invocation heuristic
   on `idempotent: true` abilities to flag candidates for review
@@ -91,10 +93,15 @@ callback byte range.
 ### 3. (Runtime only) Enumerate via REST + wp-cli
 
 Read `references/runtime-harness.md`. Bring the env up using the
-command from `AGENTS.md`, then enumerate via `wp_get_abilities()` over
-wp-cli and cross-check against the static inventory. Source-only →
-FAIL (registration not firing). Runtime-only → WARN (dynamic
-registration path).
+command from `AGENTS.md`, then enumerate over wp-cli and cross-check
+against the static inventory. Enumerate **both** surfaces:
+`wp_get_abilities()` is the ecosystem-filtered view and
+`WP_Abilities_Registry::get_instance()->get_all_registered()` is the raw
+registry. Source-only *and* absent from the raw registry → FAIL
+(registration not firing). Present in the raw registry but filtered out
+→ WARN naming the `wp_get_abilities_item_include` /
+`wp_get_abilities_result` path to investigate — never call this a
+registration failure. Runtime-only → WARN (dynamic registration path).
 
 ### 4. Annotation correctness (the adversarial core)
 

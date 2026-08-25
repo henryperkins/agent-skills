@@ -71,13 +71,30 @@ Each `'default'` value must evaluate to the same shape on every call:
 The principle: defaults that vary per call are both non-deterministic
 and surprising to agents that expect defaults to be static.
 
-## Lint 6 — `reference_ability: true` implies no required inputs
+## Lint 6 — `reference_ability: true` must be executable with empty input
 
-If an audit doc is provided and an ability has
-`reference_ability: true`, its `input_schema.required` array must be
-empty or absent. The reference ability is the smallest, safest
-bootstrap call an implementer lands first; it must work with
-`execute([])`. Required inputs on the reference ability → FAIL.
+If an audit doc is provided and an ability has `reference_ability: true`,
+it must work with `execute([])` — it is the smallest, safest bootstrap
+call an implementer lands first. Two things break that, and both FAIL:
+
+1. **A non-empty `input_schema.required` array.** `execute([])` cannot
+   satisfy a required property.
+2. **A missing `input_schema` altogether.** This is the one that reads
+   like a pass and is not. `WP_Ability::validate_input()` guards on
+   `null === $input`, not `empty( $input )`, so a schema-less ability
+   accepts `execute()` and `execute( null )` but rejects
+   `execute( array() )` with
+   `WP_Error( 'ability_missing_input_schema' )` — "Ability "%s" does not
+   define an input schema required to validate the provided input."
+   The same trap fires over REST: a run body of `{}` resolves the input
+   to `null` and succeeds, while `{"input": {}}` — what many MCP and
+   agent clients send for a no-argument tool — resolves to `array()` and
+   fails. Declare `'input_schema' => array( 'type' => 'object',
+   'properties' => array(), 'default' => (object) array() )` on any
+   reference ability instead of omitting it.
+
+So the lint is: `reference_ability: true` FAILS when `input_schema` is
+absent, and FAILS when `input_schema.required` is non-empty.
 
 (No audit provided → this lint is skipped — no reference ability is
 declared.)

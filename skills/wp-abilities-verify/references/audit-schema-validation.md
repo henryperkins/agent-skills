@@ -44,9 +44,12 @@ Apply the field-shape rules defined in
 
 1. Every required top-level field is present and non-empty (see
    "Top-level fields" in the canonical).
-2. `capability_gate` matches one of the legal shapes (single string,
-   `{read, write}` object, or — with WARN per the canonical's "Known
-   limitations" — the legacy slash-separated string).
+2. `capability_gate` matches one of the legal shapes. A single
+   capability string and a `{read, write}` object are both canonical and
+   are graded OK — never WARN a one-capability plugin for using a plain
+   string. Only the legacy slash-separated compound string
+   (`"<read_cap> / <write_cap>"`) is WARN, per the canonical's "Known
+   limitations".
 3. Every entry in `proposed_abilities` has every required per-ability
    field with the right type (see "`proposed_abilities`" in the
    canonical) — except the three implementation-readiness fields, whose
