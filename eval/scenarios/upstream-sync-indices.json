@@ -17,7 +17,13 @@
     "Step 11: Parse the mapping by the WordPress Version and Gutenberg Version header labels even when Gutenberg is the first column",
     "Step 12: Before opening a refresh PR, run node eval/harness/run.mjs --skip-upstream-drift so expected marker drift is the only skipped gate",
     "Step 13: Generate upstream-drift.md with --format markdown --allow-drift and generate the source inventory from CORE_AI_UPSTREAMS",
-    "Step 14: Include and upload both reports, and use UPSTREAM_SYNC_TOKEN when configured so normal pull_request checks can run; disclose the GITHUB_TOKEN fallback"
+    "Step 14: Include and upload both reports, and use UPSTREAM_SYNC_TOKEN when configured so normal pull_request checks can run; disclose the GITHUB_TOKEN fallback",
+    "Step 15: Keep exactly one scheduled upstream-maintenance workflow: upstream-sync.yml owns the weekly cron and ai-skill-maintenance.yml runs only on workflow_dispatch or the upstream-release repository_dispatch",
+    "Step 16: Keep the two refresh branches distinct: upstream-sync.yml uses chore/core-ai-upstream-indices and ai-skill-maintenance.yml uses chore/ai-maintenance-upstream-indices",
+    "Step 17: Transfer no workspace or index artifact between jobs; publish only the canonical state hash from node shared/scripts/ai-generate-updates.mjs --print-state-hash",
+    "Step 18: In every consuming job, rerun the deterministic updater and fail closed when the recomputed state hash differs from the refresh job's",
+    "Step 19: Treat missing ANTHROPIC_API_KEY or ANTHROPIC_MODEL as a redacted advisory skip that still opens the deterministic index pull request",
+    "Step 20: Open no AI-authored skill pull request while detected changes carry taggedFiles: []"
   ],
   "success_criteria": [
     "Update script runs successfully",
@@ -29,6 +35,12 @@
     "Drafts, prereleases, GitHub error objects, empty stable arrays, and missing Packagist packages cannot replace good indices",
     "Any fetch or normalization failure happens before the first index write",
     "A changed-index PR is self-validating and names every independently stale skill without claiming alignment",
-    "A no-change manual rerun creates no pull request"
+    "A no-change manual rerun creates no pull request",
+    "Exactly one upstream-maintenance workflow declares a schedule",
+    "The deterministic and advisory paths use two distinct refresh branches: chore/core-ai-upstream-indices and chore/ai-maintenance-upstream-indices",
+    "No job uploads or downloads an index or workspace artifact; jobs converge by recomputing the canonical SHA-256 state hash",
+    "A state-hash mismatch between the refresh job and a consuming job fails the run instead of publishing a mixed snapshot",
+    "A repository without AI credentials still refreshes indices and reports a redacted skip category",
+    "No workflow job can open an AI-authored skill pull request"
   ]
 }

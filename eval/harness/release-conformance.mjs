@@ -569,6 +569,38 @@ export function assertCompleteMaintenanceState() {
   assert(configured.configured && !JSON.stringify(configured).includes("test-only"), "Config checks must never expose the API key");
 }
 
+/**
+ * The AI maintenance workflow is advisory. It may never become a second
+ * scheduled index owner, may never hand a mutated workspace between jobs, and
+ * may never open a skill PR while `taggedFiles` is always empty — the evidence
+ * gate in `ai-generate-updates.mjs` can never be satisfied, so such a job is
+ * unreachable by construction. Each consuming job instead reruns the
+ * deterministic updater and compares the canonical upstream state hash, so a
+ * release that lands mid-run fails closed instead of shipping a mixed snapshot.
+ */
+export function assertAiMaintenanceWorkflow(repoRoot) {
+  const workflow = read(repoRoot, ".github/workflows/ai-skill-maintenance.yml");
+  const deterministicWorkflow = read(repoRoot, ".github/workflows/upstream-sync.yml");
+  const updaterCalls = workflow.match(/node shared\/scripts\/update-upstream-indices\.mjs/g) ?? [];
+  const hashCalls = workflow.match(/--print-state-hash/g) ?? [];
+  const scheduleOwners = `${workflow}\n${deterministicWorkflow}`.match(/^\s+schedule:/gm) ?? [];
+
+  assert(updaterCalls.length === 3, "Each AI workflow job must refresh indices independently");
+  assert(hashCalls.length === 3, "Each AI workflow job must compute the canonical state hash");
+  assert(scheduleOwners.length === 1, "Exactly one upstream-maintenance workflow may own a schedule");
+  assert(workflow.includes("state_hash: ${{ steps.state.outputs.hash }}"), "Refresh job must expose state_hash");
+  assert(workflow.includes("needs.refresh-indices.outputs.state_hash"), "Consumers must compare the refresh hash");
+  assert(workflow.includes("Upstream state changed during this run"), "A state mismatch must fail closed");
+  assert(!workflow.includes("workspace-with-indices"), "Index artifacts are forbidden");
+  assert(!workflow.includes("workspace-with-updates"), "Generated workspace artifacts are forbidden");
+  assert(!workflow.includes("actions/download-artifact"), "Jobs must not restore a transferred workspace");
+  assert(!workflow.includes("create-pr:"), "Autonomous skill PRs are disabled without tagged-file ingestion");
+  assert(!/^\s+schedule:/m.test(workflow), "AI maintenance must not own a schedule");
+  assert(workflow.includes("chore/ai-maintenance-upstream-indices"), "AI fallback branch must not collide");
+  assert(workflow.includes("secrets.UPSTREAM_SYNC_TOKEN || secrets.GITHUB_TOKEN"), "Fallback PR must prefer the CI-triggering token");
+  assert(workflow.includes('OUTCOME="skipped"'), "Missing provider configuration must skip advisory analysis");
+}
+
 export function runReleaseConformance(repoRoot) {
   assertPluginVersionFresh(repoRoot);
   assertMarketplaceVersionMatches(repoRoot);
@@ -577,6 +609,7 @@ export function runReleaseConformance(repoRoot) {
   assertIndependentUpstreamDrift();
   assertCompleteMaintenanceState();
   assertCoreAiUpstreamRegistry(repoRoot);
+  assertAiMaintenanceWorkflow(repoRoot);
   assert(
     IMMEDIATE_UNWATCH_PATTERN.test("const unwatch = watch( () => { return cleanup; } );\n// Dispose later.\nunwatch();"),
     "Immediate-unwatch regression fixture must exercise the structural check"

@@ -78,9 +78,22 @@ Set an owner and expiry, rotate the token on the repository's normal secret-rota
 
 If `UPSTREAM_SYNC_TOKEN` is absent, the workflow falls back to `GITHUB_TOKEN`. Pull requests created with that token may not trigger normal `pull_request` workflows recursively, so the workflow discloses fallback mode and performs validation/reporting before PR creation.
 
+## Schedule ownership
+
+`.github/workflows/upstream-sync.yml` is the sole weekly scheduled index owner. No other workflow in this repository may declare a `schedule:` trigger for upstream maintenance; two schedulers would race for the same refresh branch and produce conflicting index pull requests.
+
+`.github/workflows/ai-skill-maintenance.yml` is therefore **manual or release-dispatch only**: it runs on `workflow_dispatch` or on a `repository_dispatch` of type `upstream-release`, never on a cron. Its fallback branch is `chore/ai-maintenance-upstream-indices`, deliberately distinct from Upstream Sync's `chore/core-ai-upstream-indices`, so the two paths can never overwrite each other's branch.
+
 ## AI maintenance configuration
 
-The separate AI Skill Maintenance workflow needs:
+Index refresh and state-hash verification need **no AI credentials**. `node shared/scripts/update-upstream-indices.mjs` and `node shared/scripts/ai-generate-updates.mjs --print-state-hash` are deterministic, provider-independent, and read no environment secret:
+
+```bash
+node shared/scripts/update-upstream-indices.mjs
+node shared/scripts/ai-generate-updates.mjs --print-state-hash
+```
+
+`ANTHROPIC_API_KEY` (Actions secret) and `ANTHROPIC_MODEL` (Actions variable) are required **only for advisory analysis**:
 
 - Actions secret `ANTHROPIC_API_KEY`
 - Actions variable `ANTHROPIC_MODEL`
@@ -91,9 +104,17 @@ Inspect configuration without a network call or exposing the key:
 node shared/scripts/ai-generate-updates.mjs --check-config
 ```
 
+Missing configuration produces a **redacted skip, not a failed index refresh**. The workflow inspects `--check-config` before installing the SDK; when `configured` is false it records outcome `skipped` with a category such as `missing-api-key` or `missing-model` and still opens the deterministic index pull request.
+
 The generator hashes the complete sorted registry state with SHA-256. Every Core AI release source changes that state and uses the registry's affected-skill list. Without supplied tagged-file evidence, it records a review recommendation instead of rewriting a skill. Its error artifact contains only a redacted category such as `missing-api-key`, `rate-limit`, or `model-access`.
 
+**Generated skill edits and autonomous release bumps are disabled** until tagged upstream files can be supplied to the generator. Detected changes always carry `taggedFiles: []`, so the evidence gate can never be satisfied and no generated-skill pull request job exists. Version bumps stay manual and coordinated with the shipped skill content.
+
 If generation fails, is skipped, or produces no edits, the workflow validates and opens the index-only path with the drift report. It must never describe that PR as skill alignment.
+
+### No workspace artifact: each job reverifies the snapshot
+
+Jobs do not hand a mutated workspace to each other. `refresh-indices` publishes only the canonical state hash as a job output. **Each consuming job reruns the deterministic updater and rejects a hash mismatch** — it recomputes `--print-state-hash` and fails closed with `Upstream state changed during this run` when the recomputed hash differs from the refresh job's. A release landing mid-run therefore aborts the run instead of shipping a mixed snapshot, and no job downloads an index artifact.
 
 ## Safe reruns
 

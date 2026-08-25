@@ -1,5 +1,10 @@
 name: AI Skill Maintenance
 
+# Advisory only. `upstream-sync.yml` owns the weekly schedule and is the single
+# deterministic index owner; this workflow runs on demand or on an upstream
+# release dispatch. Every job refreshes the indices itself and compares the
+# canonical upstream state hash instead of transferring a mutated workspace, so
+# a release that lands mid-run fails closed rather than mixing two snapshots.
 on:
   workflow_dispatch:
     inputs:
@@ -8,11 +13,9 @@ on:
         type: boolean
         default: false
       force:
-        description: "Force run even if no changes detected"
+        description: "Force advisory analysis even if no index changed"
         type: boolean
         default: false
-  schedule:
-    - cron: "17 5 * * 1"
   repository_dispatch:
     types: [upstream-release]
 
@@ -25,6 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       has_index_changes: ${{ steps.check.outputs.has_changes }}
+      state_hash: ${{ steps.state.outputs.hash }}
     steps:
       - uses: actions/checkout@v4
 
@@ -46,20 +50,11 @@ jobs:
             git diff --stat shared/references/
           fi
 
-      - name: Commit index updates in the transferable workspace
-        if: steps.check.outputs.has_changes == 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add shared/references/
-          git commit -m "chore: update upstream indices"
-
-      - name: Upload workspace
-        uses: actions/upload-artifact@v4
-        with:
-          name: workspace-with-indices
-          path: shared/references/
-          retention-days: 1
+      # Publish the snapshot identity, not the snapshot. Consuming jobs rebuild
+      # the same indices from the same upstreams and must land on this hash.
+      - name: Compute canonical upstream state
+        id: state
+        run: echo "hash=$(node shared/scripts/ai-generate-updates.mjs --print-state-hash)" >> "$GITHUB_OUTPUT"
 
   generate-updates:
     needs: refresh-indices
@@ -69,30 +64,45 @@ jobs:
       has_skill_updates: ${{ steps.classify.outputs.has_updates }}
       generation_outcome: ${{ steps.classify.outputs.outcome }}
       error_category: ${{ steps.classify.outputs.error_category }}
+      generation_mode: ${{ steps.classify.outputs.mode }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Download workspace
-        uses: actions/download-artifact@v4
-        with:
-          name: workspace-with-indices
-          path: .
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Install dependencies
-        run: npm install --no-save @anthropic-ai/sdk
+      - name: Refresh and verify canonical upstream state
+        env:
+          EXPECTED_STATE_HASH: ${{ needs.refresh-indices.outputs.state_hash }}
+        run: |
+          node shared/scripts/update-upstream-indices.mjs
+          ACTUAL_STATE_HASH=$(node shared/scripts/ai-generate-updates.mjs --print-state-hash)
+          if [ "$ACTUAL_STATE_HASH" != "$EXPECTED_STATE_HASH" ]; then
+            echo "::error::Upstream state changed during this run; rerun from a clean snapshot."
+            exit 1
+          fi
 
+      # Inspect configuration before installing the SDK: a repository without
+      # AI credentials must skip advisory analysis, not fail the index refresh.
       - name: Inspect AI configuration
+        id: config
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
-        run: node shared/scripts/ai-generate-updates.mjs --check-config
+        run: |
+          CONFIG_JSON=$(node shared/scripts/ai-generate-updates.mjs --check-config)
+          echo "$CONFIG_JSON"
+          echo "configured=$(echo "$CONFIG_JSON" | jq -r '.configured')" >> "$GITHUB_OUTPUT"
+          echo "category=$(echo "$CONFIG_JSON" | jq -r '.category')" >> "$GITHUB_OUTPUT"
 
-      - name: Generate source-evidenced skill updates
+      - name: Install advisory generator dependency
+        if: steps.config.outputs.configured == 'true'
+        run: npm install --no-save @anthropic-ai/sdk
+
+      - name: Generate advisory analysis
         id: generate
+        if: steps.config.outputs.configured == 'true'
         continue-on-error: true
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -104,36 +114,35 @@ jobs:
         id: classify
         if: always()
         run: |
-          ERROR_CATEGORY=$(jq -r '.errorCategory // "none"' .github/state/generator-result.json 2>/dev/null || echo "unknown")
-          if [ "${{ steps.generate.outcome }}" = "failure" ]; then
+          if [ "${{ steps.config.outputs.configured }}" != "true" ]; then
+            OUTCOME="skipped"
+            HAS_UPDATES="false"
+            ERROR_CATEGORY="${{ steps.config.outputs.category }}"
+            MODE="skipped"
+          elif [ "${{ steps.generate.outcome }}" = "failure" ]; then
             OUTCOME="failed"
             HAS_UPDATES="false"
+            ERROR_CATEGORY=$(jq -r '.errorCategory // "unknown"' .github/state/generator-result.json 2>/dev/null || echo "unknown")
+            MODE="ran"
           elif git diff --quiet skills/; then
             OUTCOME=$(jq -r '.outcome // "no-updates"' .github/state/generator-result.json 2>/dev/null || echo "no-updates")
             HAS_UPDATES="false"
+            ERROR_CATEGORY="none"
+            MODE="ran"
           else
             OUTCOME="updated"
             HAS_UPDATES="true"
+            ERROR_CATEGORY="none"
+            MODE="ran"
           fi
           echo "outcome=$OUTCOME" >> "$GITHUB_OUTPUT"
           echo "has_updates=$HAS_UPDATES" >> "$GITHUB_OUTPUT"
           echo "error_category=$ERROR_CATEGORY" >> "$GITHUB_OUTPUT"
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
 
       - name: Build advisory drift report
         if: always()
         run: node shared/scripts/check-upstream-drift.mjs --format markdown --allow-drift > .github/state/upstream-drift.md
-
-      - name: Upload workspace with generator result
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: workspace-with-updates
-          path: |
-            shared/references/
-            skills/
-            .github/state/
-          include-hidden-files: true
-          retention-days: 1
 
       - name: Upload AI maintenance report
         if: always()
@@ -147,79 +156,31 @@ jobs:
           include-hidden-files: true
           if-no-files-found: ignore
 
-  create-pr:
-    needs: generate-updates
-    if: needs.generate-updates.outputs.generation_outcome == 'updated' && needs.generate-updates.outputs.has_skill_updates == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download workspace
-        uses: actions/download-artifact@v4
-        with:
-          name: workspace-with-updates
-          path: .
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Run strict validation
-        run: node eval/harness/run.mjs
-
-      - name: Read update summary
-        id: summary
-        run: |
-          SUMMARY=$(jq -r '.updates | map("- **\(.skill)**: \(.summary)\n  Tagged files: \(.taggedFilesInspected | join(", "))") | join("\n")' .github/state/update-summary.json)
-          echo "summary<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$SUMMARY" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-
-      - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v6
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "chore: AI-generated skill updates"
-          title: "AI-generated Core AI skill updates"
-          body: |
-            ## Source-evidenced updates
-
-            ${{ steps.summary.outputs.summary }}
-
-            AI generation is advisory. Review every tagged file citation and run the relevant live smoke tests before merging.
-          branch: ai/skill-updates-${{ github.run_number }}
-          delete-branch: true
-          add-paths: |
-            skills/**
-            .github/state/last-sync.json
-          labels: |
-            ai-generated
-            needs-review
-
   create-index-pr:
     needs: [refresh-indices, generate-updates]
-    if: |
-      always() &&
-      needs.refresh-indices.outputs.has_index_changes == 'true' &&
-      (
-        needs.generate-updates.result == 'failure' ||
-        needs.generate-updates.result == 'skipped' ||
-        needs.generate-updates.outputs.generation_outcome != 'updated' ||
-        needs.generate-updates.outputs.has_skill_updates != 'true'
-      )
+    if: always() && needs.refresh-indices.outputs.has_index_changes == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Download best available workspace
-        uses: actions/download-artifact@v4
         with:
-          name: ${{ needs.generate-updates.result == 'success' && 'workspace-with-updates' || 'workspace-with-indices' }}
-          path: .
+          # Full history: the harness compares skills/ against the commit that
+          # last bumped the plugin version, which a shallow clone cannot see.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+
+      - name: Refresh and verify canonical upstream state
+        env:
+          EXPECTED_STATE_HASH: ${{ needs.refresh-indices.outputs.state_hash }}
+        run: |
+          node shared/scripts/update-upstream-indices.mjs
+          ACTUAL_STATE_HASH=$(node shared/scripts/ai-generate-updates.mjs --print-state-hash)
+          if [ "$ACTUAL_STATE_HASH" != "$EXPECTED_STATE_HASH" ]; then
+            echo "::error::Upstream state changed during this run; rerun from a clean snapshot."
+            exit 1
+          fi
 
       - name: Run non-drift validation
         run: node eval/harness/run.mjs --skip-upstream-drift
@@ -234,12 +195,22 @@ jobs:
           cat .github/state/upstream-drift.md >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
+      - name: Determine pull request token mode
+        id: token-mode
+        env:
+          UPSTREAM_SYNC_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN }}
+        run: |
+          if [ -n "$UPSTREAM_SYNC_TOKEN" ]; then
+            echo "mode=UPSTREAM_SYNC_TOKEN (normal pull_request checks should trigger)" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=GITHUB_TOKEN fallback. Normal pull_request workflows may not run recursively; this job performed complete non-drift validation and attached drift evidence." >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Upload fallback report
         uses: actions/upload-artifact@v4
         with:
           name: index-only-maintenance-report
           path: |
-            .github/state/generator-result.json
             .github/state/upstream-drift.md
           include-hidden-files: true
           if-no-files-found: ignore
@@ -247,18 +218,28 @@ jobs:
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v6
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "chore: refresh upstream indices"
-          title: "chore: refresh Core AI upstream indices"
+          token: ${{ secrets.UPSTREAM_SYNC_TOKEN || secrets.GITHUB_TOKEN }}
+          commit-message: "chore: refresh AI-maintenance upstream indices"
+          title: "chore: refresh AI-maintenance upstream indices"
           body: |
-            Automated refresh of every registry-owned Core AI index under `shared/references/`.
+            Deterministic refresh of every registry-owned Core AI index under `shared/references/`,
+            opened by the advisory AI maintenance workflow. `upstream-sync.yml` owns the weekly
+            schedule and its own branch; this branch never collides with it.
 
-            AI generation is advisory and did not produce a validated skill edit. Error category: `${{ needs.generate-updates.outputs.error_category || 'skipped' }}`.
+            Token mode: ${{ steps.token-mode.outputs.mode }}
+
+            Advisory analysis mode: `${{ needs.generate-updates.outputs.generation_mode || 'not-run' }}`.
+            Advisory outcome: `${{ needs.generate-updates.outputs.generation_outcome || 'not-run' }}`.
+            Category: `${{ needs.generate-updates.outputs.error_category || 'not-run' }}`.
+
+            AI generation is advisory and never edits a skill: generated skill pull requests stay
+            disabled until tagged upstream files can be supplied as evidence. A `skipped` outcome
+            means this repository has no AI provider configured, which is not an index-refresh failure.
 
             This PR reports drift; it does **not** claim the affected skills are aligned.
 
             ${{ steps.drift.outputs.report }}
-          branch: chore/core-ai-upstream-indices
+          branch: chore/ai-maintenance-upstream-indices
           delete-branch: true
           add-paths: |
             shared/references/**
