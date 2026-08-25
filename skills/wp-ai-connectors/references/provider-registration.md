@@ -58,9 +58,26 @@ array(
 | `none` | 7.0 | No authentication. Registers fine, but Settings → Connectors renders no card for it — see below. |
 | `application_password` | **7.1** | A `username` + `password` pair. Env var / constant hold one `username:password` string; the DB setting is an `object`. Auto-generated `setting_name` is `connectors_{$type}_{$id}_application_password`. |
 
-`application_password` is core in 7.1 (`@since 7.1.0` in `src/wp-includes/connectors.php`), and also reaches 7.0 sites running Gutenberg 23.6+ via `lib/compat/wordpress-7.0/`. It is aimed at non-AI connector types such as `content_source` (a remote WordPress), not at `ai_provider`. Unlike `api_key`, the values are masked in REST but never validated against the remote.
+`application_password` is core in 7.1 and also reaches 7.0 sites running Gutenberg 23.6+ via `lib/compat/wordpress-7.0/`. It is aimed at non-AI connector types such as `content_source` (a remote WordPress), not at `ai_provider`. Unlike `api_key`, the values are masked in REST but never validated against the remote.
 
-Other authentication methods (OAuth, JWT, mTLS) are still not supported by the Settings → Connectors screen, though the underlying registry accepts arbitrary extra `authentication` data. Until that lands, providers needing other auth must ship their own admin UI for credentials.
+Get the provenance right, because it is easy to over-claim: **the registry class itself is `@since 7.0.0`** — every `@since` tag in `src/wp-includes/class-wp-connector-registry.php` reads 7.0.0, and the class is not new in 7.1. What 7.1 added is `application_password` support, tagged `@since 7.1.0` on the implementing functions in `src/wp-includes/connectors.php` (`wp_connectors_parse_application_password_credentials()`, `wp_connectors_get_application_password_credentials()`, `wp_connectors_sanitize_application_password_credentials()`). On the 7.0 branch the string `application_password` does not appear in either file.
+
+### The registry allow-lists `authentication`; it does not pass it through
+
+`WP_Connector_Registry::register()` validates `authentication.method` against the closed list and then **rebuilds the authentication array** from scratch rather than copying yours. It starts from `array( 'method' => … )` and, only when the method is `api_key` or `application_password`, copies in at most four further keys:
+
+| Key | Behavior |
+| --- | --- |
+| `credentials_url` | Copied when a non-empty string. |
+| `setting_name` | Copied when set; otherwise auto-derived as `connectors_{$type}_{$id}_{$method}` with hyphens normalized to underscores. |
+| `constant_name` | Copied when set. |
+| `env_var_name` | Copied when set. |
+
+That is the whole allow-list, and it is the same for both credential methods — the only per-method difference is the `setting_name` suffix. A `none` method keeps `method` alone.
+
+Everything else is silently dropped: **unknown authentication keys are discarded**, with no `_doing_it_wrong()` and no warning. `wp_get_connector()` will simply not return them, so a provider that stashed an org ID, a region, an OAuth `token_url`, a JWT issuer, or an mTLS certificate path alongside `api_key` finds it gone after a round trip — and code that reads it back gets `null`.
+
+So OAuth, JWT, and mTLS need **provider-owned storage and UI**: register the connector with the closest supported `method` (or `none`) purely for discovery, keep the real credential material in your own option or a dedicated settings screen, and do not expect the registry to carry it. Settings → Connectors renders a card only for `api_key` and `application_password`, so a custom-auth provider needs its own render component registered with the connectors store regardless. Track #64789 and the Connectors API dev note's "Looking ahead" section for expansion.
 
 ## API key naming convention
 

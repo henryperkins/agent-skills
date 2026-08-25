@@ -54,10 +54,12 @@ Declaration is all it does. A `FunctionDeclaration` holds no callable, so the ca
 
 ```php
 // Single call — the model can REQUEST an ability here, but nothing executes.
-$result = wp_ai_client_prompt( 'Add an alt text to image #123 if it doesn\'t have one yet.' )
-    ->using_abilities( 'core/get-attachment', 'core/update-attachment' )
+$result = wp_ai_client_prompt( 'Summarize this site’s WordPress and PHP versions and whether the environment is production-ready.' )
+    ->using_abilities( 'core/get-site-info', 'core/get-environment-info' )
     ->generate_text_result();
 ```
+
+Those two IDs are real: Core 7.1 registers exactly `core/get-site-info`, `core/get-environment-info`, and `core/get-user-info`, and nothing else under `core/`. Any other ability ID in an example — `my-plugin/...` and the like — is a placeholder for one you register yourself; `execute_ability()` returns `ability_not_allowed` for anything the resolver was not constructed with, and `using_abilities()` cannot declare an ability that was never registered.
 
 Running the requested ability and returning its output to the model requires `WP_AI_Client_Ability_Function_Resolver` and a second generation call. The abilities you pass must already be registered. See step 6 of the skill's `SKILL.md` for the full round trip, and the `wp-abilities-api` skill for the registration side.
 

@@ -819,6 +819,43 @@ export function assertAbilitiesAuditVerifyPrecision(repoRoot) {
   ]);
 }
 
+/**
+ * AI Client and connector examples that must be runnable and honest.
+ *
+ * A copyable example naming an ability Core does not register fails on a stock
+ * install; one that reads `getDataUri()` unconditionally breaks the moment a
+ * provider returns a remote URL; and connector guidance that understates
+ * write-time credential loss sends implementers hunting the wrong bug.
+ */
+export function assertAiClientConnectorPrecision(repoRoot) {
+  for (const file of [
+    "skills/wp-ai-client/SKILL.md",
+    "skills/wp-ai-client/references/prompt-builder.md",
+  ]) {
+    requireExcludes(repoRoot, file, ["core/get-attachment", "core/update-attachment"]);
+    requireIncludes(repoRoot, file, ["core/get-site-info", "core/get-environment-info"]);
+  }
+  requireIncludes(repoRoot, "skills/wp-ai-client/references/rest-patterns.md", [
+    "$image->isRemote()",
+    "$image->getUrl()",
+    "$image->getDataUri()",
+    "wp_safe_remote_get",
+    "limit_response_size",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-ai-connectors/SKILL.md", [
+    "listModelMetadata()",
+    "stores an empty string",
+    "no admin-visible error",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-ai-connectors/references/provider-registration.md", [
+    "rebuilds the authentication array",
+    "unknown authentication keys are discarded",
+  ]);
+  requireExcludes(repoRoot, "skills/wp-ai-connectors/references/provider-registration.md", [
+    "accepts arbitrary extra `authentication` data",
+  ]);
+}
+
 export function runReleaseConformance(repoRoot) {
   assertPluginVersionFresh(repoRoot);
   assertMarketplaceVersionMatches(repoRoot);
@@ -831,6 +868,7 @@ export function runReleaseConformance(repoRoot) {
   assertLocalRuntimeHygiene(repoRoot);
   assertAbilitiesApiPrecision(repoRoot);
   assertAbilitiesAuditVerifyPrecision(repoRoot);
+  assertAiClientConnectorPrecision(repoRoot);
   assert(
     IMMEDIATE_UNWATCH_PATTERN.test("const unwatch = watch( () => { return cleanup; } );\n// Dispose later.\nunwatch();"),
     "Immediate-unwatch regression fixture must exercise the structural check"

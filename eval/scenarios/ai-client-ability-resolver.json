@@ -1,6 +1,11 @@
 {
   "name": "Use the low-level AI Client Ability resolver and default timeout filter",
-  "skills": ["wordpress-router", "wp-project-triage", "wp-ai-client", "wp-abilities-api"],
+  "skills": [
+    "wordpress-router",
+    "wp-project-triage",
+    "wp-ai-client",
+    "wp-abilities-api"
+  ],
   "query": "On WordPress 7.0 I need to translate an Ability ID to the AI-safe function name, execute incoming function calls through an allow-list containing only my-plugin/lookup, and make subsequently created AI prompt builders use a 45-second default timeout. Which Core APIs should I use?",
   "expected_behavior": [
     "Step 1: Route to wp-ai-client with wp-abilities-api as the registration and permission reference",
@@ -9,7 +14,9 @@
     "Step 4: Construct new WP_AI_Client_Ability_Function_Resolver('my-plugin/lookup') so only that Ability is allowed",
     "Step 5: Call execute_ability($function_call)->getResponse() and preserve the Ability permission path",
     "Step 6: Install wp_ai_client_default_request_timeout with add_filter before constructing the prompt builders that should inherit 45 seconds",
-    "Step 7: Do not confuse the Core timeout filter with the AI plugin's wpai_default_request_timeout filter"
+    "Step 7: Do not confuse the Core timeout filter with the AI plugin's wpai_default_request_timeout filter",
+    "Step N: Use only ability IDs Core 7.1 actually registers in a runnable example — core/get-site-info, core/get-environment-info, core/get-user-info — and label every other ID explicitly as a plugin-owned placeholder that must be registered with wp_register_ability() first",
+    "Step N+1: Do not use core/get-attachment or core/update-attachment; no core/*-attachment ability exists in WordPress 7.1"
   ],
   "success_criteria": [
     "Uses both verified static conversion helper names",
@@ -18,6 +25,8 @@
     "Uses wp_ai_client_default_request_timeout for Core builders",
     "Explains that the timeout filter is read during builder construction",
     "Keeps target Ability permission checks in the execution path",
-    "Does not invent resolver or timeout APIs"
+    "Does not invent resolver or timeout APIs",
+    "Every core/ ability ID in the example exists in WordPress 7.1",
+    "Plugin-owned ability IDs are labelled as placeholders rather than presented as shipped"
   ]
 }

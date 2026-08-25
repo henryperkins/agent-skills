@@ -1,6 +1,10 @@
 {
   "name": "Build a Mistral provider plugin that registers with the AI Client",
-  "skills": ["wordpress-router", "wp-project-triage", "wp-ai-connectors"],
+  "skills": [
+    "wordpress-router",
+    "wp-project-triage",
+    "wp-ai-connectors"
+  ],
   "query": "I want to build a WordPress plugin called 'AI Provider for Mistral' that adds Mistral as an option in the Settings → Connectors screen on WordPress 7.0. Site owners should set their Mistral API key like they would for the official Anthropic/Google/OpenAI providers. What do I need to register, and where?",
   "expected_behavior": [
     "Step 1: Run wordpress-router to classify repo kind",
@@ -16,7 +20,11 @@
     "Step 11: Point at Anthropic 1.0.4, Google 1.1.1, and OpenAI 1.1.0 as the current flagship provider baselines",
     "Step 12: Keep supported options model-aware; do not advertise sampling options for models that reject them (Anthropic 1.0.4 omits them for Claude Opus 4.7+ and Claude 5)",
     "Step 13: Normalize empty tool-call arguments to the provider's required JSON object shape and test both outbound serialization and inbound parsing",
-    "Step 14: Gate PHP AI Client 1.4 embedding metadata and model creation at runtime with interface_exists( EmbeddingGenerationModelInterface::class ); Core 7.1 bundles 1.3.1 and must not fatal"
+    "Step 14: Gate PHP AI Client 1.4 embedding metadata and model creation at runtime with interface_exists( EmbeddingGenerationModelInterface::class ); Core 7.1 bundles 1.3.1 and must not fatal",
+    "Step N: Explain that saving an ai_provider API key triggers a live availability check after the value is already persisted, on rest_post_dispatch, and that a failure or timeout runs update_option( $setting_name, '' )",
+    "Step N+1: State that the server surfaces no admin-visible error for that blanking — only the shipped Connectors screen's client-side alert — and that writes outside POST /wp/v2/settings skip validation entirely",
+    "Step N+2: State that WP_Connector_Registry::register() rebuilds the authentication array from method plus credentials_url, setting_name, constant_name, and env_var_name only, so unknown authentication keys are discarded and OAuth/JWT/mTLS data needs provider-owned storage and UI",
+    "Step N+3: Attribute provenance correctly — the registry class is @since 7.0.0; application_password support is what 7.1 added, in connectors.php"
   ],
   "success_criteria": [
     "Routes to wp-ai-connectors skill",
@@ -29,6 +37,9 @@
     "References the current official provider releases as canonical bootstrap and behavior sources",
     "Uses model-aware option metadata instead of advertising one option set for every model",
     "Handles empty tool-call arguments without encoding an empty array where the provider requires an object",
-    "Feature-detects the PHP AI Client 1.4 embedding interface before advertising or creating embedding models"
+    "Feature-detects the PHP AI Client 1.4 embedding interface before advertising or creating embedding models",
+    "Names the live availability/model-discovery call as the cause of a blanked API key",
+    "Does not claim the registry preserves arbitrary extra authentication keys",
+    "Does not claim WP_Connector_Registry is new in 7.1"
   ]
 }

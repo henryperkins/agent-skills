@@ -97,24 +97,60 @@ function my_plugin_generate_featured_image( WP_REST_Request $request ) {
         return $image;
     }
 
-    // Parse the data URI returned by the AI Client. Bound the size before decoding,
-    // restrict to known image subtypes, and re-validate MIME after upload.
-    $data_uri        = $image->getDataUri();
+    // A generated File carries EITHER inline base64 OR a remote URL — never both.
+    // getDataUri() and getUrl() are each `?string` and each return null in the
+    // other's case, so branch on isRemote() before touching either. Validate the
+    // declared MIME first, bound the payload, and re-validate MIME after upload.
     $max_image_bytes = (int) apply_filters( 'my_plugin_ai_image_max_bytes', 10 * MB_IN_BYTES );
-    if ( strlen( $data_uri ) > 2 * $max_image_bytes ) {
-        return new WP_Error( 'image_too_large', 'AI image response is too large to store.', array( 'status' => 500 ) );
-    }
-    if ( ! preg_match( '#^data:image/(?<subtype>png|jpeg|webp);base64,(?<payload>[A-Za-z0-9+/=]+)$#', $data_uri, $matches ) ) {
-        return new WP_Error( 'invalid_image', 'AI image response is not a supported data URI.', array( 'status' => 500 ) );
-    }
-    $data = base64_decode( $matches['payload'], true );
-    if ( false === $data || strlen( $data ) > $max_image_bytes ) {
-        return new WP_Error( 'invalid_image', 'AI image response could not be decoded or is too large.', array( 'status' => 500 ) );
-    }
+    $allowed_mimes   = array(
+        'image/png'  => 'png',
+        'image/jpeg' => 'jpg',
+        'image/webp' => 'webp',
+    );
+    $mime_type       = $image->getMimeType();
 
-    $subtype   = strtolower( $matches['subtype'] );
-    $extension = ( 'jpeg' === $subtype ) ? 'jpg' : $subtype;
-    $mime_type = 'image/' . $subtype;
+    if ( ! isset( $allowed_mimes[ $mime_type ] ) ) {
+        return new WP_Error( 'invalid_image', 'AI image response has an unsupported MIME type.', array( 'status' => 500 ) );
+    }
+    $extension = $allowed_mimes[ $mime_type ];
+
+    if ( $image->isRemote() ) {
+        $url = $image->getUrl();
+        if ( ! is_string( $url ) || ! wp_http_validate_url( $url ) ) {
+            return new WP_Error( 'invalid_image_url', 'AI image URL is not safe to download.', array( 'status' => 500 ) );
+        }
+        $response = wp_safe_remote_get( $url, array(
+            'timeout'             => 30,
+            'redirection'         => 3,
+            'limit_response_size' => $max_image_bytes + 1,
+        ) );
+        if ( is_wp_error( $response ) ) {
+            return $response;
+        }
+        $status = wp_remote_retrieve_response_code( $response );
+        if ( $status < 200 || $status >= 300 ) {
+            return new WP_Error( 'image_download_failed', 'AI image URL returned a non-success response.', array( 'status' => 500 ) );
+        }
+        $data = wp_remote_retrieve_body( $response );
+        if ( strlen( $data ) > $max_image_bytes ) {
+            return new WP_Error( 'image_too_large', 'AI image response is too large to store.', array( 'status' => 500 ) );
+        }
+    } else {
+        $data_uri = $image->getDataUri();
+        if ( ! is_string( $data_uri ) ) {
+            return new WP_Error( 'invalid_image', 'AI image response has no usable file data.', array( 'status' => 500 ) );
+        }
+        if ( strlen( $data_uri ) > 2 * $max_image_bytes ) {
+            return new WP_Error( 'image_too_large', 'AI image response is too large to store.', array( 'status' => 500 ) );
+        }
+        if ( ! preg_match( '#^data:image/(?:png|jpeg|webp);base64,(?<payload>[A-Za-z0-9+/=]+)$#', $data_uri, $matches ) ) {
+            return new WP_Error( 'invalid_image', 'AI image response is not a supported data URI.', array( 'status' => 500 ) );
+        }
+        $data = base64_decode( $matches['payload'], true );
+        if ( false === $data || strlen( $data ) > $max_image_bytes ) {
+            return new WP_Error( 'invalid_image', 'AI image response could not be decoded or is too large.', array( 'status' => 500 ) );
+        }
+    }
 
     $upload = wp_upload_bits( 'ai-' . wp_generate_uuid4() . '.' . $extension, null, $data );
     if ( ! empty( $upload['error'] ) ) {

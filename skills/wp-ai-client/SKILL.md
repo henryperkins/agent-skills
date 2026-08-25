@@ -130,14 +130,17 @@ Do not handle API keys. The Connectors API (in core) reads keys from env var →
 
 ### 6) Function calling: `using_abilities()` declares functions — you drive the round trip
 
-If your feature needs the model to *call* something — read a post, update an attachment, classify content — pass registered ability IDs to `using_abilities()`. It converts each into a `FunctionDeclaration` (name, description, input schema) and terminates in `using_function_declarations()`. Pair this with `wp-abilities-api` to define the abilities themselves.
+If your feature needs the model to *call* something — read site metadata, classify content, update a record — pass registered ability IDs to `using_abilities()`. It converts each into a `FunctionDeclaration` (name, description, input schema) and terminates in `using_function_declarations()`. Pair this with `wp-abilities-api` to define the abilities themselves.
+
+**Core 7.1 registers exactly three abilities out of the box** — `core/get-site-info`, `core/get-environment-info`, and `core/get-user-info`. Nothing else in the `core/` namespace exists — media-oriented IDs of the `core/…-attachment` shape appear in older guidance and are not real. Every other ID in an example is a placeholder you must register yourself with `wp_register_ability()` before passing it here, or the resolver rejects it.
 
 **`using_abilities()` does not execute anything.** A `FunctionDeclaration` carries no callable. When the model decides to call one, the result comes back holding a *function-call part*, and nothing has run: no `permission_callback`, no `execute_callback`. Executing it and feeding the answer back is the caller's job, and Core gives you `WP_AI_Client_Ability_Function_Resolver` to do it. Treat the loop below as mandatory, not as a low-level alternative:
 
 ```php
-$abilities = array( 'core/get-attachment', 'core/update-attachment' );
+// Real Core 7.1 abilities — this example runs on a stock install.
+$abilities = array( 'core/get-site-info', 'core/get-environment-info' );
 
-$result = wp_ai_client_prompt( 'Add alt text to image #123 if it lacks one.' )
+$result = wp_ai_client_prompt( 'Summarize this site’s WordPress and PHP versions and whether the environment is production-ready.' )
     ->using_abilities( ...$abilities )
     ->generate_text_result();
 

@@ -147,6 +147,23 @@ If the connector isn't showing up:
 - Confirm the connector ID matches `/^[a-z0-9_-]+$/` — hyphens are allowed (normalized to underscores in the derived key names); an invalid ID (e.g. uppercase) triggers `_doing_it_wrong()` and `register()` returns `null`.
 - Confirm `type` is `ai_provider` so the connector is treated as an AI provider and discovered from the AI Client registry. (The admin screen actually renders a card for *any* connector whose `authentication.method` is `api_key` — the built-in Akismet connector is `type` `spam_filtering` and still appears — so a missing card isn't explained by `type` alone. A `none`-auth connector is the reverse: it registers fine and `wp_get_connector()` returns it, but the screen assigns a render component only for `api_key` and `application_password`, so it never gets a card.)
 
+## Saving an API key runs a live provider call — make discovery reliable
+
+Core validates an AI-provider API key **against the live provider**, and a failing check destroys the key the admin just saved. This is the single most-reported "my key keeps going blank" bug, and it is not a sanitize-callback bug:
+
+1. The `api_key` setting's `sanitize_callback` is plain `sanitize_text_field`. It validates nothing, and the REST settings controller **persists the submitted key first**.
+2. Afterwards, on `rest_post_dispatch`, `_wp_connectors_rest_settings_dispatch()` runs — only for `POST`/`PUT` to `/wp/v2/settings`, and only for connectors whose `type` is `ai_provider`.
+3. It calls `_wp_connectors_is_ai_api_key_valid()`, which sets the submitted key on the AI Client registry and asks `ProviderRegistry::isProviderConfigured()` → `$className::availability()->isConfigured()`. `createProviderAvailability()` is abstract, so **your provider decides what that costs**: the shipped `ListModelsApiBasedProviderAvailability` performs a live `listModelMetadata()` round trip, while `GenerateTextApiBasedProviderAvailability` performs a one-token `generateTextResult()` call instead.
+4. On anything other than `true` — `false` from `isConfigured()`, a swallowed `NetworkException` from a timeout, or `null` from a caught exception — Core runs `update_option( $setting_name, '' )` and blanks the value in the response. So a discovery **timeout stores an empty string** over a key that may have been perfectly valid.
+
+There is no admin-visible error from the server: no `WP_Error`, no `add_settings_error()`, no admin notice, and only a debug-only `wp_trigger_error()` on the exception branch. The shipped Settings → Connectors screen compensates client-side — it notices the value came back empty and renders a `role="alert"` message reading "It was not possible to connect to the provider using this key." Any write that does **not** go through `POST /wp/v2/settings` — `wp option update`, a custom settings screen, a direct `update_option()` — skips validation entirely and gets neither the blanking nor the message.
+
+What that means for a provider you ship:
+
+- Make `availability()` / model discovery fast and reliable, and prefer the cheapest `ProviderAvailabilityInterface` your API supports. Note that `listModelMetadata()` results are cached for 86400 seconds keyed on provider class plus AI Client version — **not** on the API key — so on a site with a persistent object cache the check may not be live at all, and on a site without one it is live on every save.
+- Test all three paths before shipping: an invalid key (expect blanking plus the screen's alert), an unreachable or slow endpoint (same outcome — this is the surprising one), and a valid key (expect persistence).
+- When a user reports a blanked key, look at provider reachability from the server, not at the settings form.
+
 ## Verification
 
 - `wp_is_connector_registered( 'your_provider_id' )` returns `true` after `init`.
@@ -163,6 +180,7 @@ If the connector isn't showing up:
 - **Override not taking effect**: hooked too late, or hooked outside `wp_connectors_init`. Setting the registry instance outside `init` triggers `_doing_it_wrong()`.
 - **Duplicate-ID error during `register()`**: another plugin already registered that ID. Use `is_registered()` first; if you need to override, follow the unregister-modify-register pattern.
 - **Provider works locally but not on a managed host**: the host may have set `MY_PROVIDER_API_KEY` as a sealed env var. Env beats constant beats database — that's the intended priority and the host's value will win.
+- **"My API key saves as blank"**: the post-dispatch validation call failed. See "Saving an API key runs a live provider call" above — a timeout during model discovery stores an empty string with no server-side error. Reproduce by pointing the provider at an unreachable host and saving.
 - **Embedding model never resolves**: metadata is missing `CapabilityEnum::embeddingGeneration()`, the exact `OptionEnum::inputModalities()` combination, or `OptionEnum::dimensions()` for the requested value; do not substitute made-up capability names.
 - **`OptionEnum::dimensions()` throws, or `EmbeddingGenerationModelInterface` is "not found"**: the site is resolving core's bundled SDK, which is pre-1.4 through WP 7.1. `CapabilityEnum::embeddingGeneration()` resolving is not evidence the rest of the surface exists. Gate the 1.4-only surface on `interface_exists( EmbeddingGenerationModelInterface::class )` so the model is never advertised there; don't bundle a second SDK copy to force it.
 - **Embedding generation resolves but fails at runtime**: the concrete model does not also implement `ModelInterface`, returned a different vector count than input count, or reported dimensions that do not match every vector.
