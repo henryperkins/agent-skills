@@ -4,6 +4,9 @@
 # network access (downloads WP + the ai plugin zip on each run).
 set -euo pipefail
 cd "$(dirname "$0")"
+# The MU plugin writes its result into the mounted directory. Remove it on every
+# exit path so a run never leaves a working-tree artifact behind.
+trap 'rm -f mu-plugins/result.json' EXIT
 
 rm -f mu-plugins/result.json
 npx -y @wp-playground/cli@latest run-blueprint \

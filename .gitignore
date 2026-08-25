@@ -9,4 +9,6 @@ pnpm-debug.log*
 .env.*
 .superpowers/
 **/.plugin-eval/
+# Runtime-only Playground smoke output; run.sh writes and removes it per run.
+eval/playground/ai-plugin-smoke/mu-plugins/result.json
 

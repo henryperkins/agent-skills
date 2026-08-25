@@ -7,7 +7,7 @@
  *
  * Outputs JSON to stdout:
  *   {
- *     "wp_floor":              "<earliest 'Requires at least' across plugin/theme headers, or null>",
+ *     "wp_floor":              "<earliest 'Requires at least' across plugin PHP and theme style.css headers, or null>",
  *     "supports_ai_client":    <bool — true iff every detected floor is >= 7.0>,
  *     "uses_ai_client":        <bool — true iff `wp_ai_client_prompt(` appears in PHP>,
  *     "uses_legacy_packages":  <bool — true iff composer.json depends on wordpress/php-ai-client or wordpress/wp-ai-client>,
@@ -139,9 +139,17 @@ async function main() {
     // No composer.json; fine.
   }
 
-  // 2) Walk PHP files, gather signals.
+  // 2) Walk plugin PHP and theme stylesheets, gather signals.
+  //
+  // A block theme declares its WordPress floor in style.css, not in PHP, so a
+  // PHP-only walk reports wp_floor: null for an otherwise 7.1-ready theme and
+  // wrongly says the Core AI Client path is unsupported. Read style.css for
+  // headers; scan AI usage only in PHP.
   for await (const file of walk(root)) {
-    if (!file.endsWith(".php")) continue;
+    const isPhp = file.endsWith(".php");
+    const isThemeStylesheet = path.basename(file) === "style.css";
+    if (!isPhp && !isThemeStylesheet) continue;
+
     let contents;
     try {
       contents = await fs.readFile(file, "utf8");
@@ -149,20 +157,15 @@ async function main() {
       continue;
     }
 
-    // Plugin/theme header detection (Requires at least, plus a sanity check for header format).
-    if (
-      contents.includes("Plugin Name:") ||
-      contents.includes("Theme Name:") ||
-      contents.includes("Requires at least:")
-    ) {
-      const floor = extractHeaderField(contents, "Requires at least");
-      if (floor) {
-        floors.push({ file: path.relative(root, file), floor });
-        if (lowestFloor === null || compareVersions(floor, lowestFloor) < 0) {
-          lowestFloor = floor;
-        }
+    const floor = extractHeaderField(contents, "Requires at least");
+    if (floor) {
+      floors.push({ file: path.relative(root, file), floor });
+      if (lowestFloor === null || compareVersions(floor, lowestFloor) < 0) {
+        lowestFloor = floor;
       }
     }
+
+    if (!isPhp) continue;
 
     // AI Client usage.
     if (contents.includes("wp_ai_client_prompt(")) {
@@ -182,7 +185,7 @@ async function main() {
 
   if (lowestFloor === null) {
     result.notes.push(
-      "No 'Requires at least' header found in any PHP file. Cannot determine WP version floor; assume the project may run on < 7.0 unless confirmed otherwise."
+      "No 'Requires at least' header found in any plugin PHP file or theme style.css. Cannot determine WP version floor; assume the project may run on < 7.0 unless confirmed otherwise."
     );
   } else if (!result.supports_ai_client) {
     result.notes.push(

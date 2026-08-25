@@ -69,13 +69,19 @@ function validateSkillName(name) {
 }
 
 function validatePortableTriageCommand({ repoRoot, skillPath, expectedName, markdown }) {
-  const localTriageCommand = "`node scripts/detect_wp_project.mjs`";
-  if (expectedName !== "wp-project-triage" && markdown.includes(localTriageCommand)) {
+  // Both forms are checkout-relative. `scripts/…` only resolves inside
+  // wp-project-triage itself; `skills/wp-project-triage/…` only resolves from
+  // this repository root, not from an installed skill directory.
+  const nonPortableCommands = [
+    "`node scripts/detect_wp_project.mjs`",
+    "`node skills/wp-project-triage/scripts/detect_wp_project.mjs`",
+  ];
+  if (
+    expectedName !== "wp-project-triage" &&
+    nonPortableCommands.some((command) => markdown.includes(command))
+  ) {
     throw new Error(
-      [
-        `Invalid local triage command in ${path.relative(repoRoot, skillPath)}.`,
-        `Only wp-project-triage ships scripts/detect_wp_project.mjs; other skills must reference the adjacent wp-project-triage skill path.`,
-      ].join(" ")
+      `Invalid checkout-relative triage command in ${path.relative(repoRoot, skillPath)}. Resolve the installed wp-project-triage skill directory or use manual classification.`
     );
   }
 }

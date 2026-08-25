@@ -685,6 +685,51 @@ export function assertCompleteMaintenanceState() {
  * deterministic updater and compares the canonical upstream state hash, so a
  * release that lands mid-run fails closed instead of shipping a mixed snapshot.
  */
+/**
+ * Repository-local runtime hygiene.
+ *
+ * Three defects share one root cause: a helper that only works when it happens
+ * to be run from this checkout. The AI Client detector ignored theme
+ * `style.css` headers, so a block theme declaring `Requires at least: 7.1`
+ * reported no floor at all; a skill told readers to run a path that exists only
+ * here; and the Playground smoke wrote its result into the working tree.
+ */
+export function assertLocalRuntimeHygiene(repoRoot) {
+  const themeRoot = fs.mkdtempSync(path.join(os.tmpdir(), "wp-ai-client-theme-"));
+  fs.writeFileSync(
+    path.join(themeRoot, "style.css"),
+    "/*\nTheme Name: Detector Fixture\nRequires at least: 7.1\n*/\n",
+    "utf8"
+  );
+  const detector = spawnSync(
+    "node",
+    [path.join(repoRoot, "skills/wp-ai-client/scripts/detect_ai_client.mjs"), "--root", themeRoot],
+    { encoding: "utf8" }
+  );
+  fs.rmSync(themeRoot, { recursive: true, force: true });
+  assert(detector.status === 0, "AI Client detector must exit successfully on a theme fixture");
+  const detectorReport = JSON.parse(detector.stdout);
+  assert(detectorReport.wp_floor === "7.1", "Theme style.css must set the detected WordPress floor");
+  assert(detectorReport.supports_ai_client === true, "A theme requiring 7.1 must support the Core AI Client path");
+
+  requireExcludes(repoRoot, "skills/wp-ai-plugin/SKILL.md", [
+    "node skills/wp-project-triage/scripts/detect_wp_project.mjs",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-ai-plugin/SKILL.md", [
+    "If the triage skill is unavailable, classify the project manually",
+  ]);
+  requireIncludes(repoRoot, ".gitignore", [
+    "eval/playground/ai-plugin-smoke/mu-plugins/result.json",
+  ]);
+  requireIncludes(repoRoot, "eval/playground/ai-plugin-smoke/run.sh", [
+    "trap 'rm -f mu-plugins/result.json' EXIT",
+  ]);
+  assert(
+    git(repoRoot, ["ls-files", "--", "eval/playground/ai-plugin-smoke/mu-plugins/result.json"]) === "",
+    "Runtime smoke output must not be tracked"
+  );
+}
+
 export function assertAiMaintenanceWorkflow(repoRoot) {
   const workflow = read(repoRoot, ".github/workflows/ai-skill-maintenance.yml");
   const deterministicWorkflow = read(repoRoot, ".github/workflows/upstream-sync.yml");
@@ -717,6 +762,7 @@ export function runReleaseConformance(repoRoot) {
   assertCompleteMaintenanceState();
   assertCoreAiUpstreamRegistry(repoRoot);
   assertAiMaintenanceWorkflow(repoRoot);
+  assertLocalRuntimeHygiene(repoRoot);
   assert(
     IMMEDIATE_UNWATCH_PATTERN.test("const unwatch = watch( () => { return cleanup; } );\n// Dispose later.\nunwatch();"),
     "Immediate-unwatch regression fixture must exercise the structural check"

@@ -30,7 +30,7 @@ If the task is to build an AI feature in your own plugin without involving the c
 
 ### 0) Triage and confirm AI plugin context
 
-1. Run triage: `node skills/wp-project-triage/scripts/detect_wp_project.mjs`
+1. Run triage from the installed `wp-project-triage` skill, resolved relative to that skill's own directory — `node ../wp-project-triage/scripts/detect_wp_project.mjs` when it is installed alongside this skill. If the triage skill is unavailable, classify the project manually: check for `wp-content/plugins/ai/`, a `Plugin Name:` header, a theme `style.css`, and a `wp-config.php` to tell a plugin, a theme, and a full site apart.
 2. Confirm the AI plugin is active and identify its version:
    - The `WPAI_*` constants (set in `ai.php` `constants()`): `WPAI_VERSION`, `WPAI_PLUGIN_FILE`, `WPAI_PLUGIN_DIR`, `WPAI_PLUGIN_URL`, `WPAI_DEFAULT_ABILITY_CATEGORY`.
    - The plugin slug `ai` in `wp-content/plugins/ai/`.
