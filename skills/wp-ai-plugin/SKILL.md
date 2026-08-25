@@ -163,7 +163,16 @@ The `ability_class` key points to your `Abstract_Ability` subclass. That class i
 
 Naming convention: ability IDs use the `ai/` prefix when registered by the AI plugin. Your downstream plugin can use its own prefix (e.g., `my-plugin/internal-links`).
 
-Canonical Abilities to study (v1.3.0 source): `ai/suggest-reply` (an admin/comments experiment paired with `Suggest_Reply`), plus the read-only `core/read-content`, `core/read-users`, and `core/read-settings` implementations under `includes/Abilities/Gated/`. The latter three are available only while Custom Abilities is enabled. `core/read-content` and `core/read-users` demonstrate schema + `permission_callback` for exposing WordPress data safely: each supports single-item and collection modes and gates field-level access on `current_user_can`. `core/read-settings` returns a flat exposed-setting map, optionally narrowed by `group` and/or `fields`, behind `manage_options`.
+Canonical Abilities to study (v1.3.0 source): `ai/suggest-reply` (an admin/comments experiment paired with `Suggest_Reply`), plus the read-only `core/read-content`, `core/read-users`, and `core/read-settings` abilities. The latter three are available only while Custom Abilities is enabled.
+
+**Read the implementations, not the wrappers.** `includes/Abilities/Gated/*.php` contains thin gate wrappers — `Read_Content.php`, `Read_Settings.php`, `Read_Users.php`, and `Post_Utilities.php` are ~30-line classes extending `Abstract_Gated_Ability` whose `register()` does nothing but instantiate the real class. Keep `includes/Abilities/Gated/Gated_Abilities.php` as the source for the class list (`GATED_ABILITY_CLASSES`) and the `wpai_gated_abilities` filter, but the schemas and permission callbacks you actually want to copy live in the domain directories:
+
+- `includes/Abilities/Content/Content.php` — registers `core/read-content`; holds `get_read_content_input_schema()` (a three-mode `oneOf`), `get_read_content_output_schema()`, and `check_permission()`.
+- `includes/Abilities/Users/Users.php` — registers `core/read-users`; holds `get_users_input_schema()`, `get_users_output_schema()`, and `check_permission()`.
+- `includes/Abilities/Settings/Settings.php` — registers `core/read-settings`.
+- `includes/Abilities/Utilities/Posts.php` — registers `ai/get-post-details` and `ai/get-post-terms`, with a `permission_callback` of `current_user_can( 'edit_post', $post_id )`.
+
+The enablement gate itself is not in `Gated_Abilities.php` either — it is `Features/Loader.php`'s `if ( ! $feature->is_enabled() ) { continue; }` applied to the `custom-abilities` Feature, which is what calls `Gated_Abilities::get_all()` and each wrapper's `register()`. `core/read-content` and `core/read-users` demonstrate schema + `permission_callback` for exposing WordPress data safely: each supports single-item and collection modes and gates field-level access on `current_user_can`. `core/read-settings` returns a flat exposed-setting map, optionally narrowed by `group` and/or `fields`, behind `manage_options`.
 
 **Exposing your own data to the read Abilities.** `core/read-content` and `core/read-settings` only surface objects flagged with `show_in_abilities`. Pass `'show_in_abilities' => true` to `register_post_type()` / `register_setting()` before `wp_abilities_api_init`. In 1.3.0 the `Show_In_Abilities` polyfill runs from the Custom Abilities experiment, so both the object exposure and the read Abilities are absent while `wpai_feature_custom-abilities_enabled` is false.
 

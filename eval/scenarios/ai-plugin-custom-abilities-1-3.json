@@ -1,6 +1,11 @@
 {
   "name": "Enable AI plugin 1.3 Custom Abilities without assuming embeddings",
-  "skills": ["wordpress-router", "wp-project-triage", "wp-ai-plugin", "wp-abilities-api"],
+  "skills": [
+    "wordpress-router",
+    "wp-project-triage",
+    "wp-ai-plugin",
+    "wp-abilities-api"
+  ],
   "query": "Our WordPress 7.1 site just upgraded the canonical WordPress AI plugin to 1.3.0. The global AI switch is on, but core/read-content, core/read-settings, core/read-users, ai/get-post-details, and ai/get-post-terms disappeared. We also want to add one gated ability, customize its prompt, and use the new embedding helper. Explain the correct 1.3 setup and verification.",
   "expected_behavior": [
     "Step 1: Route canonical WordPress/ai troubleshooting to wp-ai-plugin, with wp-abilities-api for registration and exposure details",
@@ -11,7 +16,9 @@
     "Step 6: Treat wpai_{$ability_slug}_system_instruction, wpai_{$ability_slug}_prompt, and wpai_{$ability_slug}_prompt_builder as released 1.3.0 filters",
     "Step 7: Treat WordPress\\AI\\supports_embedding_generation() and generate_embeddings() as helper APIs whose runtime support must be checked",
     "Step 8: Explain that WordPress/ai 1.3.0 comments out SDK_Overlay::register(), so stock WordPress 7.1 lacks EmbeddingBuilder and the helper returns ai_embeddings_unsupported",
-    "Step 9: Do not recommend enabling embeddings by version check or by loading a second PHP AI Client copy site-wide"
+    "Step 9: Do not recommend enabling embeddings by version check or by loading a second PHP AI Client copy site-wide",
+    "Step N: Point at the real implementations behind the gated wrappers — includes/Abilities/Content/Content.php, includes/Abilities/Users/Users.php, includes/Abilities/Settings/Settings.php, and includes/Abilities/Utilities/Posts.php — rather than at the ~30-line thin wrappers in includes/Abilities/Gated/",
+    "Step N+1: Keep includes/Abilities/Gated/Gated_Abilities.php as the source for the GATED_ABILITY_CLASSES list and the wpai_gated_abilities filter, and locate the enablement gate itself in Features/Loader.php's is_enabled() check on the custom-abilities Feature"
   ],
   "success_criteria": [
     "Names wpai_feature_custom-abilities_enabled as the missing gate in addition to wpai_features_enabled",
@@ -21,7 +28,8 @@
     "Requires runtime support detection before calling generate_embeddings()",
     "States that SDK_Overlay::register() is commented out in the 1.3.0 tag and stock WordPress 7.1 therefore returns ai_embeddings_unsupported",
     "Does not describe the five abilities as unconditional in 1.3.0",
-    "Does not claim that the 1.3.0 changelog proves the embedding overlay is active"
+    "Does not claim that the 1.3.0 changelog proves the embedding overlay is active",
+    "Names the domain implementation files for the schemas and permission callbacks, not only the Gated wrappers",
+    "Does not describe Gated_Abilities.php as holding the enablement condition"
   ]
 }
-

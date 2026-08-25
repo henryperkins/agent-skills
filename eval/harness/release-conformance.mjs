@@ -856,6 +856,67 @@ export function assertAiClientConnectorPrecision(repoRoot) {
   ]);
 }
 
+/**
+ * WordPress/ai 1.3.0 extension surface.
+ *
+ * The hook inventory is the skill's load-bearing content: an extender who
+ * cannot find a hook writes a worse integration around it. Every name below was
+ * read off an `apply_filters()` call site in tag 1.3.0.
+ *
+ * `wpai_request_log_tokens` is in this list deliberately. The 2026-08-25 audit
+ * classified it as a data key and put the request-log filter count at four; the
+ * tag has it as a real filter at `Logging/Log_Data_Extractor.php:257`, so the
+ * count is five. Executable source wins over the audit note.
+ */
+export function assertAiPluginPrecision(repoRoot) {
+  const hooksReference = read(repoRoot, "skills/wp-ai-plugin/references/hooks-and-filters.md");
+  const requiredHooks = [
+    "wpai_ability_category",
+    "wpai_comment_analysis_response_schema",
+    "wpai_comment_analysis_result",
+    "wpai_comment_moderation_should_moderate",
+    "wpai_comment_moderation_show_dashboard_pills",
+    "wpai_content_classification_max_suggestions",
+    "wpai_content_classification_prompt",
+    "wpai_content_classification_strategy",
+    "wpai_content_classification_suggestions",
+    "wpai_generated_image_filename",
+    "wpai_get_post_details",
+    "wpai_get_post_terms",
+    "wpai_meta_description",
+    "wpai_meta_description_meta_key",
+    "wpai_meta_description_prompt",
+    "wpai_meta_description_seo_plugins",
+    "wpai_request_log_context",
+    "wpai_request_log_kind",
+    "wpai_request_log_providers",
+    "wpai_request_log_retention_days",
+    "wpai_request_log_tokens",
+  ];
+  requireIncludes(repoRoot, "skills/wp-ai-plugin/references/hooks-and-filters.md", requiredHooks);
+  requireIncludes(repoRoot, "skills/wp-ai-plugin/references/hooks-and-filters.md", [
+    "0 to retain forever",
+  ]);
+  const preferredSection = hooksReference.match(
+    /### Preferred model selection[\s\S]*?(?=\n### )/
+  )?.[0] ?? "";
+  for (const hook of [
+    "wpai_preferred_text_models",
+    "wpai_preferred_image_models",
+    "wpai_preferred_vision_models",
+  ]) {
+    assert(preferredSection.includes(hook), `${hook} must appear in the active preferred-model section`);
+  }
+  requireIncludes(repoRoot, "skills/wp-ai-plugin/SKILL.md", [
+    "includes/Abilities/Content/Content.php",
+    "includes/Abilities/Users/Users.php",
+    "includes/Abilities/Settings/Settings.php",
+  ]);
+  requireExcludes(repoRoot, "skills/wp-abilities-api/SKILL.md", [
+    "WordPress/ai 1.2.0, `includes/Abilities/`",
+  ]);
+}
+
 export function runReleaseConformance(repoRoot) {
   assertPluginVersionFresh(repoRoot);
   assertMarketplaceVersionMatches(repoRoot);
@@ -869,6 +930,7 @@ export function runReleaseConformance(repoRoot) {
   assertAbilitiesApiPrecision(repoRoot);
   assertAbilitiesAuditVerifyPrecision(repoRoot);
   assertAiClientConnectorPrecision(repoRoot);
+  assertAiPluginPrecision(repoRoot);
   assert(
     IMMEDIATE_UNWATCH_PATTERN.test("const unwatch = watch( () => { return cleanup; } );\n// Dispose later.\nunwatch();"),
     "Immediate-unwatch regression fixture must exercise the structural check"

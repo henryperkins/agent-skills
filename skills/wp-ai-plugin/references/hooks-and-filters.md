@@ -70,9 +70,9 @@ The per-feature toggle above is the one you meet in `Abstract_Feature`, but it i
 | --- | --- | --- |
 | `ai_experiments_pre_normalize_content` | filter | `wpai_pre_normalize_content` |
 | `ai_experiments_normalize_content` | filter | `wpai_normalize_content` |
-| `ai_experiments_preferred_models_for_text_generation` | filter | `wpai_preferred_text_models` |
-| `ai_experiments_preferred_image_models` | filter | `wpai_preferred_image_models` |
-| `ai_experiments_preferred_vision_models` | filter | `wpai_preferred_vision_models` |
+| `ai_experiments_preferred_models_for_text_generation` | filter | `wpai_preferred_text_models` (active — see below) |
+| `ai_experiments_preferred_image_models` | filter | `wpai_preferred_image_models` (active — see below) |
+| `ai_experiments_preferred_vision_models` | filter | `wpai_preferred_vision_models` (active — see below) |
 | `ai_experiments_pre_has_valid_credentials_check` | filter | `wpai_pre_has_valid_credentials_check` |
 | `ai_experiments_enabled` | filter | `wpai_features_enabled` |
 | `ai_experiments_register_experiments` | **action** | `wpai_register_features` |
@@ -86,6 +86,79 @@ Two details that matter when debugging:
 - **Every shim is conditional.** Each is registered as a callback on its *modern* hook and guarded by `has_filter()` / `has_action()`, so the legacy name only fires when a legacy callback is actually attached. A silent legacy hook means nothing is listening, not that the shim was removed.
 
 These fire a deprecation notice and are not a migration target — they exist so pre-0.6.0 code keeps working. Read them only when debugging why an old filter still appears to have an effect. The in-tree `@todo` and notice say "will be removed in v1.0"; they survive in v1.3.0, so treat that removal target as stale.
+
+### Preferred model selection
+
+These three are **active** filters in v1.3.0 — plain `apply_filters()` in `includes/helpers.php`, with no `@deprecated` tag. Only their `ai_experiments_*` aliases (table above) are deprecated. Do not read the presence of an alias as evidence that the modern name is going away.
+
+| Hook | Filtered value and additional arguments |
+| --- | --- |
+| `wpai_preferred_text_models` | `$preferred_models` — `helpers.php:227`, in `get_preferred_models_for_text_generation()`; `@since 0.2.1` |
+| `wpai_preferred_image_models` | `$preferred_models` — `helpers.php:300`, in `get_preferred_image_models()`; `@since 0.2.0` |
+| `wpai_preferred_vision_models` | `$preferred_models` — `helpers.php:342`, in `get_preferred_vision_models()`; `@since 0.3.0` |
+
+Each returned array is cast with `(array)`. The deprecated aliases are conditional shims registered *onto* these hooks and guarded by `has_filter()`, so a legacy name fires only when something is listening to it.
+
+### Request logging
+
+Five filters and one action, all `@since 1.0.0`. Reachable only while the `ai-request-logging` Experiment is enabled — that Experiment is the sole production caller that instantiates the log manager.
+
+| Hook | Filtered value and additional arguments |
+| --- | --- |
+| `wpai_request_log_retention_days` | `0` days by default — `Logging/AI_Request_Log_Manager.php:113` |
+| `wpai_request_log_providers` | `$patterns` — `Logging/Log_Data_Extractor.php:77`; provider name → URL-pattern map derived from `wp_get_connectors()` |
+| `wpai_request_log_context` | `$context, $decoded, $log_data` — `Logging/Log_Data_Extractor.php:179` |
+| `wpai_request_log_tokens` | `array{input, output}, $response` — `Logging/Log_Data_Extractor.php:257`; lets a custom provider supply its own token extraction |
+| `wpai_request_log_kind` | `'text', $provider, $path, $payload` — `Logging/Log_Data_Extractor.php:318` |
+
+**Retention defaults to `0`, and `0` means retain forever.** It does not mean "clean up immediately". `AI_Request_Log_Manager` schedules its daily cleanup cron only when `get_retention_days() > 0`, and clears the scheduled hook when the value is `0`, so the default configuration accumulates request rows — including response previews — indefinitely. Return a positive integer (`30`, say) to enable time-based cleanup; return 0 to retain forever.
+
+Two naming traps worth stating explicitly, because both have been miscounted before:
+
+- `wpai_request_log_tokens` **is a filter**, not a data key. The data keys are `tokens_input` / `tokens_output`, the DB columns in `AI_Request_Log_Schema.php`. The hook and the columns are different things with similar names.
+- `wpai_request_log_kind` is a **fallback only**. `detect_request_kind()` hard-returns `'image'`, `'metadata'`, `'embeddings'`, and `'audio'` before reaching it, so the filter never fires for those kinds.
+
+The matching action, `wpai_request_logged( $log_id, $insert_data )`, is documented under "Actions" below.
+
+### Comment moderation and analysis
+
+| Hook | Filtered value and additional arguments |
+| --- | --- |
+| `wpai_comment_analysis_response_schema` | `$schema` — `Abilities/Comment_Moderation/Comment_Analysis.php:205`; the toxicity/sentiment JSON schema |
+| `wpai_comment_analysis_result` | `null, $content, $author` — `Comment_Analysis.php:230`. A **pre-result short circuit**: returning an array skips the provider call entirely and the array is passed through `sanitize_analysis_result()`. Any non-array return is ignored |
+| `wpai_comment_moderation_should_moderate` | `$should_moderate, $analysis, $comment_id` — `Experiments/Comment_Moderation/Comment_Moderation.php:406`; default is `toxicity_score >= 0.7 && 'negative' === $sentiment` |
+| `wpai_comment_moderation_show_dashboard_pills` | `true, $comment_id, $comment` — `Comment_Moderation.php:498`; only fires on the dashboard screen |
+
+### Content classification
+
+Note that these live in **two** classes with the same name: the Experiments-side class holds the settings-derived values, the Abilities-side class holds the prompt and the parsed result.
+
+| Hook | Filtered value and additional arguments |
+| --- | --- |
+| `wpai_content_classification_max_suggestions` | `$max_suggestions` — `Experiments/Content_Classification/Content_Classification.php:309`; re-sanitized after filtering, so an out-of-range return is clamped |
+| `wpai_content_classification_strategy` | `$strategy` — `Experiments/Content_Classification/Content_Classification.php:284`; `existing_only` or `allow_new`, re-sanitized after filtering |
+| `wpai_content_classification_prompt` | `$prompt, $context, $taxonomy, $assigned_terms, $available_terms` — `Abilities/Content_Classification/Content_Classification.php:400`. Five values total, so `add_filter()` needs `$accepted_args = 5` |
+| `wpai_content_classification_suggestions` | `$suggestions, $taxonomy, $strategy` — `Abilities/Content_Classification/Content_Classification.php:440` |
+
+### Meta description
+
+Also split across an Experiments class (output) and Abilities classes (generation and storage).
+
+| Hook | Filtered value and additional arguments |
+| --- | --- |
+| `wpai_meta_description` | `$meta_description` — `Experiments/Meta_Description/Meta_Description.php:209`. Returning an empty string suppresses output |
+| `wpai_meta_description_prompt` | `$prompt, $content, $title` — `Abilities/Meta_Description/Meta_Description.php:262` |
+| `wpai_meta_description_meta_key` | `$key, $plugin_slug` — `Abilities/Meta_Description/SEO_Integration.php:126`; `$plugin_slug` may be `null` when no SEO plugin was detected |
+| `wpai_meta_description_seo_plugins` | `$plugins` — `Abilities/Meta_Description/SEO_Integration.php:67`; slug → `{file, meta_key}` detection map |
+
+### Abilities, posts, and generated media
+
+| Hook | Filtered value and additional arguments |
+| --- | --- |
+| `wpai_ability_category` | `$category_label, $slug` — `Experiments/Abilities_Explorer/Ability_Handler.php:152`. The filtered value is the category **label**, and `$slug` is the full ability name (`my-plugin/do-thing`), not the category slug |
+| `wpai_get_post_details` | `$details, $post_id, $fields` — `Abilities/Utilities/Posts.php:305` |
+| `wpai_get_post_terms` | `$terms, $post_id, $allowed_taxonomies` — `Abilities/Utilities/Posts.php:382`. Receives `WP_Term` objects; the result is mapped to arrays afterwards |
+| `wpai_generated_image_filename` | `$args['filename'], $args` — `Abilities/Image/Import_Base64_Image.php:278`. Base filename **without** extension; the return is run through `sanitize_file_name()` and the extension is derived independently from the MIME type, so a filter cannot change either |
 
 ### Guidelines
 

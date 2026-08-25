@@ -89,7 +89,10 @@ Use the documented init hooks for Abilities API registration so they load at the
 
 For worked examples of read-only, permission-gated abilities (single-item *and* collection modes,
 field-level access gated on `current_user_can`), study the AI plugin's `core/read-content`,
-`core/read-users`, and `core/read-settings` abilities (WordPress/ai 1.2.0, `includes/Abilities/`).
+`core/read-users`, and `core/read-settings` abilities. In WordPress/ai 1.3.0 they are gated by the
+Custom Abilities experiment: thin wrappers live under `includes/Abilities/Gated/`, and the real
+schemas and permission callbacks live in the domain directories — `includes/Abilities/Content/Content.php`,
+`includes/Abilities/Users/Users.php`, and `includes/Abilities/Settings/Settings.php`.
 They use the `show_in_abilities` registration flag to decide which post types/settings to expose.
 Note their status: these were **proposed for core in 7.1 and deferred** — the merge proposal was
 punted, so they ship only in the AI plugin for now, with 7.2 the earliest target. The abilities
