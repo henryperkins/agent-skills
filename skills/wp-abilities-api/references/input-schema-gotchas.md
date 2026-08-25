@@ -53,7 +53,37 @@ public static function execute_submit_evidence( $input = null ) {
 
 The `array_key_exists` + null-check pattern catches both "missing key" and "explicit null" (some serializers produce nulls for optional fields).
 
-Keep the declared `default` in `input_schema` anyway — it documents the expected behavior for anyone reading the registration and is visible to agents in the schema introspection endpoints. Just don't rely on it for runtime population.
+Keep the declared `default` in `input_schema` anyway — it documents the expected behavior for anyone reading the registration and is visible to agents in the schema introspection endpoints. Just don't rely on it for runtime population *in PHP*.
+
+### The JavaScript client does the opposite — the same ability behaves differently by transport
+
+The rule above is a PHP rule. `@wordpress/abilities` compiles the same schema with AJV configured
+`useDefaults: true` (verified in `packages/abilities/src/validation.ts` at **Gutenberg 23.8.0**), and
+AJV's `useDefaults` **mutates the caller's own object in place**: it emits
+`if ( childData === undefined ) childData = <literal>` for every missing property that declares a
+default. `api.ts` passes the caller's `input` object to the validator by reference and then hands
+that same reference to the callback, so **property-level defaults are written into the input before
+the JS execute callback runs** — and, for a server ability, before `createServerCallback` POSTs it
+to `/wp-abilities/v1/abilities/{name}/run`. Output defaults get the same treatment on the way back.
+
+Root-level `default` is handled separately and never reaches the callback. The wrapper destructures
+it out of the schema before compiling (`const { default: defaultValue, ...schemaWithoutDefault } = args`),
+which is what stops AJV's strict mode from throwing `default is ignored in the schema root`, and then
+validates `defaultValue` in place of the value when the value is `undefined`. The validator returns
+only `true | ValidationError`, so the original `undefined` is still what the callback receives.
+
+The practical consequences:
+
+- **Do not conclude "defaults are not injected" from PHP alone.** The same ability invoked from the
+  editor arrives with property defaults filled in and invoked from PHP arrives without them, so a
+  callback that treats a missing key as meaningful diverges by transport.
+- **Do not rely on the JS side either.** Keep normalizing defensively in the execute callback as
+  above; that is the only behavior both transports agree on.
+- **A `default` anywhere other than `properties` or tuple `items`** — inside `anyOf`, `oneOf`, `not`,
+  or `if` — throws at compile time and surfaces to the client as the generic
+  `Invalid schema provided for validation.`, which fails every client-side execution of that ability.
+- AJV mutating the input is also why a caller must not reuse one input object across two
+  `executeAbility` calls and expect it to be unchanged.
 
 ## 2. Pagination parameter-name drift
 
@@ -219,15 +249,15 @@ The two paths differ in three ways agents trip over:
 
 ### Distinguish from Gotcha 1
 
-Top-level schema `default` is honored by `normalize_input()` and reaches the callback. Property-level `default` (Gotcha 1) is NOT — those values are dropped by the validator, and the callback has to defensively reapply them. Different layers, different fates.
+Top-level schema `default` is honored by PHP's `normalize_input()` and reaches the callback. Property-level `default` (Gotcha 1) is NOT — in PHP those values are dropped by the validator, and the callback has to defensively reapply them. Different layers, different fates. The JS client inverts both halves: property defaults are injected, the root default is not. See the client subsection under Gotcha 1.
 
 If you've declared the top-level `default` in the schema, the PHP-level signature default exists only for direct callers. Don't add a third layer of fallback inside the callback that re-checks `if ( $input === null )` — three compensating defaults stacked on each other diffuses the meaning of "no input."
 
 ## 5. Schema `format` support differs between server and client — mismatched lists
 
-The server and the client validate ability schemas with different engines, and their supported `format` lists don't match. Verified against `packages/abilities/src/validation.ts` at Gutenberg v23.6.0-rc.1.
+The server and the client validate ability schemas with different engines, and their supported `format` lists don't match. Verified against `packages/abilities/src/validation.ts` at Gutenberg 23.8.0.
 
-- **Server (PHP)**: `WP_Ability::validate_input()` and `validate_output()` call `rest_validate_value_from_schema()` for the schema check — never the sanitizer. (The 7.1 `wp_ability_validate_input` / `wp_ability_validate_output` filters can add checks on top of that result, but no `format` handling.) That validator's `format` switch enforces exactly five formats: `hex-color`, `date-time`, `email`, `ip`, `uuid`. `uri` is **not** one of them — `case 'uri': return sanitize_url( $value );` exists only in `rest_sanitize_value_from_schema()`, a sanitizer that cannot reject anything. On the REST `/wp-abilities/v1/run` route (WP 7.1+) that sanitizer does run, via the route's `sanitize_input_for_ability()` callback — but that callback calls `validate_input()` itself first and returns the raw value untouched whenever validation fails, so it can rewrite a URL, never refuse one. On `$ability->execute()` reached off the REST route, and on every transport before 7.1, no URI handling runs at all.
+- **Server (PHP)**: `WP_Ability::validate_input()` and `validate_output()` call `rest_validate_value_from_schema()` for the schema check — never the sanitizer. (The 7.1 `wp_ability_validate_input` / `wp_ability_validate_output` filters can add checks on top of that result, but no `format` handling.) That validator's `format` switch enforces exactly five formats: `hex-color`, `date-time`, `email`, `ip`, `uuid`. `uri` is **not** one of them — `case 'uri': return sanitize_url( $value );` exists only in `rest_sanitize_value_from_schema()`, a sanitizer that cannot reject anything. On the REST `/wp-abilities/v1/abilities/{name}/run` route (WP 7.1+) that sanitizer does run, via the route's `sanitize_input_for_ability()` callback — but that callback calls `validate_input()` itself first and returns the raw value untouched whenever validation fails, so it can rewrite a URL, never refuse one. On `$ability->execute()` reached off the REST route, and on every transport before 7.1, no URI handling runs at all.
 - **Client (`@wordpress/abilities`)**: validation uses AJV (draft-04) with `ajv-formats`, registering **exactly** these formats: `date-time`, `email`, `hostname`, `ipv4`, `ipv6`, `uri`, `uuid`.
 
 The failure mode is worse than "not enforced": AJV rejects schemas using an *unregistered* format at compile time, and the client validator catches that and returns **"Invalid schema provided for validation."** — every client-side execution against that schema fails. That's why "Abilities: Support URI schema format" (`WordPress/gutenberg#79555`) shipped as a *bug fix* in Gutenberg 23.6: before it, `format: 'uri'` in a schema broke client-side validation outright.

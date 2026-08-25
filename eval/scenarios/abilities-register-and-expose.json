@@ -12,14 +12,21 @@
     "Step 7: Decide MCP exposure in the same edit and set meta.mcp.public explicitly — on MCP Adapter 0.6.0+ an unqualified meta.public is inherited as MCP exposure",
     "Step 8: Document wp-abilities/v1 REST namespace",
     "Step 9: Verify endpoint returns the new ability",
-    "Step 10: Show client-side consumption via @wordpress/abilities"
+    "Step 10: Show client-side consumption via @wordpress/abilities",
+    "Step 11: Name the ability as namespace/name matching Core's /^[a-z0-9-]+\\/[a-z0-9-]+$/ — my-plugin/get-info is valid, my_plugin/get-info is not, because underscores are rejected and the registration silently returns null",
+    "Step 12: State that property-level input_schema defaults are not injected by PHP but ARE mutated into the input by the client's AJV (useDefaults: true), so the callback must normalize defaults itself rather than relying on either transport",
+    "Step 13: Use the full run route /wp-abilities/v1/abilities/{name}/run when showing execution over REST",
+    "Step 14: Treat an awaited @wordpress/core-abilities ready as settled, not succeeded — an empty store after awaiting it can still mean an authentication or network failure"
   ],
   "success_criteria": [
     "Routes to wp-abilities-api skill",
     "Uses wp_register_ability() correctly",
     "Enables REST exposure with the version-correct meta key (meta.public on 7.1+, meta.show_in_rest on 6.9/7.0)",
     "Declares meta.mcp.public explicitly rather than letting MCP exposure be inherited from meta.public",
-    "Documents REST endpoint wp-abilities/v1",
-    "Provides verification steps"
+    "Documents REST endpoint wp-abilities/v1 and uses the full run path /wp-abilities/v1/abilities/{name}/run",
+    "Provides verification steps",
+    "Uses a hyphenated namespace/name that satisfies Core's name regex and does not use an underscore",
+    "Does not claim schema defaults reach the callback on both transports; separates PHP behaviour from the client's AJV useDefaults behaviour",
+    "Does not treat a resolved core-abilities ready promise as proof the fetch succeeded"
   ]
 }

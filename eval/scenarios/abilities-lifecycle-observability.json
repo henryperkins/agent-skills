@@ -14,7 +14,8 @@
     "Step 9: Use the correct callback signatures and accepted_args — wp_ability_invoked receives name, input, ability (3 args) and wp_after_execute_ability receives name, input, result, ability (4 args)",
     "Step 10: Distinguish the two version stories rather than calling the whole lifecycle new — wp_ability_invoked is new in 7.1 and simply never fires on 7.0, while wp_after_execute_ability has existed since 6.9 and only gained the trailing ability argument in 7.1",
     "Step 11: Warn that a wp_after_execute_ability callback declaring four required parameters raises ArgumentCountError on 6.9 or 7.0, and default the trailing parameter if the plugin supports those versions",
-    "Step 12: Verify by triggering one denied call and one successful call and confirming the attempt log records both while the usage meter increments only once"
+    "Step 12: Verify by triggering one denied call and one successful call and confirming the attempt log records both while the usage meter increments only once",
+    "Step 13: When listing what 7.1 added, name all seven genuinely new hooks — wp_ability_invoked, wp_pre_execute_ability, wp_ability_normalize_input, wp_ability_validate_input, wp_ability_permission_result, wp_ability_execute_result, wp_ability_validate_output — without omitting wp_ability_normalize_input or wp_ability_execute_result"
   ],
   "success_criteria": [
     "Routes to wp-abilities-api and consults references/execution-lifecycle.md",
@@ -27,6 +28,8 @@
     "Does not invent a hook name or use a filter where the API provides an action",
     "Does not assert that every lifecycle hook is new in 7.1 — identifies wp_after_execute_ability as pre-existing since 6.9 with an added argument",
     "Surfaces the ArgumentCountError risk of the 7.1 arity on a 6.9 or 7.0 site",
-    "Provides a verification step that distinguishes the denied call from the successful call"
+    "Provides a verification step that distinguishes the denied call from the successful call",
+    "Names all seven hooks new in 7.1, including wp_ability_normalize_input and wp_ability_execute_result",
+    "States plainly that wp_before_execute_ability and wp_after_execute_ability predate 7.1 rather than listing them among the new hooks"
   ]
 }

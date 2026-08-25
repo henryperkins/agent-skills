@@ -315,7 +315,9 @@ wp mcp-adapter serve [--server=<server-id>] [--user=<id|login|email>]
 wp mcp-adapter list [--format=<format>]
 ```
 
-`serve` runs the named server (default server when omitted) over STDIO — point an MCP client's STDIO config at it. `--user` sets the WordPress user the session runs as; without it the session is unauthenticated and capability-gated abilities will fail. `list` enumerates registered servers.
+`serve` runs a server over STDIO — point an MCP client's STDIO config at it. `--user` sets the WordPress user the session runs as; without it the session is unauthenticated and capability-gated abilities will fail. `list` enumerates registered servers.
+
+**Omitting `--server` does not select the default server — it selects the first registered server.** `McpCommand::serve()` falls through to `array_values( $adapter->get_servers() )[0]`, which is insertion order, and insertion order is registration order. The built-in default server is itself registered from a `mcp_adapter_init` callback, so which server lands first depends on hook priority and load order, not on any notion of "default". Any command whose identity matters — production, CI, a committed MCP client config, or any site that may ever register a second server — must pass `--server=<server-id>` explicitly.
 
 STDIO is enabled by default and can be switched off:
 
@@ -361,7 +363,23 @@ add_filter( 'mcp_adapter_pre_tool_call', function ( $args, $tool_name, $mcp_tool
 }, 10, 3 );
 ```
 
-`mcp_adapter_validation_enabled` receives `( false, $server_id, $server )` and is **off** by default. It is not an untrusted-input control. It gates deeper MCP component/DTO compliance checks on the *definitions* you register (`McpToolValidator::validate_tool_dto()`, run while the tool is constructed). `McpTool::execute()` passes arguments to the ability or handler on the same path either way. Enable it to catch malformed tool definitions in development; do not enable it expecting argument validation.
+`mcp_adapter_validation_enabled` is **off** by default and its arity varies by call site. Verified in v0.6.1, it is applied at eight places:
+
+- **Seven DTO validation sites pass only the default value — one argument.** They are byte-identical `apply_filters( 'mcp_adapter_validation_enabled', false );` calls in `McpTool::fromArray()`, `RegisterAbilityAsMcpTool::build()`, `McpResource::fromArray()`, `RegisterAbilityAsMcpResource::build()`, `McpPrompt::fromArray()`, `McpPrompt::fromBuilder()`, and `RegisterAbilityAsMcpPrompt::build()`.
+- **One site — `McpServer::__construct()` — passes all three arguments**, `( false, $this->server_id, $this )`.
+
+WordPress never pads missing filter arguments: `WP_Hook::apply_filters()` takes the `accepted_args >= $num_args` branch and calls the callback with the one argument it has. So a callback registered with `10, 3` and **three required parameters** raises an uncaught `ArgumentCountError` — a fatal — at all seven DTO sites, while working fine at the `McpServer` one. Default the two server parameters so one registration is safe everywhere:
+
+```php
+add_filter( 'mcp_adapter_validation_enabled', function ( $enabled, $server_id = null, $server = null ) {
+    if ( null === $server_id ) {
+        return true;
+    }
+    return 'my-server' === $server_id;
+}, 10, 3 );
+```
+
+It is not an untrusted-input control. It gates deeper MCP component/DTO compliance checks on the *definitions* you register (`McpToolValidator::validate_tool_dto()`, run while the tool is constructed). `McpTool::execute()` passes arguments to the ability or handler on the same path either way. Enable it to catch malformed tool definitions in development; do not enable it expecting argument validation.
 
 Validate untrusted arguments at the ability boundary instead. `WP_Ability::execute()` normalizes input, validates it against the ability's `input_schema` via `rest_validate_value_from_schema()`, runs `check_permissions()`, and validates the result against `output_schema` — which is why every ability that accepts input needs an `input_schema`. That check is what the adapter is relying on when it defaults validation off. A custom server registered with a raw `handler` callback rather than an ability gets none of it: `call_user_func( $this->handler, $args )` receives whatever the client sent, so such a handler must validate its own arguments.
 

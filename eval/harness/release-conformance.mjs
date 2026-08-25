@@ -753,6 +753,43 @@ export function assertAiMaintenanceWorkflow(repoRoot) {
   assert(workflow.includes('OUTCOME="skipped"'), "Missing provider configuration must skip advisory analysis");
 }
 
+/**
+ * Abilities API guidance that must stay exact.
+ *
+ * Each string below marks a place where a plausible-but-wrong answer costs a
+ * day: the 6.9-vs-7.1 hook split (an arity mistake is a site-wide fatal), the
+ * PHP/AJV divergence on schema defaults, what awaiting `ready` actually proves,
+ * the MCP validation filter's variable arity, and Core's ability-name regex.
+ */
+export function assertAbilitiesApiPrecision(repoRoot) {
+  requireIncludes(repoRoot, "skills/wp-abilities-api/SKILL.md", [
+    "wp_ability_normalize_input",
+    "wp_ability_execute_result",
+    "wp_before_execute_ability and wp_after_execute_ability predate 7.1",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-abilities-api/references/input-schema-gotchas.md", [
+    "useDefaults: true",
+    "property-level defaults",
+    "/wp-abilities/v1/abilities/{name}/run",
+    "Gutenberg 23.8.0",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-abilities-api/references/client-side.md", [
+    "settled, not succeeded",
+    "serverRegistered",
+    "Unregistration does not check",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-abilities-api/references/mcp-exposure.md", [
+    "one argument",
+    "three arguments",
+    "$server_id = null",
+    "first registered server",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-abilities-api/references/php-registration.md", [
+    "/^[a-z0-9-]+\\/[a-z0-9-]+$/",
+    "underscores are rejected",
+  ]);
+}
+
 export function runReleaseConformance(repoRoot) {
   assertPluginVersionFresh(repoRoot);
   assertMarketplaceVersionMatches(repoRoot);
@@ -763,6 +800,7 @@ export function runReleaseConformance(repoRoot) {
   assertCoreAiUpstreamRegistry(repoRoot);
   assertAiMaintenanceWorkflow(repoRoot);
   assertLocalRuntimeHygiene(repoRoot);
+  assertAbilitiesApiPrecision(repoRoot);
   assert(
     IMMEDIATE_UNWATCH_PATTERN.test("const unwatch = watch( () => { return cleanup; } );\n// Dispose later.\nunwatch();"),
     "Immediate-unwatch regression fixture must exercise the structural check"

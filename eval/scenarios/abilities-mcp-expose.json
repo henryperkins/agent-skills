@@ -16,7 +16,9 @@
     "Step 11: Ensure every ability has a permission_callback (especially destructive ones); MCP clients act as authenticated users, and exposure metadata is not authorization",
     "Step 12: Set up an Application Password for the Claude Desktop user; explain Settings → Permalinks must NOT be Plain",
     "Step 13: Verify by hitting /wp-json/ for the namespace, enumerating the effectively-MCP-public set, and connecting Claude Desktop to confirm the tools that appear are exactly the intended ones",
-    "Step 14: Use a custom server when the integration needs an explicit ability allow-list or a tools/resources/prompts split — also the cleanest way to stay insulated from the 0.6.0 default"
+    "Step 14: Use a custom server when the integration needs an explicit ability allow-list or a tools/resources/prompts split — also the cleanest way to stay insulated from the 0.6.0 default",
+    "Step 15: If mcp_adapter_validation_enabled is hooked, declare the two server parameters as optional ($enabled, $server_id = null, $server = null) because seven DTO call sites pass one argument and only McpServer passes three arguments",
+    "Step 16: When wiring the STDIO command, pass --server=<server-id> explicitly and state that omitting it selects the first registered server, not the default server"
   ],
   "success_criteria": [
     "Routes to wp-abilities-api with mcp-exposure.md reference",
@@ -32,6 +34,8 @@
     "Does not claim the default server exposes every registered ability",
     "Keeps permission_callback enforcement separate from public discovery metadata",
     "Surfaces the Plain permalinks gotcha",
-    "Mentions Application Passwords as the practical local-dev auth method"
+    "Mentions Application Passwords as the practical local-dev auth method",
+    "Does not register a three-required-parameter callback on mcp_adapter_validation_enabled; defaults $server_id and $server so the seven one-argument DTO call sites cannot raise ArgumentCountError",
+    "Does not describe wp mcp-adapter serve without --server as selecting the default server; says it selects the first registered server"
   ]
 }

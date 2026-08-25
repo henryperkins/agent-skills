@@ -269,6 +269,9 @@ core. Both statements are now wrong; do not carry them forward.
 ## Recommended patterns
 
 - Namespace ability IDs as `<plugin-slug>/<verb-noun>` (e.g., `my-plugin/get-info`, `my-plugin/update-thing`). Slash-separated.
+  - **Core enforces the exact pattern `/^[a-z0-9-]+\/[a-z0-9-]+$/`** in `WP_Abilities_Registry::register()`. `my-plugin/get-info` is valid; `my_plugin/get-info` is not, because underscores are rejected — the character class is `[a-z0-9-]` on both sides of one literal slash. Uppercase and a third segment (`a/b/c`) fail for the same reason.
+  - A rejected name produces `_doing_it_wrong()` and `return null` **before** `wp_register_ability_args` fires, so the ability is never constructed and never stored. The observable symptom is only absence — see "the ability simply is not there" above.
+  - Ability *category* slugs use a different, stricter pattern — `/^[a-z0-9]+(?:-[a-z0-9]+)*$/`, which permits no slash and no leading, trailing, or doubled dash. Do not reuse an ability name as a category slug.
 - Treat IDs as stable API; changing an ID is a breaking change for any consumer that holds a reference.
 - Use `input_schema` and `output_schema` for validation and to help AI agents understand usage.
 - **Always include a `permission_callback`.** It is required on every registration — there is no implicit default.

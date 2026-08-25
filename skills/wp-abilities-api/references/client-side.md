@@ -10,14 +10,25 @@ WordPress 6.9 introduced the server-side Abilities API. WordPress 7.0 added the 
 ### Registration is asynchronous — await `ready`
 
 `@wordpress/core-abilities` starts fetching on import and exports a single thing: a `ready` promise that
-resolves once both round trips (categories, then abilities) have registered.
+resolves once both round trips (categories, then abilities) have **settled**.
 
 ```ts
 // packages/core-abilities/src/index.ts — the package's only export.
 export const ready: Promise< void > = initialize();
 ```
 
-Until `ready` resolves, the store holds no server abilities. `getAbilities()` returns an empty array and
+**`ready` proves the attempts settled, not succeeded.** Verified in Gutenberg 23.8.0,
+`initializeCategories()` and `initializeAbilities()` each wrap their `apiFetch` call in
+`try { … } catch ( error ) { console.error( … ); }`, so neither can reject and `initialize()` always
+fulfills. A 401/403 from the REST namespace, an offline browser, and a clean empty registry are
+indistinguishable at the await: after `await ready`, an empty store can still mean an authentication
+or network failure, with only a `console.error` as evidence. Worse, the catch also swallows throws
+from inside the registration loop — if the categories request fails, every `registerAbility()` throws
+`references non-existent category`, the first throw aborts the rest of the loop, and you get a
+partially populated store. Do not read a resolved `ready` as "the server has no abilities"; check the
+browser console and the `/wp-abilities/v1/abilities` response before concluding that.
+
+Until `ready` settles, the store holds no server abilities. `getAbilities()` returns an empty array and
 `executeAbility( 'some/server-ability' )` throws `Error: Ability not found: some/server-ability` — **an error
 that names the ability but not the race**, which is why it gets misread as "the plugin never registered it".
 Every imperative call against server-registered abilities must await it first:
@@ -322,7 +333,11 @@ unregisterAbility( 'my-plugin/navigate-to-settings' );
 unregisterAbilityCategory( 'my-plugin-actions' );
 ```
 
-Both functions remove any entry from the store by name or slug, including the ones `@wordpress/core-abilities` registered from the server — the `annotations.serverRegistered` flag it stamps is recorded but never checked. Unregistering a server ability client-side only hides it from this page's store; the `/run` route still executes it, and the next page load fetches it back. To actually retire a server ability, unregister it in PHP.
+Both functions remove any entry from the store by name or slug, including the ones `@wordpress/core-abilities` registered from the server.
+
+The `meta.annotations.serverRegistered` flag that `@wordpress/core-abilities` stamps *is* read — but only on the way in. `registerAbility()` filters the annotation allow-list and then sets `annotations.clientRegistered = true` **only when `annotations.serverRegistered` is falsy**, so a server-fetched ability is never mislabelled as client-registered. **Unregistration does not check it.** `unregisterAbility()` is a bare action object and the reducer deletes the entry unconditionally, so there is no "this one came from the server, refuse" guard anywhere — despite an `@throws {Error} If the ability is server-side and cannot be unregistered` line in the `api.ts` JSDoc that the implementation does not honour (verified in Gutenberg 23.8.0).
+
+Unregistering a server ability client-side only hides it from this page's store; the `/run` route still executes it, and the next page load fetches it back. To actually retire a server ability, unregister it in PHP.
 
 ## Sources
 

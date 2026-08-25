@@ -1,6 +1,6 @@
 ---
 name: wp-abilities-api
-description: "Use when working with the WordPress Abilities API (wp_register_ability, wp_register_ability_category, wp_get_abilities, /wp-json/wp-abilities/v1/*, @wordpress/abilities, @wordpress/core-abilities) including defining abilities, categories, meta, the meta.public and show_in_rest exposure flags, filtered ability discovery, permissions checks for clients, the WP 7.1+ execution lifecycle hooks (wp_ability_invoked, wp_pre_execute_ability, wp_ability_validate_input/output, wp_ability_permission_result, wp_before_execute_ability, wp_after_execute_ability), the WP 7.0+ client-side JS API (registerAbility, executeAbility, the core/abilities store), and exposing abilities to external AI agents via the MCP Adapter (Claude Desktop, Cursor, ChatGPT)."
+description: "Use when working with the WordPress Abilities API (wp_register_ability, wp_register_ability_category, wp_get_abilities, /wp-json/wp-abilities/v1/*, @wordpress/abilities, @wordpress/core-abilities) including defining abilities, categories, meta, the meta.public and show_in_rest exposure flags, filtered ability discovery, permissions checks for clients, the seven execution lifecycle hooks new in WP 7.1 (wp_ability_invoked, wp_pre_execute_ability, wp_ability_normalize_input, wp_ability_validate_input, wp_ability_permission_result, wp_ability_execute_result, wp_ability_validate_output) and the two 6.9 actions wp_before_execute_ability and wp_after_execute_ability that only gained a trailing ability argument in 7.1, the WP 7.0+ client-side JS API (registerAbility, executeAbility, the core/abilities store), and exposing abilities to external AI agents via the MCP Adapter (Claude Desktop, Cursor, ChatGPT)."
 compatibility: "Targets WordPress 6.9+ (PHP 7.2.24+); sections marked WP 7.1+ do not exist on 6.9/7.0. WordPress Core verified through: 7.1; Gutenberg verified through: 23.8.0 (`packages/abilities` and `packages/core-abilities`); MCP Adapter verified through: 0.6.1 (requires PHP 7.4+). Filesystem-based agent with bash + node. Some workflows require WP-CLI."
 license: GPL-2.0-or-later
 ---
@@ -141,7 +141,18 @@ before trusting a filtered list. See `references/rest-api.md`.
 
 If the task involves auditing, telemetry, caching, policy enforcement, or custom validation, read
 `references/execution-lifecycle.md` before writing hooks. The ordered chain and the four hooks
-agents most often misuse are documented there. The load-bearing distinctions:
+agents most often misuse are documented there.
+
+**Seven hooks are genuinely new in 7.1**, in execution order: `wp_ability_invoked`,
+`wp_pre_execute_ability`, `wp_ability_normalize_input`, `wp_ability_validate_input`,
+`wp_ability_permission_result`, `wp_ability_execute_result`, and `wp_ability_validate_output`.
+
+**Two are not new.** wp_before_execute_ability and wp_after_execute_ability predate 7.1 — they
+shipped in 6.9 and only gained a trailing `$ability` argument in 7.1. Treating them as 7.1
+additions is the mistake that produces a site-wide fatal rather than missing behavior, because a
+callback written to the 7.1 arity raises `ArgumentCountError` on 6.9/7.0.
+
+The load-bearing distinctions:
 
 - `wp_ability_invoked` fires **first**, before normalization, validation, and permission checks.
   It records an **attempt** — invalid input and denied callers fire it too. It is not a success
@@ -169,9 +180,8 @@ agents most often misuse are documented there. The load-bearing distinctions:
   execution. Tighten with it; never widen. Through `execute()` a `WP_Error` is logged via
   `_doing_it_wrong()` and replaced by a generic denial, so the message never reaches an executing
   caller.
-- `wp_before_execute_ability` and `wp_after_execute_ability` **predate 7.1** and gained a trailing
-  `$ability` argument in it. A callback written to the 7.1 arity raises `ArgumentCountError` on
-  6.9/7.0 — default the trailing parameter when supporting both.
+- `wp_before_execute_ability` and `wp_after_execute_ability` are the two 6.9 actions above —
+  default the trailing `$ability` parameter when supporting both 6.9/7.0 and 7.1.
 
 ### 5c) Typed REST inputs (WP 7.1+)
 
