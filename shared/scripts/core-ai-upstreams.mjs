@@ -40,6 +40,7 @@ export const CORE_AI_UPSTREAMS = Object.freeze([
     declarations: [
       { skill: "wp-abilities-api", label: "Gutenberg verified through", granularity: "patch" },
       { skill: "wp-ai-plugin", label: "Gutenberg verified through", granularity: "patch" },
+      { skill: "wp-ai-connectors", label: "Gutenberg verified through", granularity: "patch" },
     ],
   },
   {
@@ -47,7 +48,7 @@ export const CORE_AI_UPSTREAMS = Object.freeze([
     indexFile: "shared/references/ai-plugin-releases.json",
     source: "https://api.github.com/repos/WordPress/ai/releases?per_page=30",
     sourceType: "github-releases",
-    affectedSkills: ["wp-ai-plugin", "wp-ai-client"],
+    affectedSkills: ["wp-ai-plugin"],
     declarations: [
       { skill: "wp-ai-plugin", label: "AI plugin verified through", granularity: "patch" },
     ],
@@ -62,6 +63,7 @@ export const CORE_AI_UPSTREAMS = Object.freeze([
       { skill: "wp-abilities-api", label: "MCP Adapter verified through", granularity: "patch" },
       { skill: "wp-abilities-audit", label: "MCP Adapter verified through", granularity: "patch" },
       { skill: "wp-abilities-verify", label: "MCP Adapter verified through", granularity: "patch" },
+      { skill: "wp-ai-plugin", label: "MCP Adapter verified through", granularity: "patch" },
     ],
   },
   {
@@ -75,6 +77,7 @@ export const CORE_AI_UPSTREAMS = Object.freeze([
     declarations: [
       { skill: "wp-ai-client", label: "PHP AI Client verified through", granularity: "patch" },
       { skill: "wp-ai-connectors", label: "PHP AI Client verified through", granularity: "patch" },
+      { skill: "wp-ai-plugin", label: "PHP AI Client verified through", granularity: "patch" },
     ],
   },
   {
@@ -92,7 +95,7 @@ export const CORE_AI_UPSTREAMS = Object.freeze([
     indexFile: "shared/references/ai-provider-anthropic-releases.json",
     source: "https://api.github.com/repos/WordPress/ai-provider-for-anthropic/releases?per_page=30",
     sourceType: "github-releases",
-    affectedSkills: ["wp-ai-connectors", "wp-ai-client"],
+    affectedSkills: ["wp-ai-connectors"],
     declarations: [
       { skill: "wp-ai-connectors", label: "Anthropic provider verified through", granularity: "patch" },
     ],
@@ -102,7 +105,7 @@ export const CORE_AI_UPSTREAMS = Object.freeze([
     indexFile: "shared/references/ai-provider-google-releases.json",
     source: "https://api.github.com/repos/WordPress/ai-provider-for-google/releases?per_page=30",
     sourceType: "github-releases",
-    affectedSkills: ["wp-ai-connectors", "wp-ai-client"],
+    affectedSkills: ["wp-ai-connectors"],
     declarations: [
       { skill: "wp-ai-connectors", label: "Google provider verified through", granularity: "patch" },
     ],
@@ -112,7 +115,7 @@ export const CORE_AI_UPSTREAMS = Object.freeze([
     indexFile: "shared/references/ai-provider-openai-releases.json",
     source: "https://api.github.com/repos/WordPress/ai-provider-for-openai/releases?per_page=30",
     sourceType: "github-releases",
-    affectedSkills: ["wp-ai-connectors", "wp-ai-client"],
+    affectedSkills: ["wp-ai-connectors"],
     declarations: [
       { skill: "wp-ai-connectors", label: "OpenAI provider verified through", granularity: "patch" },
     ],

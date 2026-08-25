@@ -1,7 +1,7 @@
 ---
 name: wp-ai-plugin
 description: "Use when extending or troubleshooting the canonical WordPress AI plugin (`wordpress.org/plugins/ai`, repo `WordPress/ai`): Experiments, paired Abilities, Guidelines, feature registration, Settings -> AI integration, dashboard status, or `wpai_*` hooks."
-compatibility: "Targets WordPress 7.0+ (PHP 7.4+); WordPress Core verified through: 7.1; Gutenberg verified through: 23.8.0; AI plugin verified through: 1.3.0. AI plugin v0.6.0+ provides Abstract_Feature; v0.8.0+ adds Guidelines/dashboard widgets and gates on wp_supports_ai(). Filesystem-based agent with bash + node. Some workflows require WP-CLI."
+compatibility: "Targets WordPress 7.0+ (PHP 7.4+); WordPress Core verified through: 7.1; Gutenberg verified through: 23.8.0; AI plugin verified through: 1.3.0; MCP Adapter verified through: 0.6.1; PHP AI Client verified through: 1.4.0. AI plugin v0.6.0+ provides Abstract_Feature; v0.8.0+ adds Guidelines/dashboard widgets and gates on wp_supports_ai(). Filesystem-based agent with bash + node. Some workflows require WP-CLI."
 license: GPL-2.0-or-later
 ---
 

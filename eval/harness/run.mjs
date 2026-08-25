@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { runSkillQuality, validateSkillBounds } from "./skill-quality.mjs";
 import { runReleaseConformance } from "./release-conformance.mjs";
 import { CORE_AI_UPSTREAMS } from "../../shared/scripts/core-ai-upstreams.mjs";
+import { getBlockingUpstreamFailures } from "../../shared/scripts/upstream-drift-lib.mjs";
 
 function readUtf8(filePath) {
   return fs.readFileSync(filePath, "utf8");
@@ -164,8 +165,14 @@ function main(args = process.argv.slice(2)) {
   // Offline drift check: committed upstream indices vs the canonical release
   // each skill declares. Turns red when the Upstream Sync workflow lands a
   // newer release than a skill documents.
+  //
+  // The drift command always runs, even with --skip-upstream-drift. That flag
+  // narrows which failures block: only the expected "index advanced past a
+  // skill marker" code is suppressed. A broken index, malformed marker,
+  // duplicate declaration, or marker ahead of the committed index still fails,
+  // and the completeness check still proves every declaration was evaluated.
   const driftScript = path.join(repoRoot, "shared", "scripts", "check-upstream-drift.mjs");
-  if (fs.existsSync(driftScript) && !skipDrift) {
+  if (fs.existsSync(driftScript)) {
     const drift = runJsonCommand(
       "node",
       [driftScript, "--format", "json", "--allow-drift"],
@@ -179,9 +186,16 @@ function main(args = process.argv.slice(2)) {
       drift.checks?.length === expectedChecks,
       `Upstream drift report is incomplete (expected ${expectedChecks}, found ${drift.checks?.length ?? 0})`
     );
+    // Guard before filtering: a malformed report with no `failures` array must
+    // not silently become an empty blocking list.
     assert(
-      Array.isArray(drift.failures) && drift.failures.length === 0,
-      `Upstream drift check failed:\n${drift.failures?.map((failure) => failure.message).join("\n") ?? "invalid report"}`
+      Array.isArray(drift.failures),
+      "Upstream drift report is malformed: missing failures[]"
+    );
+    const blocking = getBlockingUpstreamFailures(drift, { allowUpstreamNewer: skipDrift });
+    assert(
+      blocking.length === 0,
+      `Upstream drift check failed:\n${blocking.map((failure) => failure.message).join("\n")}`
     );
   }
 

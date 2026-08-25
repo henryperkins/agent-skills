@@ -147,6 +147,17 @@ export function collectUpstreamDriftFromData(indices, skillTexts, registry) {
   return { checks, failures };
 }
 
+function listSkillNames(repoRoot) {
+  try {
+    return fs
+      .readdirSync(path.join(repoRoot, "skills"), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+}
+
 export function collectUpstreamDrift(repoRoot, registry) {
   const indices = {};
   const skillTexts = {};
@@ -158,18 +169,41 @@ export function collectUpstreamDrift(repoRoot, registry) {
     } catch {
       indices[upstream.id] = null;
     }
-    for (const declaration of upstream.declarations) {
-      if (declaration.skill in skillTexts) continue;
-      const skillPath = path.join(repoRoot, "skills", declaration.skill, "SKILL.md");
-      try {
-        skillTexts[declaration.skill] = fs.readFileSync(skillPath, "utf8");
-      } catch {
-        skillTexts[declaration.skill] = null;
-      }
+  }
+
+  // Load every skill, not only the declaration-owned ones: an unregistered
+  // release marker in an undeclared skill is exactly the drift this gate
+  // exists to catch, and reading only declared skills makes it invisible.
+  const skillNames = new Set([
+    ...listSkillNames(repoRoot),
+    ...registry.flatMap((upstream) => upstream.declarations.map((declaration) => declaration.skill)),
+  ]);
+  for (const skill of skillNames) {
+    const skillPath = path.join(repoRoot, "skills", skill, "SKILL.md");
+    try {
+      skillTexts[skill] = fs.readFileSync(skillPath, "utf8");
+    } catch {
+      skillTexts[skill] = null;
     }
   }
 
   return collectUpstreamDriftFromData(indices, skillTexts, registry);
+}
+
+/**
+ * Select the failures that must block a run.
+ *
+ * `--skip-upstream-drift` exists for one expected condition: the deterministic
+ * refresh landed a release the affected skill has not been re-verified against
+ * yet. Suppressing the whole report instead would also hide a broken index, a
+ * malformed marker, a duplicated declaration, and a marker that claims a
+ * version the committed index does not have.
+ */
+export function getBlockingUpstreamFailures(report, { allowUpstreamNewer = false } = {}) {
+  const failures = Array.isArray(report?.failures) ? report.failures : [];
+  return allowUpstreamNewer
+    ? failures.filter((failure) => failure.code !== "upstream-newer")
+    : failures;
 }
 
 export function formatDriftText(report) {

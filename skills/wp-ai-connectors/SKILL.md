@@ -1,7 +1,7 @@
 ---
 name: wp-ai-connectors
 description: "Use when building or debugging a WordPress AI provider plugin, registering an AI service with the PHP AI Client, exposing it through Settings → Connectors, declaring model capabilities/options, or adding text, media, function-calling, or embedding support at the provider layer."
-compatibility: "Targets WordPress 7.0+ (PHP 7.4+); WordPress Core verified through: 7.1; PHP AI Client verified through: 1.4.0 (Core bundles 1.3.1); Anthropic provider verified through: 1.0.4; Google provider verified through: 1.1.1; OpenAI provider verified through: 1.1.0. `application_password` needs Core 7.1 or Gutenberg 23.6+. Embeddings need standalone PHP AI Client 1.4+ and runtime gating. Filesystem-based agent with bash + node; some workflows require WP-CLI."
+compatibility: "Targets WordPress 7.0+ (PHP 7.4+); WordPress Core verified through: 7.1; Gutenberg verified through: 23.8.0; PHP AI Client verified through: 1.4.0 (Core bundles 1.3.1); Anthropic provider verified through: 1.0.4; Google provider verified through: 1.1.1; OpenAI provider verified through: 1.1.0. `application_password` needs Core 7.1 or Gutenberg 23.6+. Embeddings need standalone PHP AI Client 1.4+ and runtime gating. Filesystem-based agent with bash + node; some workflows require WP-CLI."
 license: GPL-2.0-or-later
 ---
 

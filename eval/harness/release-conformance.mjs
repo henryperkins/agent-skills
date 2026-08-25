@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { parseWpGutenbergMapFromHtml } from "../../shared/scripts/upstream-index-lib.mjs";
@@ -10,9 +11,11 @@ import {
   updateUpstreamIndicesFromPayloads,
 } from "../../shared/scripts/update-upstream-indices.mjs";
 import {
+  collectUpstreamDrift,
   collectUpstreamDriftFromData,
   formatDriftJson,
   formatDriftMarkdown,
+  getBlockingUpstreamFailures,
 } from "../../shared/scripts/upstream-drift-lib.mjs";
 import {
   buildUpstreamState,
@@ -150,26 +153,37 @@ export function assertMarketplaceVersionMatches(repoRoot) {
   );
 }
 
-export function assertRelease190(repoRoot) {
+/**
+ * An exact release pin goes stale the moment the next release ships and then
+ * blocks it. Assert a floor, manifest equality, and notes for the *current*
+ * version instead, so the gate keeps working across releases.
+ */
+export function assertReleaseVersionAtLeast(actual, floor = "1.9.0") {
+  assert(
+    compareSemver(actual, floor) >= 0,
+    `Release version ${actual} must be at least ${floor}`
+  );
+}
+
+export function assertReleaseFloor(repoRoot) {
+  assertReleaseVersionAtLeast("1.9.1", "1.9.0");
+  expectThrow(
+    () => assertReleaseVersionAtLeast("1.8.9", "1.9.0"),
+    "A version below the release floor must fail"
+  );
+
   const plugin = readJson(repoRoot, PLUGIN_MANIFEST);
   const marketplace = readJson(repoRoot, MARKETPLACE_MANIFEST);
   const entry = marketplace.plugins?.find((candidate) => candidate?.name === plugin.name);
 
-  assert(plugin.version === "1.9.0", `${PLUGIN_MANIFEST} must declare release version 1.9.0`);
-  assert(entry?.version === "1.9.0", `${MARKETPLACE_MANIFEST} must list "${plugin.name}" at version 1.9.0`);
+  assertReleaseVersionAtLeast(plugin.version, "1.9.0");
+  assert(
+    entry?.version === plugin.version,
+    `${MARKETPLACE_MANIFEST} must list "${plugin.name}" at version ${plugin.version}`
+  );
 
-  const notes = "docs/release-notes-1.9.0.md";
-  assert(fs.existsSync(path.join(repoRoot, notes)), `${notes} must exist for release 1.9.0`);
-  requireIncludes(repoRoot, notes, [
-    "WordPress/ai 1.3.0",
-    "Custom Abilities",
-    "WordPress 7.1",
-    "Gutenberg 23.8.0",
-    "embedding overlay",
-    "two-state",
-    "drift",
-    "maintenance",
-  ]);
+  const notes = `docs/release-notes-${plugin.version}.md`;
+  assert(fs.existsSync(path.join(repoRoot, notes)), `${notes} must exist for release ${plugin.version}`);
 }
 
 export function assertCoreAiUpstreamRegistry(repoRoot) {
@@ -207,6 +221,26 @@ export function assertCoreAiUpstreamRegistry(repoRoot) {
       assert(upstream.affectedSkills.includes(declaration.skill), `${upstream.id} declaration names an unaffected skill: ${declaration.skill}`);
       assert(typeof declaration.label === "string" && declaration.label !== "", `${upstream.id} declaration must have a label`);
       assert(["minor", "patch"].includes(declaration.granularity), `${upstream.id} declaration has invalid granularity`);
+    }
+
+    // An affected skill with no declaration is invisible to the drift gate: the
+    // index can advance past it forever and nothing turns red. The WP/Gutenberg
+    // HTML map is exempt because it has no single release version to declare.
+    if (upstream.sourceType !== "html-version-map") {
+      const declarationCounts = new Map();
+      for (const declaration of upstream.declarations) {
+        declarationCounts.set(declaration.skill, (declarationCounts.get(declaration.skill) ?? 0) + 1);
+      }
+      for (const skill of upstream.affectedSkills) {
+        assert(
+          declarationCounts.get(skill) === 1,
+          `${upstream.id} affected skill ${skill} must have exactly one declaration`
+        );
+      }
+      assert(
+        declarationCounts.size === upstream.affectedSkills.length,
+        `${upstream.id} declarations and affectedSkills must describe the same skills`
+      );
     }
 
     const index = readJson(repoRoot, upstream.indexFile);
@@ -253,6 +287,20 @@ export function assertCoreAiUpstreamRegistry(repoRoot) {
   );
   assert(invalidDriftArgument.status === 2, "Unknown drift CLI arguments must exit 2");
   assert(!invalidDriftArgument.stderr.includes("at file:"), "Drift CLI usage errors must not print a stack trace");
+
+  // A hand-maintained list of skills-ref targets silently stops covering every
+  // skill added after it was written. Enumerate the directory instead.
+  const ci = read(repoRoot, ".github/workflows/ci.yml");
+  assert(
+    ci.includes("for skill_dir in skills/*; do") &&
+      ci.includes('test -d "$skill_dir" || continue') &&
+      ci.includes('skills-ref validate "$skill_dir"'),
+    "CI must validate every skills/* directory by enumeration"
+  );
+  assert(
+    !/skills-ref validate skills\//.test(ci),
+    "CI must not hard-code individual skills-ref validate targets"
+  );
 }
 
 function expectThrow(callback, message) {
@@ -448,6 +496,57 @@ export function assertIndependentUpstreamDrift() {
   const clean = collectUpstreamDriftFromData(indices, skillTexts, CORE_AI_UPSTREAMS);
   assert(clean.failures.length === 0, "Aligned Core AI drift fixtures must pass");
 
+  // Filesystem collection must read every skills/*/SKILL.md, not only the ones
+  // a declaration names. Otherwise a release marker added to an undeclared
+  // skill is never checked and never reported as unregistered.
+  const driftRoot = fs.mkdtempSync(path.join(os.tmpdir(), "upstream-drift-filesystem-"));
+  for (const upstream of CORE_AI_UPSTREAMS) {
+    const indexPath = path.join(driftRoot, upstream.indexFile);
+    fs.mkdirSync(path.dirname(indexPath), { recursive: true });
+    fs.writeFileSync(indexPath, `${JSON.stringify(indices[upstream.id], null, 2)}\n`, "utf8");
+  }
+  for (const [skill, text] of Object.entries(skillTexts)) {
+    const skillPath = path.join(driftRoot, "skills", skill, "SKILL.md");
+    fs.mkdirSync(path.dirname(skillPath), { recursive: true });
+    fs.writeFileSync(skillPath, text, "utf8");
+  }
+  const strayPath = path.join(driftRoot, "skills", "stray-skill", "SKILL.md");
+  fs.mkdirSync(path.dirname(strayPath), { recursive: true });
+  fs.writeFileSync(
+    strayPath,
+    "---\nname: stray-skill\ncompatibility: \"MCP Adapter verified through: 0.6.1\"\n---\n",
+    "utf8"
+  );
+  const stray = collectUpstreamDrift(driftRoot, CORE_AI_UPSTREAMS);
+  fs.rmSync(driftRoot, { recursive: true, force: true });
+  assert(
+    stray.failures.some((failure) => failure.code === "unregistered-marker" && failure.skill === "stray-skill"),
+    "A marker in an otherwise undeclared skill must be rejected"
+  );
+
+  // `--skip-upstream-drift` exists for exactly one expected condition: the
+  // index refreshed ahead of a skill marker. Every other failure code is a
+  // defect in the registry or a skill file and must stay blocking.
+  const mixedFailures = {
+    failures: [
+      { code: "upstream-newer" },
+      { code: "invalid-index" },
+      { code: "invalid-marker" },
+      { code: "duplicate-declaration" },
+      { code: "declaration-ahead" },
+    ],
+  };
+  assert(
+    getBlockingUpstreamFailures(mixedFailures, { allowUpstreamNewer: true })
+      .map((failure) => failure.code)
+      .join(",") === "invalid-index,invalid-marker,duplicate-declaration,declaration-ahead",
+    "--skip-upstream-drift may suppress only upstream-newer"
+  );
+  assert(
+    getBlockingUpstreamFailures(mixedFailures).length === 5,
+    "Without the skip flag every drift failure stays blocking"
+  );
+
   const driftedSkills = (upstreamId, version, texts = skillTexts) => {
     const fixture = structuredClone(indices);
     const upstream = CORE_AI_UPSTREAMS.find((candidate) => candidate.id === upstreamId);
@@ -471,13 +570,21 @@ export function assertIndependentUpstreamDrift() {
   );
   assert(
     JSON.stringify(driftedSkills("mcp-adapter", "0.6.2")) ===
-      JSON.stringify(["wp-abilities-api", "wp-abilities-audit", "wp-abilities-verify"]),
+      JSON.stringify(["wp-abilities-api", "wp-abilities-audit", "wp-abilities-verify", "wp-ai-plugin"]),
     "MCP Adapter drift must reach every exposure consumer"
   );
-  assert(JSON.stringify(driftedSkills("php-ai-client", "1.4.1")) === JSON.stringify(["wp-ai-client", "wp-ai-connectors"]), "PHP AI Client drift must reach both consumers");
+  assert(
+    JSON.stringify(driftedSkills("php-ai-client", "1.4.1")) ===
+      JSON.stringify(["wp-ai-client", "wp-ai-connectors", "wp-ai-plugin"]),
+    "PHP AI Client drift must reach every consumer"
+  );
   assert(JSON.stringify(driftedSkills("wp-ai-client", "0.4.1")) === JSON.stringify(["wp-ai-client"]), "WP AI Client drift must be independent");
   assert(JSON.stringify(driftedSkills("wordpress-ai-plugin", "1.3.1")) === JSON.stringify(["wp-ai-plugin"]), "AI plugin drift must be independent");
-  assert(JSON.stringify(driftedSkills("gutenberg", "23.9.0")) === JSON.stringify(["wp-abilities-api", "wp-ai-plugin"]), "Gutenberg drift must reach Abilities and Knowledge consumers");
+  assert(
+    JSON.stringify(driftedSkills("gutenberg", "23.9.0")) ===
+      JSON.stringify(["wp-abilities-api", "wp-ai-connectors", "wp-ai-plugin"]),
+    "Gutenberg drift must reach Abilities, connector, and Knowledge consumers"
+  );
   for (const [id, version] of [
     ["anthropic-provider", "1.0.5"],
     ["google-provider", "1.1.2"],
@@ -604,7 +711,7 @@ export function assertAiMaintenanceWorkflow(repoRoot) {
 export function runReleaseConformance(repoRoot) {
   assertPluginVersionFresh(repoRoot);
   assertMarketplaceVersionMatches(repoRoot);
-  assertRelease190(repoRoot);
+  assertReleaseFloor(repoRoot);
   assertUpstreamNormalization(repoRoot);
   assertIndependentUpstreamDrift();
   assertCompleteMaintenanceState();
