@@ -106,7 +106,7 @@ node shared/scripts/ai-generate-updates.mjs --check-config
 
 Missing configuration produces a **redacted skip, not a failed index refresh**. The workflow inspects `--check-config` before installing the SDK; when `configured` is false it records outcome `skipped` with a category such as `missing-api-key` or `missing-model` and still opens the deterministic index pull request.
 
-The generator hashes the complete sorted registry state with SHA-256. Every Core AI release source changes that state and uses the registry's affected-skill list. Without supplied tagged-file evidence, it records a review recommendation instead of rewriting a skill. Its error artifact contains only a redacted category such as `missing-api-key`, `rate-limit`, or `model-access`.
+The generator canonicalizes the complete normalized content of every registry-owned index (sorting object keys while preserving array order), hashes each source with SHA-256, and hashes the resulting schema-3 state again. Versions and the version-map row count remain human-readable metadata; per-source fingerprints decide whether content changed. A same-count mapping replacement or a maintenance release below the latest version therefore changes both the source fingerprint and the overall state. Each detected source uses the registry's affected-skill list. Without supplied tagged-file evidence, the generator records a review recommendation instead of rewriting a skill. Its error artifact contains only a redacted category such as `missing-api-key`, `rate-limit`, or `model-access`.
 
 **Advisory sync state does not persist.** Because no job hands a workspace to another, the `.github/state/last-sync.json` the generator would write in `generate-updates` never reaches the pull request `create-index-pr` opens from its own fresh checkout. The `add-paths` entry for it is therefore inert while generated edits are disabled, and each advisory run re-triages the same deltas from the committed state. That is acceptable for an advisory path — the deterministic index refresh does not depend on it — but do not read a repeated advisory recommendation as a new one, and expect this to need a deliberate design decision if generated edits are ever re-enabled.
 
@@ -116,7 +116,7 @@ If generation fails, is skipped, or produces no edits, the workflow validates an
 
 ### No workspace artifact: each job reverifies the snapshot
 
-Jobs do not hand a mutated workspace to each other. `refresh-indices` publishes only the canonical state hash as a job output. **Each consuming job reruns the deterministic updater and rejects a hash mismatch** — it recomputes `--print-state-hash` and fails closed with `Upstream state changed during this run` when the recomputed hash differs from the refresh job's. A release landing mid-run therefore aborts the run instead of shipping a mixed snapshot, and no job downloads an index artifact.
+Jobs do not hand a mutated workspace to each other. `refresh-indices` publishes only the canonical state hash as a job output. **Each consuming job reruns the deterministic updater and rejects a hash mismatch** — it recomputes `--print-state-hash` from complete per-source index fingerprints and fails closed with `Upstream state changed during this run` when the recomputed hash differs from the refresh job's. Any normalized index-content change landing mid-run therefore aborts the run instead of shipping a mixed snapshot, and no job downloads an index artifact.
 
 ## Safe reruns
 

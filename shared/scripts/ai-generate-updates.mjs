@@ -52,23 +52,42 @@ function releaseUrlFromIndex(upstream, index) {
   return typeof index?.latest?.url === "string" ? index.latest.url : upstream.source;
 }
 
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, canonicalize(value[key])])
+  );
+}
+
+function hashJson(value) {
+  return crypto
+    .createHash("sha256")
+    .update(JSON.stringify(canonicalize(value)))
+    .digest("hex");
+}
+
 export function buildUpstreamState(indices, registry = CORE_AI_UPSTREAMS) {
   const versions = {};
+  const fingerprints = {};
   let versionMapRowCount = 0;
   for (const upstream of [...registry].sort((a, b) => a.id.localeCompare(b.id))) {
     const index = indices[upstream.id];
+    fingerprints[upstream.id] = hashJson(index);
     if (upstream.sourceType === "html-version-map") {
       versionMapRowCount = Array.isArray(index?.rows) ? index.rows.length : 0;
     } else {
       versions[upstream.id] = versionFromIndex(upstream, index);
     }
   }
-  return { schemaVersion: 2, versions, versionMapRowCount };
+  return { schemaVersion: 3, versions, versionMapRowCount, fingerprints };
 }
 
 export function getUpstreamStateHash(indices, registry = CORE_AI_UPSTREAMS) {
   const state = buildUpstreamState(indices, registry);
-  const hash = crypto.createHash("sha256").update(JSON.stringify(state)).digest("hex");
+  const hash = hashJson(state);
   return { hash, state };
 }
 
@@ -83,13 +102,20 @@ export function detectUpstreamChanges(
   registry = CORE_AI_UPSTREAMS
 ) {
   const legacyHash = typeof lastSync?.hash === "string" && /^[A-Za-z0-9+/]{16}$/.test(lastSync.hash);
-  if (!lastSync?.state?.versions || lastSync.state.schemaVersion !== 2 || legacyHash) {
+  const hasPriorState = Boolean(lastSync?.state && typeof lastSync.state === "object");
+  if (
+    !lastSync?.state?.versions ||
+    !lastSync?.state?.fingerprints ||
+    lastSync.state.schemaVersion !== 3 ||
+    legacyHash
+  ) {
+    const isMigration = legacyHash || hasPriorState;
     return [
       {
-        type: legacyHash ? "state-schema-migration" : "initial-sync",
+        type: isMigration ? "state-schema-migration" : "initial-sync",
         sourceId: null,
-        description: legacyHash
-          ? "Migrate the partial 16-character state hash to the complete Core AI source state"
+        description: isMigration
+          ? "Migrate the partial upstream state to complete per-source index fingerprints"
           : "Initialize the complete Core AI source state",
         oldVersion: null,
         newVersion: currentState.hash,
@@ -110,11 +136,16 @@ export function detectUpstreamChanges(
     const newVersion = isMap
       ? currentState.state.versionMapRowCount
       : currentState.state.versions[upstream.id] ?? null;
-    if (oldVersion === newVersion) continue;
+    const oldFingerprint = lastSync.state.fingerprints[upstream.id] ?? null;
+    const newFingerprint = currentState.state.fingerprints[upstream.id] ?? null;
+    if (oldFingerprint === newFingerprint) continue;
+    const versionChanged = oldVersion !== newVersion;
     changes.push({
-      type: isMap ? "version-map-update" : "upstream-release",
+      type: isMap ? "version-map-update" : versionChanged ? "upstream-release" : "upstream-index-update",
       sourceId: upstream.id,
-      description: `${upstream.id} updated: ${oldVersion ?? "unknown"} → ${newVersion ?? "unknown"}`,
+      description: versionChanged
+        ? `${upstream.id} updated: ${oldVersion ?? "unknown"} → ${newVersion ?? "unknown"}`
+        : `${upstream.id} index content updated at ${newVersion ?? "unknown"}`,
       oldVersion,
       newVersion,
       releaseUrl: releaseUrlFromIndex(upstream, indices[upstream.id]),

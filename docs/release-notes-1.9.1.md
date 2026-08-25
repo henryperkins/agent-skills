@@ -14,8 +14,11 @@ Full ledger: `docs/core-ai-skills-audit-2026-08-25.md`.
 - AI Skill Maintenance is now **artifact-free**. No job uploads or downloads an
   index or workspace; each one reruns the deterministic updater and compares a
   canonical SHA-256 **state hash** from the new read-only
-  `node shared/scripts/ai-generate-updates.mjs --print-state-hash`. A release that
-  lands mid-run fails the run closed instead of shipping a mixed snapshot.
+  `node shared/scripts/ai-generate-updates.mjs --print-state-hash`. Schema 3
+  fingerprints the complete normalized content of every index, so same-count map
+  replacements and non-latest maintenance releases change the state too. Any
+  upstream content change that lands mid-run fails the run closed instead of
+  shipping a mixed snapshot.
 - `upstream-sync.yml` is the sole weekly scheduled index owner. AI maintenance runs
   on manual dispatch or an `upstream-release` repository dispatch only, and uses its
   own branch, `chore/ai-maintenance-upstream-indices`, so the two paths cannot

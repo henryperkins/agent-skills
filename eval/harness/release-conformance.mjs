@@ -650,8 +650,15 @@ export function assertCompleteMaintenanceState() {
     ])
   );
   const baseline = getUpstreamStateHash(indices, CORE_AI_UPSTREAMS);
-  assert(buildUpstreamState(indices, CORE_AI_UPSTREAMS).schemaVersion === 2, "Maintenance state must use schema version 2");
+  assert(buildUpstreamState(indices, CORE_AI_UPSTREAMS).schemaVersion === 3, "Maintenance state must use schema version 3");
   assert(/^[a-f0-9]{64}$/.test(baseline.hash), "Maintenance state must use a SHA-256 hash");
+  const reorderedIndices = structuredClone(indices);
+  const gutenbergLatest = reorderedIndices.gutenberg.latest;
+  reorderedIndices.gutenberg.latest = { url: gutenbergLatest.url, tag: gutenbergLatest.tag };
+  assert(
+    getUpstreamStateHash(reorderedIndices, CORE_AI_UPSTREAMS).hash === baseline.hash,
+    "Equivalent index objects must hash identically regardless of key insertion order"
+  );
 
   for (const upstream of CORE_AI_UPSTREAMS.filter((candidate) => candidate.sourceType !== "html-version-map")) {
     const changedIndices = structuredClone(indices);
@@ -676,10 +683,42 @@ export function assertCompleteMaintenanceState() {
   const core = CORE_AI_UPSTREAMS.find((upstream) => upstream.id === "wordpress-core");
   assert(core.affectedSkills.length === 6, "A Core release must reach all six Core AI skills");
   const changedMap = structuredClone(indices);
-  changedMap["wp-gutenberg-version-map"].rows.push({ wordpress: "7.2.X", gutenberg: "24.0" });
+  changedMap["wp-gutenberg-version-map"].rows[0].gutenberg = "23.7";
+  const changedMapState = getUpstreamStateHash(changedMap, CORE_AI_UPSTREAMS);
   assert(
-    getUpstreamStateHash(changedMap, CORE_AI_UPSTREAMS).hash !== baseline.hash,
-    "A version-map row change must change the maintenance state hash"
+    changedMapState.hash !== baseline.hash,
+    "A same-count version-map row replacement must change the maintenance state hash"
+  );
+  const mapChanges = detectUpstreamChanges(
+    { hash: baseline.hash, state: baseline.state },
+    changedMapState,
+    changedMap,
+    CORE_AI_UPSTREAMS
+  );
+  assert(
+    mapChanges.some((change) => change.sourceId === "wp-gutenberg-version-map"),
+    "A same-count version-map row replacement must produce a maintenance change"
+  );
+
+  const maintenanceRelease = structuredClone(indices);
+  maintenanceRelease["wordpress-core"].recent = ["7.1", "7.0.5"];
+  const maintenanceState = getUpstreamStateHash(maintenanceRelease, CORE_AI_UPSTREAMS);
+  assert(
+    maintenanceState.hash !== baseline.hash,
+    "A non-latest maintenance release must change the maintenance state hash"
+  );
+  const maintenanceChanges = detectUpstreamChanges(
+    { hash: baseline.hash, state: baseline.state },
+    maintenanceState,
+    maintenanceRelease,
+    CORE_AI_UPSTREAMS
+  );
+  const maintenanceChange = maintenanceChanges.find((change) => change.sourceId === "wordpress-core");
+  assert(
+    maintenanceChange?.type === "upstream-index-update" &&
+      maintenanceChange.oldVersion === "7.1" &&
+      maintenanceChange.newVersion === "7.1",
+    "A non-latest maintenance release must produce a same-version upstream index change"
   );
   const migration = detectUpstreamChanges(
     { hash: "YWJjZGVmZ2hpamts", state: { wpLatest: "7.0" } },
@@ -688,6 +727,13 @@ export function assertCompleteMaintenanceState() {
     CORE_AI_UPSTREAMS
   );
   assert(migration[0]?.type === "state-schema-migration", "Legacy 16-character state hashes must migrate once");
+  const schemaMigration = detectUpstreamChanges(
+    { hash: baseline.hash, state: { ...baseline.state, schemaVersion: 2 } },
+    baseline,
+    indices,
+    CORE_AI_UPSTREAMS
+  );
+  assert(schemaMigration[0]?.type === "state-schema-migration", "Schema version 2 state must migrate once");
 
   const missing = inspectConfiguration({});
   assert(!missing.configured && missing.category === "missing-api-key", "Config checks must classify a missing API key");
