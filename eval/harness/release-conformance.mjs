@@ -310,10 +310,36 @@ export function assertUpstreamNormalization(repoRoot) {
         ],
       },
     },
-    "wordpress/php-ai-client"
+    "wordpress/php-ai-client",
+    CORE_AI_UPSTREAMS.find((upstream) => upstream.id === "php-ai-client").releaseUrlBase
   );
   assert(packagist.latest.tag === "1.4.10", "Packagist versions must sort numerically");
   assert(packagist.latest.publishedAt.endsWith("Z"), "Packagist UTC dates must normalize to Z");
+
+  const alternatePackagist = normalizePackagistVersions(
+    {
+      packages: {
+        "vendor/other-client": [
+          { version: "2.3.4", time: "2026-08-01T00:00:00+00:00" },
+        ],
+      },
+    },
+    "vendor/other-client",
+    "https://github.com/vendor/other-client/releases/tag"
+  );
+  assert(
+    alternatePackagist.latest.url === "https://github.com/vendor/other-client/releases/tag/2.3.4",
+    "Packagist release URLs must come from registry metadata"
+  );
+
+  const stateHash = spawnSync(
+    "node",
+    [path.join(repoRoot, "shared/scripts/ai-generate-updates.mjs"), "--print-state-hash"],
+    { cwd: repoRoot, encoding: "utf8" }
+  );
+  assert(stateHash.status === 0, "State-hash CLI must exit successfully");
+  assert(/^[a-f0-9]{64}\n$/.test(stateHash.stdout), "State-hash CLI must print one SHA-256 hash");
+  assert(!stateHash.stderr, "State-hash CLI must not emit diagnostics on success");
 
   const registry = [
     { id: "good", indexFile: "good.json", source: "https://example.test/good", sourceType: "github-releases" },

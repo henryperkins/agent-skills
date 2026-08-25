@@ -113,7 +113,7 @@ export function normalizeGitHubReleases(payload) {
   return { latest: stable[0], recent: stable.slice(0, 30) };
 }
 
-export function normalizePackagistVersions(payload, packageName) {
+export function normalizePackagistVersions(payload, packageName, releaseUrlBase) {
   const versions = payload?.packages?.[packageName];
   if (!Array.isArray(versions)) {
     throw new Error(
@@ -123,6 +123,9 @@ export function normalizePackagistVersions(payload, packageName) {
           : typeof payload
       }`
     );
+  }
+  if (typeof releaseUrlBase !== "string" || releaseUrlBase === "") {
+    throw new Error(`Missing Packagist releaseUrlBase for ${packageName}.`);
   }
 
   const stable = versions
@@ -136,7 +139,7 @@ export function normalizePackagistVersions(payload, packageName) {
       tag: version.version,
       name: version.version,
       publishedAt: typeof version.time === "string" ? version.time.replace(/\+00:00$/, "Z") : null,
-      url: `https://github.com/WordPress/php-ai-client/releases/tag/${version.version}`,
+      url: `${releaseUrlBase}/${version.version}`,
     }))
     .sort((a, b) => compareVersionsDesc(a.tag, b.tag));
 
@@ -154,7 +157,7 @@ function normalizeEntry(upstream, payload) {
     case "github-releases":
       return normalizeGitHubReleases(payload);
     case "packagist":
-      return normalizePackagistVersions(payload, upstream.packageName);
+      return normalizePackagistVersions(payload, upstream.packageName, upstream.releaseUrlBase);
     case "html-version-map":
       if (typeof payload !== "string") throw new Error(`Expected HTML text for ${upstream.id}.`);
       return parseWpGutenbergMapFromHtml(payload);

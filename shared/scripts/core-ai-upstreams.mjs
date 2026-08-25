@@ -70,6 +70,7 @@ export const CORE_AI_UPSTREAMS = Object.freeze([
     source: "https://repo.packagist.org/p2/wordpress/php-ai-client.json",
     sourceType: "packagist",
     packageName: "wordpress/php-ai-client",
+    releaseUrlBase: "https://github.com/WordPress/php-ai-client/releases/tag",
     affectedSkills: ["wp-ai-client", "wp-ai-connectors", "wp-ai-plugin"],
     declarations: [
       { skill: "wp-ai-client", label: "PHP AI Client verified through", granularity: "patch" },

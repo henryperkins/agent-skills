@@ -15,8 +15,11 @@ const HELP = `Usage: node shared/scripts/ai-generate-updates.mjs [options]
 Generate advisory, source-evidenced Core AI skill updates.
 
 Options:
-  --check-config  Inspect ANTHROPIC_API_KEY / ANTHROPIC_MODEL configuration without network access
-  --help          Show this help
+  --check-config      Inspect ANTHROPIC_API_KEY / ANTHROPIC_MODEL configuration without network access
+  --print-state-hash  Print the canonical SHA-256 hash of the committed upstream indices and exit.
+                      Read-only and provider-independent: it reads no environment credentials,
+                      makes no network request, and writes no file.
+  --help              Show this help
 
 Environment:
   ANTHROPIC_API_KEY  Required for generation; configure as a repository secret
@@ -135,7 +138,7 @@ export function inspectConfiguration(environment = process.env) {
   };
 }
 
-function loadUpstreamIndices(repoRoot = REPO_ROOT, registry = CORE_AI_UPSTREAMS) {
+export function loadUpstreamIndices(repoRoot = REPO_ROOT, registry = CORE_AI_UPSTREAMS) {
   return Object.fromEntries(
     registry.map((upstream) => [
       upstream.id,
@@ -277,9 +280,10 @@ function writeGeneratorResult(result) {
 }
 
 function parseArguments(args) {
-  const options = { checkConfig: false, help: false };
+  const options = { checkConfig: false, printStateHash: false, help: false };
   for (const argument of args) {
     if (argument === "--check-config") options.checkConfig = true;
+    else if (argument === "--print-state-hash") options.printStateHash = true;
     else if (argument === "--help") options.help = true;
     else {
       const error = new Error(`Unknown argument: ${argument}`);
@@ -389,6 +393,11 @@ export async function runCli(args = process.argv.slice(2)) {
   }
   if (options.checkConfig) {
     process.stdout.write(`${JSON.stringify(inspectConfiguration(), null, 2)}\n`);
+    return 0;
+  }
+  if (options.printStateHash) {
+    const { hash } = getUpstreamStateHash(loadUpstreamIndices());
+    process.stdout.write(`${hash}\n`);
     return 0;
   }
   await generate();
