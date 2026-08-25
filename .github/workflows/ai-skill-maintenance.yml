@@ -54,7 +54,17 @@ jobs:
       # the same indices from the same upstreams and must land on this hash.
       - name: Compute canonical upstream state
         id: state
-        run: echo "hash=$(node shared/scripts/ai-generate-updates.mjs --print-state-hash)" >> "$GITHUB_OUTPUT"
+        # Capture first, then write. Interpolating the command into `echo`
+        # discards its exit status, so a failing updater would publish an empty
+        # hash from a step that reported success — and two jobs failing the same
+        # way would then "agree" on nothing and pass the gate.
+        run: |
+          STATE_HASH=$(node shared/scripts/ai-generate-updates.mjs --print-state-hash)
+          if [ -z "$STATE_HASH" ]; then
+            echo "::error::Could not compute the canonical upstream state hash."
+            exit 1
+          fi
+          echo "hash=$STATE_HASH" >> "$GITHUB_OUTPUT"
 
   generate-updates:
     needs: refresh-indices
@@ -78,6 +88,10 @@ jobs:
         run: |
           node shared/scripts/update-upstream-indices.mjs
           ACTUAL_STATE_HASH=$(node shared/scripts/ai-generate-updates.mjs --print-state-hash)
+          if [ -z "$EXPECTED_STATE_HASH" ] || [ -z "$ACTUAL_STATE_HASH" ]; then
+            echo "::error::Upstream state hash missing; refusing to compare an empty snapshot."
+            exit 1
+          fi
           if [ "$ACTUAL_STATE_HASH" != "$EXPECTED_STATE_HASH" ]; then
             echo "::error::Upstream state changed during this run; rerun from a clean snapshot."
             exit 1
@@ -177,6 +191,10 @@ jobs:
         run: |
           node shared/scripts/update-upstream-indices.mjs
           ACTUAL_STATE_HASH=$(node shared/scripts/ai-generate-updates.mjs --print-state-hash)
+          if [ -z "$EXPECTED_STATE_HASH" ] || [ -z "$ACTUAL_STATE_HASH" ]; then
+            echo "::error::Upstream state hash missing; refusing to compare an empty snapshot."
+            exit 1
+          fi
           if [ "$ACTUAL_STATE_HASH" != "$EXPECTED_STATE_HASH" ]; then
             echo "::error::Upstream state changed during this run; rerun from a clean snapshot."
             exit 1

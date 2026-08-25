@@ -147,8 +147,8 @@ async function main() {
   // headers; scan AI usage only in PHP.
   for await (const file of walk(root)) {
     const isPhp = file.endsWith(".php");
-    const isThemeStylesheet = path.basename(file) === "style.css";
-    if (!isPhp && !isThemeStylesheet) continue;
+    const isStylesheet = path.basename(file) === "style.css";
+    if (!isPhp && !isStylesheet) continue;
 
     let contents;
     try {
@@ -156,6 +156,12 @@ async function main() {
     } catch {
       continue;
     }
+
+    // Only a *theme* stylesheet declares a WordPress floor. WordPress itself
+    // identifies one by its `Theme Name:` header, so require that before
+    // trusting a style.css — otherwise a plugin's admin CSS or a vendored
+    // stylesheet that happens to carry the header line could set a bogus floor.
+    if (isStylesheet && !/^[\s*#]*Theme Name\s*:/im.test(contents)) continue;
 
     const floor = extractHeaderField(contents, "Requires at least");
     if (floor) {
@@ -182,6 +188,20 @@ async function main() {
   result.wp_floor = lowestFloor;
   result.supports_ai_client =
     lowestFloor !== null && compareVersions(lowestFloor, "7.0") >= 0;
+
+  // `wp_floor` is the minimum across the whole tree, so a nested theme — a test
+  // fixture, a bundled starter theme — can decide it. Name the file when the
+  // deciding header is not at the scan root, so the number is auditable rather
+  // than mysterious.
+  const decidingFloors = floors.filter((entry) => entry.floor === lowestFloor);
+  const nestedDeciders = decidingFloors.filter((entry) => entry.file.includes(path.sep));
+  if (lowestFloor !== null && nestedDeciders.length === decidingFloors.length && nestedDeciders.length > 0) {
+    result.notes.push(
+      `Lowest 'Requires at least' (${lowestFloor}) comes only from nested file(s): ${nestedDeciders
+        .map((entry) => entry.file)
+        .join(", ")}. If that is a test fixture or a bundled theme rather than the project's own floor, re-run with --root pointed at the real project directory.`
+    );
+  }
 
   if (lowestFloor === null) {
     result.notes.push(

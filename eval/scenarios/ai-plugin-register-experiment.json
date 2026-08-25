@@ -24,9 +24,8 @@
     "Step 14: Check current 1.3.0 capabilities before adding duplicates: nineteen built-in Experiments including Content Translation, Slug Generation, and Custom Abilities; advanced feature settings; settings import/export; Site Health; request logging; and wpai_default_request_timeout",
     "Step 15: Treat core/read-content, core/read-settings, core/read-users, ai/get-post-details, and ai/get-post-terms as gated by the Custom Abilities toggle in 1.3.0, not always registered",
     "Step 16: Keep release boundaries honest: the generic wpai_system_instruction filter ships in 0.7.0, and the ability-scoped system-instruction, prompt, and prompt-builder filters ship in 1.3.0",
-    "Step N: Treat wpai_preferred_text_models, wpai_preferred_image_models, and wpai_preferred_vision_models as active filters in 1.3.0; only their ai_experiments_* aliases are deprecated shims",
-    "Step N+1: List the five request-log filters in tag 1.3.0 — wpai_request_log_retention_days, wpai_request_log_providers, wpai_request_log_context, wpai_request_log_tokens, wpai_request_log_kind — plus the wpai_request_logged action",
-    "Step N+2: State that request-log retention defaults to 0 and that 0 retains logs forever by clearing the cleanup cron, rather than cleaning up immediately"
+    "Step N: When pairing the Experiment with an Ability, point at the domain implementations under includes/Abilities/<Domain>/ for schema and permission_callback shape rather than at the thin includes/Abilities/Gated/ wrappers",
+    "Step N+1: Name wpai_gated_abilities as the extension point only for abilities that should register behind the Custom Abilities gate, and keep an ordinary Experiment-paired Ability out of that gate"
   ],
   "success_criteria": [
     "Routes to wp-ai-plugin (and wp-abilities-api for the Ability step)",
@@ -44,8 +43,7 @@
     "Recognizes that Custom Abilities gates core/read-content, core/read-settings, core/read-users, ai/get-post-details, and ai/get-post-terms in 1.3.0, and does not re-register shipped IDs blindly",
     "Uses wpai_default_request_timeout and documented settings filters rather than inventing extension hooks",
     "Presents wpai_system_instruction as shipped in 0.7.0 and the three ability-scoped prompt filters as shipped in 1.3.0",
-    "Does not present the preferred-model filters as deprecated",
-    "Counts the request-log filters correctly and does not mistake wpai_request_log_tokens for a data key",
-    "States that retention 0 means retain forever"
+    "Points at a real implementation file for the Ability's schema and permission callback rather than only at the Gated wrappers",
+    "Does not place an ordinary Experiment-paired Ability behind the Custom Abilities gate"
   ]
 }

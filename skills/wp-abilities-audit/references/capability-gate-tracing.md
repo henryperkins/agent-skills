@@ -112,11 +112,21 @@ Read that literally, because two details decide real audits:
   not qualify either.
 
 `get_post_type_capabilities()` does *not* special-case `'post'`/`'page'`; it
-branches only on the boolean `set_props()` already resolved. With
-`map_meta_cap = false`, the `cap` object never gains `read_post` / `edit_post` /
-`delete_post`, `map_meta_cap()` appends an undefined capability, and the check
-fails closed — which reads like correct denial in testing and is actually a
-misconfiguration. Record the registration you read, not the shape you expected.
+branches only on the boolean `set_props()` already resolved.
+
+Be precise about what `map_meta_cap = false` actually removes. `cap->read_post`,
+`cap->edit_post`, and `cap->delete_post` are still populated — they sit in
+`$default_capabilities` and are assigned unconditionally. What the
+`if ( $args->map_meta_cap )` branch adds is the six mapping primitives (`read`,
+`edit_private_posts`, `edit_published_posts`, `delete_private_posts`,
+`delete_published_posts`, `delete_others_posts`) and the call to
+`_post_type_meta_capabilities()`. Without that call the type's meta caps are
+never registered, so `map_meta_cap()` takes its
+`if ( ! $post_type->map_meta_cap )` short circuit, appends the raw
+`cap->edit_post` string (`edit_book`) as a required primitive that no role
+grants, and the check fails closed — which reads like correct denial in testing
+and is actually a misconfiguration. Record the registration you read, not the
+shape you expected.
 
 Dynamic resolution typically lands at:
 

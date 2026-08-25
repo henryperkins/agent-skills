@@ -59,7 +59,9 @@ If none exist, decide whether you’re introducing Abilities API fresh (new regi
 
 ### 3) Register categories (optional)
 
-If you need a logical grouping, register an ability category early (see `references/php-registration.md`).
+If you need a logical grouping, register an ability category early with
+`wp_register_ability_category()` on `wp_abilities_api_categories_init` — before the abilities that
+name it, or those registrations are rejected (see `references/php-registration.md`).
 
 ### 4) Register abilities (PHP)
 
@@ -70,6 +72,14 @@ To avoid drift between the ability and the existing UI / REST code path, see `re
 For shared helper patterns when multiple execute callbacks delegate to existing REST controllers, see `references/plugin-family-patterns.md` (identify the shared-API-client vs zero-arg-controllers shape) and `references/delegate-helper-pattern.md` (one helper shape that works, and when not to use it).
 
 For standardized `WP_Error` codes that let agents reason about retry vs. escalation, see `references/error-code-vocabulary.md`.
+
+**Name it so Core accepts it.** `WP_Abilities_Registry::register()` enforces
+`/^[a-z0-9-]+\/[a-z0-9-]+$/` — exactly one slash, lowercase alphanumerics and hyphens on both
+sides. `my-plugin/get-info` is valid; `my_plugin/get-info` is not, because **underscores are
+rejected**, and so are uppercase and a third segment. A rejected name is `_doing_it_wrong()` plus
+`return null` *before* `wp_register_ability_args` fires, so the only symptom is that the ability
+is not there. Ability *category* slugs use a different pattern (`/^[a-z0-9]+(?:-[a-z0-9]+)*$/`, no
+slash) — see `references/php-registration.md`.
 
 Implement the ability in PHP registration with:
 
@@ -183,10 +193,27 @@ The load-bearing distinctions:
   execution. Tighten with it; never widen. Through `execute()` a `WP_Error` is logged via
   `_doing_it_wrong()` and replaced by a generic denial, so the message never reaches an executing
   caller.
-- `wp_before_execute_ability` and `wp_after_execute_ability` are the two 6.9 actions above —
-  default the trailing `$ability` parameter when supporting both 6.9/7.0 and 7.1.
+- The arity warning applies to `wp_before_execute_ability` and `wp_after_execute_ability`, and to
+  **those two only**. Default their trailing `$ability` parameter when supporting both 6.9/7.0 and
+  7.1. Do not extend the warning to `wp_ability_invoked` just because telemetry usually pairs it
+  with `wp_after_execute_ability`: `wp_ability_invoked` is new in 7.1, so on 6.9/7.0 it does not
+  fire at all — a compliance trail hung on it is silently empty there rather than fatal. Those are
+  two different version stories and they need two different mitigations.
 
 ### 5c) Typed REST inputs (WP 7.1+)
+
+The routes are `GET /wp-json/wp-abilities/v1/abilities` (list),
+`/wp-abilities/v1/abilities/{name}` (one ability), and
+**`/wp-abilities/v1/abilities/{name}/run`** (execute). `{name}` keeps its slash, so a run URL reads
+`/wp-json/wp-abilities/v1/abilities/my-plugin/list-orders/run`. See `references/rest-api.md`.
+
+**Schema defaults behave oppositely on the two transports, so normalize in the callback.** PHP
+applies only a *root* `default`, and only when input is `null`; it never injects property-level
+defaults. The JS client compiles the same schema with AJV `useDefaults: true`, which mutates
+missing *property* defaults into the caller's input object before the callback (and never applies
+the root default). A callback that treats a missing key as meaningful therefore behaves
+differently depending on who called it. Details and the defensive pattern:
+`references/input-schema-gotchas.md`.
 
 Run-request input is coerced to the types declared in `input_schema` before the callback runs, so
 `"10"` arrives as `10` and `"true"` as `true`. It is registered as the `input` argument's
@@ -200,12 +227,20 @@ should still cast defensively.
 - For the WP 7.0+ client-side surface (registering abilities in JS, the `core/abilities` store, `executeAbility`, and how annotations affect the HTTP method used to dispatch server abilities), see `references/client-side.md`.
 - Two packages: `@wordpress/abilities` (pure store, registration, execution) and `@wordpress/core-abilities` (auto-loads server-registered abilities into the client store). Register your script module during `init`, then explicitly enqueue both your page-scoped module and `@wordpress/core-abilities` with `wp_enqueue_script_module()` on the screen that needs them.
 - For older clients or non-WP 7.0 contexts, prefer `@wordpress/abilities` APIs for client-side access and checks; ensure the build pipeline bundles the dependency.
+- **Await `@wordpress/core-abilities`'s `ready` before any imperative read or execution — but read it as settled, not succeeded.** Both initialization fetches are wrapped in a `try/catch` that only logs, so `ready` always resolves. After awaiting it, an empty store can still mean an authentication or network failure, not an empty registry; check the console and the `/wp-abilities/v1/abilities` response before concluding anything. `useSelect` consumers do not need the await.
 
 ### 7) Expose via MCP for external AI agents (optional)
 
 If external agents (Claude Desktop, Cursor, ChatGPT) should be able to discover and invoke your abilities, first check the site's PHP and WordPress versions. This base skill supports PHP 7.2.24+ and WP 6.9+, but MCP Adapter 0.6.1 requires PHP 7.4+ (`^7.4 || ^8.0`) and WordPress 6.9+; on PHP 7.2 or 7.3, upgrade the site runtime or stop before installing the adapter. Read `references/mcp-exposure.md` before giving installation, bootstrap, or server code. Install `wordpress/mcp-adapter`; for multi-plugin dependency use, also run `composer require automattic/jetpack-autoloader` and bootstrap `vendor/autoload_packages.php` **followed by `McpAdapter::instance()`** — consumed as a Composer package the adapter starts nothing on its own, so without that call the default server is never created and `mcp_adapter_init` never fires.
 
 **Confirm the adapter version before writing exposure metadata — the rule reversed in 0.6.0.** The default server (`mcp-adapter-default-server`) surfaces its discover/get/execute flow for abilities that resolve to MCP-public, and `McpAbilityExposure::is_public()` resolves `meta.mcp.public ?? meta.public ?? false`. On 0.6.0+, an ability marked `meta.public => true` for REST is therefore exposed to agents unless you add `meta.mcp.public => false`; on 0.5.0 and earlier only an explicit `meta.mcp.public => true` did anything. Write `meta.mcp.public` explicitly whenever MCP status matters — it means the same thing on every version. Every execution still runs the ability's `permission_callback`, so this governs discovery rather than authorization; but the default server's own built-in abilities gate on `read`, which every role holds. A custom server can explicitly allow-list selected ability IDs, and is the cleanest way to stay insulated from the 0.6.0 default; it also does not bypass permission callbacks. The adapter maps `meta.annotations` (`readonly`, `destructive`, `idempotent`) to the corresponding MCP tool annotations.
+
+Two adapter details that bite when you wire the client up:
+
+- **`mcp_adapter_validation_enabled` has variable arity.** Seven DTO call sites pass one argument and only `McpServer::__construct()` passes three. WordPress does not pad missing filter arguments, so a callback registered `10, 3` with three *required* parameters is a fatal `ArgumentCountError` at those seven. Declare them optional: `function ( $enabled, $server_id = null, $server = null )`.
+- **`wp mcp-adapter serve` without `--server` selects the first registered server, not the default server.** Registration order is hook order, so pass `--server=<server-id>` explicitly anywhere identity matters, and `--user=<id|login|email>` or the session is unauthenticated.
+
+For agent access over HTTP, set up an **Application Password** for the client's WordPress user, and check that **Settings → Permalinks is not set to Plain** — the REST routes the transport relies on need pretty permalinks.
 
 ## Verification
 

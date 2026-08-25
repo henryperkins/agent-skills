@@ -230,9 +230,12 @@ The plugin exposes filters at several layers. The most useful ones, by need:
 - **Modify one Ability (v1.3.0+)**: `wpai_{$ability_slug}_system_instruction`, `wpai_{$ability_slug}_prompt`, and `wpai_{$ability_slug}_prompt_builder` are released. The slug strips `ai/` and replaces hyphens with underscores.
 - **Extend Custom Abilities (v1.3.0+)**: `wpai_gated_abilities` filters class strings extending `Abstract_Gated_Ability`; they register only when `wpai_feature_custom-abilities_enabled` is true.
 
+- **Steer model choice**: `wpai_preferred_text_models`, `wpai_preferred_image_models`, and `wpai_preferred_vision_models` are **active** filters in v1.3.0 (`includes/helpers.php`, plain `apply_filters`). Only their `ai_experiments_preferred_*` aliases are deprecated shims — do not read an alias as a sign the modern name is going away.
+- **Shape request logging (v1.0.0+)**: five filters, reachable only while the `ai-request-logging` Experiment is enabled — `wpai_request_log_retention_days`, `wpai_request_log_providers`, `wpai_request_log_context`, `wpai_request_log_tokens`, and `wpai_request_log_kind` — plus the `wpai_request_logged( $log_id, $insert_data )` action. **Retention defaults to `0`, and `0` means retain forever**: the daily cleanup cron is scheduled only when the value is greater than zero and cleared at zero, so a stock install accumulates log rows, response previews included, indefinitely. Note `wpai_request_log_tokens` is a filter; `tokens_input` / `tokens_output` are the DB columns.
+
 Advanced settings are feature-provided metadata on the existing Settings → AI surface, not a separate public settings registry. Check the current feature metadata and documented filters before creating custom UI or extension hooks.
 
-For the full filter list at the version you're targeting, grep the source — see `references/hooks-and-filters.md`.
+For the full filter list at the version you're targeting, grep the source — see `references/hooks-and-filters.md`, which carries every hook's filtered value, additional arguments, and file path.
 
 ### 8) Respect the 1.3.0 boundaries
 

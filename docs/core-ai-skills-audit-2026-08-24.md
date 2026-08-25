@@ -1,6 +1,14 @@
 # Core AI Skills Upstream Revalidation — 2026-08-24
 
-This is the current evidence snapshot for the six Core AI skills:
+> **Superseded for current-state claims** by `docs/core-ai-skills-audit-2026-08-25.md`.
+> This document remains the historical record of the 1.9.0 revalidation and is
+> intentionally not rewritten. Where the two disagree about how an upstream
+> behaves today, the 2026-08-25 audit is authoritative — it corrected several
+> findings against tagged executable source, including the WordPress/ai
+> request-log filter count. Cite this file only for what was believed on
+> 2026-08-24.
+
+This was the evidence snapshot for the six Core AI skills:
 
 - wp-abilities-api
 - wp-abilities-audit

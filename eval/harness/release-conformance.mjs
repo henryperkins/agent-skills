@@ -165,6 +165,25 @@ export function assertReleaseVersionAtLeast(actual, floor = "1.9.0") {
   );
 }
 
+/**
+ * The floor advances with the repository instead of staying a literal.
+ *
+ * A static floor plus `assertPluginVersionFresh` enforces "a bump accompanies
+ * new content" but not "the version never goes backwards": that gate resolves
+ * its baseline from the last commit that *changed* the version line in either
+ * direction, so a commit lowering the version resets the baseline to itself and
+ * the skills/ diff comes back empty. Deriving the floor from the release notes
+ * already in the tree closes that, and keeps advancing on its own.
+ */
+export function highestReleaseNotesVersion(repoRoot) {
+  const versions = fs
+    .readdirSync(path.join(repoRoot, "docs"))
+    .map((name) => name.match(/^release-notes-(\d+(?:\.\d+)*)\.md$/)?.[1])
+    .filter(Boolean)
+    .sort(compareSemver);
+  return versions.at(-1) ?? "1.9.0";
+}
+
 export function assertReleaseFloor(repoRoot) {
   assertReleaseVersionAtLeast("1.9.1", "1.9.0");
   expectThrow(
@@ -176,7 +195,7 @@ export function assertReleaseFloor(repoRoot) {
   const marketplace = readJson(repoRoot, MARKETPLACE_MANIFEST);
   const entry = marketplace.plugins?.find((candidate) => candidate?.name === plugin.name);
 
-  assertReleaseVersionAtLeast(plugin.version, "1.9.0");
+  assertReleaseVersionAtLeast(plugin.version, highestReleaseNotesVersion(repoRoot));
   assert(
     entry?.version === plugin.version,
     `${MARKETPLACE_MANIFEST} must list "${plugin.name}" at version ${plugin.version}`
@@ -701,6 +720,14 @@ export function assertLocalRuntimeHygiene(repoRoot) {
     "/*\nTheme Name: Detector Fixture\nRequires at least: 7.1\n*/\n",
     "utf8"
   );
+  // A stylesheet with no `Theme Name:` is not a theme stylesheet and must not
+  // contribute a floor — otherwise a plugin's admin CSS could decide the answer.
+  fs.mkdirSync(path.join(themeRoot, "assets"), { recursive: true });
+  fs.writeFileSync(
+    path.join(themeRoot, "assets", "style.css"),
+    "/*\nRequires at least: 4.0\n*/\n",
+    "utf8"
+  );
   const detector = spawnSync(
     "node",
     [path.join(repoRoot, "skills/wp-ai-client/scripts/detect_ai_client.mjs"), "--root", themeRoot],
@@ -724,10 +751,14 @@ export function assertLocalRuntimeHygiene(repoRoot) {
   requireIncludes(repoRoot, "eval/playground/ai-plugin-smoke/run.sh", [
     "trap 'rm -f mu-plugins/result.json' EXIT",
   ]);
-  assert(
-    git(repoRoot, ["ls-files", "--", "eval/playground/ai-plugin-smoke/mu-plugins/result.json"]) === "",
-    "Runtime smoke output must not be tracked"
-  );
+  // Requires real history, like assertPluginVersionFresh: a source tarball has
+  // no git, and `git()` returns null there — which is not the same as "tracked".
+  if (git(repoRoot, ["rev-parse", "--is-inside-work-tree"]) === "true") {
+    assert(
+      git(repoRoot, ["ls-files", "--", "eval/playground/ai-plugin-smoke/mu-plugins/result.json"]) === "",
+      "Runtime smoke output must not be tracked"
+    );
+  }
 }
 
 export function assertAiMaintenanceWorkflow(repoRoot) {
@@ -767,6 +798,44 @@ export function assertAbilitiesApiPrecision(repoRoot) {
     "wp_ability_execute_result",
     "wp_before_execute_ability and wp_after_execute_ability predate 7.1",
   ]);
+
+  // Anchor the split to the frontmatter description, not just to the file.
+  // The description is the routing surface an agent reads before the body is
+  // ever loaded, and `requireIncludes` reads the whole file — so body prose
+  // alone would keep the check green while the description reintroduced the
+  // exact defect (a 7.1 arity written against a 6.9 action is a fatal).
+  const abilitiesFrontmatter =
+    read(repoRoot, "skills/wp-abilities-api/SKILL.md").match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? "";
+  const abilitiesDescription = abilitiesFrontmatter.match(/^description:\s*(.*)$/m)?.[1] ?? "";
+  const sevenNewHooks = abilitiesDescription.match(/new in WP 7\.1 \(([^)]*)\)/)?.[1] ?? "";
+  assert(
+    sevenNewHooks !== "",
+    "wp-abilities-api description must name the hooks that are new in WP 7.1"
+  );
+  for (const hook of [
+    "wp_ability_invoked",
+    "wp_pre_execute_ability",
+    "wp_ability_normalize_input",
+    "wp_ability_validate_input",
+    "wp_ability_permission_result",
+    "wp_ability_execute_result",
+    "wp_ability_validate_output",
+  ]) {
+    assert(
+      sevenNewHooks.includes(hook),
+      `wp-abilities-api description must list ${hook} among the 7.1 additions`
+    );
+  }
+  for (const older of ["wp_before_execute_ability", "wp_after_execute_ability"]) {
+    assert(
+      !sevenNewHooks.includes(older),
+      `wp-abilities-api description must not list the 6.9 action ${older} among the 7.1 additions`
+    );
+    assert(
+      abilitiesDescription.includes(older),
+      `wp-abilities-api description must still name the 6.9 action ${older}`
+    );
+  }
   requireIncludes(repoRoot, "skills/wp-abilities-api/references/input-schema-gotchas.md", [
     "useDefaults: true",
     "property-level defaults",
@@ -897,9 +966,15 @@ export function assertAiPluginPrecision(repoRoot) {
   requireIncludes(repoRoot, "skills/wp-ai-plugin/references/hooks-and-filters.md", [
     "0 to retain forever",
   ]);
+  // Match to the next `### ` heading, or to end-of-file if that section ever
+  // becomes the last one — an empty slice would silently pass the loop below.
   const preferredSection = hooksReference.match(
-    /### Preferred model selection[\s\S]*?(?=\n### )/
+    /### Preferred model selection[\s\S]*?(?=\n### |$)/
   )?.[0] ?? "";
+  assert(
+    preferredSection !== "",
+    "hooks-and-filters.md must have a '### Preferred model selection' section"
+  );
   for (const hook of [
     "wpai_preferred_text_models",
     "wpai_preferred_image_models",
@@ -917,6 +992,43 @@ export function assertAiPluginPrecision(repoRoot) {
   ]);
 }
 
+/**
+ * The 1.9.1 remediation record.
+ *
+ * A release that corrects guidance has to say what it corrected, and the audit
+ * that superseded the previous one has to say so at the top of the previous
+ * one — otherwise the stale document keeps being cited. The inventory check is
+ * filesystem-backed because the last hand-maintained list drifted by seven
+ * skills and grew a "planned" section readers used as an inventory.
+ */
+export function assertRemediationRelease191(repoRoot) {
+  requireIncludes(repoRoot, "docs/release-notes-1.9.1.md", [
+    "artifact-free",
+    "state hash",
+    "drift",
+    "source-verified",
+    "smoke output",
+  ]);
+  requireIncludes(repoRoot, "docs/core-ai-skills-audit-2026-08-24.md", [
+    "Superseded for current-state claims",
+    "docs/core-ai-skills-audit-2026-08-25.md",
+  ]);
+  requireIncludes(repoRoot, "docs/core-ai-skills-audit-2026-08-25.md", [
+    "AI-authored skill pull requests remain disabled",
+    "PR #92 was not mutated",
+    "20 previously undocumented hooks",
+  ]);
+
+  const listedSkills = [...read(repoRoot, "docs/skill-set-v1.md").matchAll(/^- `([^`]+)`$/gm)]
+    .map((match) => match[1])
+    .sort();
+  const actualSkills = fs.readdirSync(path.join(repoRoot, "skills"), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  assert(JSON.stringify(listedSkills) === JSON.stringify(actualSkills), "Skill inventory must exactly match skills/*");
+}
+
 export function runReleaseConformance(repoRoot) {
   assertPluginVersionFresh(repoRoot);
   assertMarketplaceVersionMatches(repoRoot);
@@ -931,6 +1043,7 @@ export function runReleaseConformance(repoRoot) {
   assertAbilitiesAuditVerifyPrecision(repoRoot);
   assertAiClientConnectorPrecision(repoRoot);
   assertAiPluginPrecision(repoRoot);
+  assertRemediationRelease191(repoRoot);
   assert(
     IMMEDIATE_UNWATCH_PATTERN.test("const unwatch = watch( () => { return cleanup; } );\n// Dispose later.\nunwatch();"),
     "Immediate-unwatch regression fixture must exercise the structural check"

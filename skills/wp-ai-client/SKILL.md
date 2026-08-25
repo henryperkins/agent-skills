@@ -95,6 +95,16 @@ function my_plugin_rest_summarize( WP_REST_Request $request ) {
 
 `GenerativeAiResult` and `WP_Error` both serialize cleanly through `rest_ensure_response()`, with the right HTTP status code attached automatically on errors. See `references/rest-patterns.md`.
 
+**Persisting generated media: branch on `$image->isRemote()` first.** `generate_image()` returns a
+PHP AI Client `File` DTO that carries **either** inline base64 **or** a remote URL — never both.
+`getDataUri(): ?string` and `getUrl(): ?string` are each nullable and each return `null` in the
+other's case, so code that reaches straight for `getDataUri()` breaks the moment a provider or an
+`asOutputFileType()` choice yields a URL. Validate `getMimeType()` against an allow-list before
+writing, fetch the remote case with `wp_safe_remote_get()` bounded by `limit_response_size` and a
+timeout after `wp_http_validate_url()`, then re-check `wp_get_image_mime()` on the uploaded file and
+delete it on mismatch before `wp_insert_attachment()`. The complete, copyable handler is in
+`references/rest-patterns.md`.
+
 ### 4) Handle errors
 
 Generator methods return `WP_Error` on SDK failures — the wrapper converts caught `Exception`s to `WP_Error` (but **not** an argument `TypeError`; match the signatures in `references/prompt-builder.md`). Always check:

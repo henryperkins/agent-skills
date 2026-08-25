@@ -108,6 +108,8 @@ Missing configuration produces a **redacted skip, not a failed index refresh**. 
 
 The generator hashes the complete sorted registry state with SHA-256. Every Core AI release source changes that state and uses the registry's affected-skill list. Without supplied tagged-file evidence, it records a review recommendation instead of rewriting a skill. Its error artifact contains only a redacted category such as `missing-api-key`, `rate-limit`, or `model-access`.
 
+**Advisory sync state does not persist.** Because no job hands a workspace to another, the `.github/state/last-sync.json` the generator would write in `generate-updates` never reaches the pull request `create-index-pr` opens from its own fresh checkout. The `add-paths` entry for it is therefore inert while generated edits are disabled, and each advisory run re-triages the same deltas from the committed state. That is acceptable for an advisory path — the deterministic index refresh does not depend on it — but do not read a repeated advisory recommendation as a new one, and expect this to need a deliberate design decision if generated edits are ever re-enabled.
+
 **Generated skill edits and autonomous release bumps are disabled** until tagged upstream files can be supplied to the generator. Detected changes always carry `taggedFiles: []`, so the evidence gate can never be satisfied and no generated-skill pull request job exists. Version bumps stay manual and coordinated with the shipped skill content.
 
 If generation fails, is skipped, or produces no edits, the workflow validates and opens the index-only path with the drift report. It must never describe that PR as skill alignment.
