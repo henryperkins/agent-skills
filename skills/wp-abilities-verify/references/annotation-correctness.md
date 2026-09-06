@@ -29,18 +29,17 @@ annotation says it does.
 
 ## What each annotation promises
 
-| Annotation | What it promises (from core) |
+| Annotation | What Core promises |
 |---|---|
-| `readonly: true` | No durable writes to user / business state. GET-style side-effect-free. |
+| `readonly: true` | "If true, the ability does not modify its environment." |
 | `destructive: false` | "The ability performs only additive updates." Conversely `destructive: true` means it "may perform destructive updates to its environment" (both quoted from the `destructive` annotation in `class-wp-ability.php`). |
 | `idempotent: true` | Repeated calls with the same arguments produce no additional effect on the environment (per the `idempotent` annotation's docblock in `class-wp-ability.php`). |
 
-`readonly: true` prohibits durable writes to user or business state.
-Read-through cache writes (e.g. `set_transient`) and observability
-timestamps (e.g. `last_read_at`) are acceptable when explicitly
-annotated with `verify-ignore` — see the "Suppressing legitimate
-exceptions" section below. The static check treats unannotated writes
-as FAILs; annotated ones pass with the reason recorded as evidence.
+**Skill policy:** apply Core's promise literally. `readonly: true` prohibits
+every environmental mutation, including read-through cache writes such as
+`set_transient()` and observability timestamps such as `last_read_at`. An
+inline `verify-ignore` may suppress a syntactic false positive only after the
+reviewer proves that the flagged call does not modify the environment.
 
 These overlap but are not redundant: `readonly` is the strictest;
 `destructive: false` is weaker but still narrow (writes are OK only so
@@ -139,16 +138,16 @@ For high-stakes plugins, run runtime mode (see `runtime-harness.md`)
 before landing — it catches some blind spots via twin-invocation diff
 and live state inspection.
 
-## Suppressing legitimate exceptions
+## Suppressing false positives
 
-When a pattern that looks like a write is semantically a read (e.g.
-populating a read-through cache via `set_transient`, updating a
-`last_read_at` timestamp for tracking, diagnostic logging), suppress
-with an inline comment on the offending line:
+When a pattern merely looks like a write but provably does not modify the
+environment, suppress the static match with an inline comment on the offending
+line. Do not suppress cache population, tracking timestamps, or diagnostic log
+writes: each changes the environment and contradicts `readonly: true`.
 
 ```php
-// verify-ignore: readonly -- writes to read-through cache; semantically a read.
-set_transient( $cache_key, $data, HOUR_IN_SECONDS );
+// verify-ignore: readonly -- pure in-memory test double; no state escapes this call.
+$test_double->save();
 ```
 
 Format: `// verify-ignore: <annotation> -- <reason>`. Legal annotation

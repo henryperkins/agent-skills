@@ -4,7 +4,7 @@ The public extension surface of the AI plugin v1.3.0, anchored to the tagged exe
 
 ## Constants (v0.6.0+)
 
-Defined in `ai.php` `constants()`. The 0.6.0 release renamed the family from `AIE_*` to `WPAI_*` (#317). Current values:
+Defined in `ai.php` `constants()`. The 0.6.0 release renamed the family from `AI_EXPERIMENTS_*` to `WPAI_*` (#317). Current values:
 
 | Constant | Source | Use |
 | --- | --- | --- |
@@ -35,6 +35,8 @@ if ( ! function_exists( 'wp_supports_ai' ) || ! wp_supports_ai() ) {
     return; // Don't initialize AI-dependent code.
 }
 ```
+
+AI plugin 1.3.0 treats a false result as a whole-plugin requirement failure on `plugins_loaded`: `Main::load()` returns before `includes/helpers.php` is loaded or any feature, settings, dashboard, or Site Health hooks are registered.
 
 The AI plugin uses this gate internally before initializing experiments (#268). Mirror it in your downstream code.
 
@@ -171,10 +173,10 @@ Also split across an Experiments class (output) and Abilities classes (generatio
 
 | Filter | Where | Use |
 | --- | --- | --- |
-| `wpai_default_request_timeout` (v1.2.0+) | `includes/helpers.php` | Per-request timeout, filtered as `( int $default_timeout, string $feature_id )`; used for the image-generation request. ⚠️ The 1.2.0 changelog/`readme.txt` call this `wp_ai_client_default_request_timeout` — that name is in *no* plugin PHP (most likely the core AI Client's own filter); the plugin applies `wpai_default_request_timeout`. |
+| `wpai_default_request_timeout` (v1.2.0+) | `includes/helpers.php` | Plugin helper filter `( int $default_timeout, string $feature_id )`; helper default `30`, while Image Generation changes the image-generation default to `90`. The Core filter is `wp_ai_client_default_request_timeout`, takes one float value, and has default `30.0`. |
 | `wpai_settings_feature_groups` | Settings → AI feature metadata | Extend or adjust feature groups |
-| `wpai_settings_feature_metadata` | Settings → AI feature metadata | Extend metadata supplied by Features |
-| `wpai_feature_{$id}_settings` | A Feature that explicitly applies the hook | Adjust that Feature's settings; this is not a universal framework hook (v1.3.0's Type Ahead Feature applies it) |
+| `wpai_settings_feature_metadata` | Settings → AI feature metadata | Extend metadata supplied by Features; receives `$metadata, $registry` |
+| `wpai_feature_{$id}_settings` | A Feature that explicitly applies the hook | Adjust that Feature's settings; this is not universal (v1.3.0's Type Ahead Experiment applies it, and has since v1.1.0) |
 | `wpai_bulk_action_max_items` (v1.3.0+) | `get_bulk_action_max_items()` | Maximum items per bulk action as `( int $max_items, string $feature_id )`; default 100 and clamped to at least 1 |
 
 Advanced settings are Feature-provided metadata on the existing Settings → AI surface. These filters extend that data; they do not establish a separate public settings registry.
@@ -192,8 +194,9 @@ Version-marked per row — these did not all arrive together.
 
 | Filter | Where | Default | Use |
 | --- | --- | --- | --- |
-| `wpai_min_content_length` (v1.1.0+) | `WordPress\AI\get_min_content_length()` | `250` (chars) | Per-feature minimum character count before content-dependent features enable; replaces the deprecated `wpai_summarization_min_content_length` |
-| `wpai_has_image_generation_support` (v1.1.0+) | `WordPress\AI\has_image_generation_support()` | auto-detected bool | Claim Image Generation support when auto-detection misses it (e.g., connectors authenticating without an API key, such as OAuth) |
+| `wpai_min_content_length` (v1.1.0+) | `WordPress\AI\get_min_content_length()` | helper default `250`; Editorial Notes passes `75`, Content Resizing `25`, Content Translation `5` | Per-feature minimum character count; replaces the deprecated `wpai_summarization_min_content_length` |
+| `wpai_has_image_generation_support` (v1.1.0+) | `WordPress\AI\has_image_generation_support()` | auto-detected bool | Receives `( bool $has_support, array $connectors )`; claim support when auto-detection misses it (for example, OAuth) |
+| `wpai_pre_has_valid_credentials_check` | `WordPress\AI\has_valid_ai_credentials()` | `null` | Receives one `bool|null` value. Any non-null result short-circuits the live `is_supported_for_text_generation()` probe; `null` preserves the probe. |
 | `wpai_has_ai_credentials` (v0.7.0+) | `WordPress\AI\has_ai_credentials()` | auto-detected bool | The credential-detection sibling of the row above, filtered as `( bool $has_credentials, array $connectors )`. The detection loop skips every connector whose auth method isn't `api_key`, so an OAuth connector must claim itself here or the site reads as unconfigured — it gates the AI Status widget's "Configure an AI provider" step, Settings → AI's `hasCredentials`, and Comment Moderation's provider check |
 | `wpai_is_{$connector_slug}_connector_configured` (v0.9.0+) | AI Status dashboard widget | connector's detected bool | Correct dashboard status for connectors whose configuration cannot be inferred from API-key/OAuth data; filtered as `( bool $configured, array $connector_data )` |
 | `wpai_comment_moderation_moderate_guests` (v1.1.0+) | Comment Moderation experiment | setting value (default yes) | Override whether guest comments are auto-moderated |
@@ -272,7 +275,7 @@ The AI plugin bootstraps via `WordPress\AI\Main::get_instance()`, called at the 
 - **`init` priority 5**: also safe and used by AI provider plugins for the AI Client registry. AI plugin-specific hooks are not version-gated by `init`.
 - **Inside any action that the AI plugin's Loader fires**: too late for `wpai_default_feature_classes` and `wpai_register_features` (they've already run). Use `wpai_features_initialized` if you need to react after features are wired up.
 
-The AI plugin's `Loader::register_features()` runs once per request, early in the bootstrap. If your downstream filter registers conditionally (e.g., based on user role), the registration only happens for that request — site admins will see the feature when they're admins, others won't. That's by design.
+The AI plugin's `Loader::register_features()` runs once per request on `init` priority 15. If your downstream filter registers conditionally (e.g., based on user role), the registration only happens for that request — site admins will see the feature when they're admins, others won't. That's by design.
 
 ## Reading the source for the latest
 

@@ -17,15 +17,15 @@ resolves once both round trips (categories, then abilities) have **settled**.
 export const ready: Promise< void > = initialize();
 ```
 
-**`ready` proves the attempts settled, not succeeded.** Verified in Gutenberg 23.8.0,
+**`ready` proves the attempts settled, not succeeded.** Verified in Gutenberg 23.9.0,
 `initializeCategories()` and `initializeAbilities()` each wrap their `apiFetch` call in
 `try { … } catch ( error ) { console.error( … ); }`, so neither can reject and `initialize()` always
 fulfills. A 401/403 from the REST namespace, an offline browser, and a clean empty registry are
 indistinguishable at the await: after `await ready`, an empty store can still mean an authentication
-or network failure, with only a `console.error` as evidence. Worse, the catch also swallows throws
-from inside the registration loop — if the categories request fails, every `registerAbility()` throws
-`references non-existent category`, the first throw aborts the rest of the loop, and you get a
-partially populated store. Do not read a resolved `ready` as "the server has no abilities"; check the
+or network failure, with only a `console.error` as evidence. The catch also swallows throws
+from inside the registration loop. If the categories request fails, the first ability that references
+a missing category throws and aborts the loop, leaving **zero** server abilities. A failure partway
+through a valid list (for example, a duplicate name) can leave a partial set. Do not read a resolved `ready` as "the server has no abilities"; check the
 browser console and the `/wp-abilities/v1/abilities` response before concluding that.
 
 Until `ready` settles, the store holds no server abilities. `getAbilities()` returns an empty array and
@@ -39,10 +39,10 @@ await ready;
 // Server abilities are now in the store.
 ```
 
-Use the dynamic-import form rather than a static `import { ready } from '@wordpress/core-abilities'` when your
-module is enqueued as a *sibling* script module (the pattern below): siblings have no guaranteed evaluation
-order, so a static import may not have a resolved binding when your code runs. Importing it yourself also
-defers the network requests until the feature actually needs abilities.
+Declare `@wordpress/core-abilities` as a dependency of the importing module. A static dependency is
+evaluated before the importer; without a declared dependency, its bare specifier is absent from the
+import map and linking fails. Use a dynamic dependency for the `await import()` form below; it defers
+the REST requests until the feature actually needs abilities.
 
 `useSelect` consumers do not need this — they re-render when the store fills. Only imperative reads and
 executions race it.
@@ -56,7 +56,12 @@ add_action( 'init', function () {
     wp_register_script_module(
         'my-plugin-admin',
         plugins_url( 'build/admin.js', __FILE__ ),
-        array( '@wordpress/abilities' ),
+        array(
+            array(
+                'id'     => '@wordpress/core-abilities',
+                'import' => 'dynamic',
+            ),
+        ),
         '1.0.0'
     );
 } );
@@ -66,14 +71,16 @@ add_action( 'admin_enqueue_scripts', function ( $hook_suffix ) {
         return;
     }
 
-    wp_enqueue_script_module( '@wordpress/core-abilities' );
+    // The built script modules dereference these classic wp globals at evaluation.
+    wp_enqueue_script( 'wp-data' );
+    wp_enqueue_script( 'wp-i18n' );
+    wp_enqueue_script( 'wp-api-fetch' );
+    wp_enqueue_script( 'wp-url' );
     wp_enqueue_script_module( 'my-plugin-admin' );
 } );
 ```
 
-`wp_register_script_module()` makes the plugin's compiled script module available; it does not load it. `wp_enqueue_script_module()` loads it on the matching screen. Keep this page-scoped enqueue pattern, and explicitly enqueue `@wordpress/core-abilities`: it loads its `@wordpress/abilities` dependency and registers server abilities in the store automatically.
-
-Note that `my-plugin-admin` declares `@wordpress/abilities` as its dependency, not `@wordpress/core-abilities` — the two are enqueued as siblings. That gets the store loaded in time but guarantees nothing about *registration* having finished, which is asynchronous. Await `ready` as shown above before any imperative read or execution.
+`wp_register_script_module()` makes the plugin module available and records the dynamic dependency so WordPress includes `@wordpress/core-abilities` and its transitive `@wordpress/abilities` dependency in the import map. It does not load the plugin module; the page-scoped enqueue does. WordPress's script-module registry does not enqueue the classic dependencies recorded in the build manifest, so load the `wp.data`, `wp.i18n`, `wp.apiFetch`, and `wp.url` globals explicitly as shown. Await `ready` before any imperative read or execution.
 
 ### Client-only abilities on a specific page
 
@@ -82,6 +89,8 @@ add_action( 'admin_enqueue_scripts', function ( $hook_suffix ) {
     if ( 'my-plugin-page' !== $hook_suffix ) {
         return;
     }
+    wp_enqueue_script( 'wp-data' );
+    wp_enqueue_script( 'wp-i18n' );
     wp_enqueue_script_module( '@wordpress/abilities' );
 } );
 ```
@@ -143,6 +152,10 @@ registerAbility( {
     },
 } );
 ```
+
+The client registry accepts names with two through four slash-separated segments. Server abilities
+in WordPress 7.1 accept exactly `namespace/ability`, so use that two-segment shape for anything that
+mirrors or may later move to PHP. Longer names are client-only.
 
 ### Input/output schemas (recommended)
 
@@ -283,7 +296,7 @@ function AbilitiesList() {
 }
 ```
 
-Use the imported `store` constant rather than referencing the store by string name. The canonical key is `'core/abilities'` — that is what the WP 7.0 dev note documents and what `@wordpress/abilities` registers. You may still meet `'abilities-api/abilities'` in older code: that was the key used by the standalone `WordPress/abilities-api` feature plugin, archived in February 2026 once the API landed in core. Importing `store` keeps that history from mattering.
+Use the imported `store` constant rather than referencing the store by string name. The canonical key is `'core/abilities'` — that is what the WP 7.0 dev note documents and what `@wordpress/abilities` registers. You may still meet `'abilities-api/abilities'` in older code: that was the key used by the standalone, now-archived `WordPress/abilities-api` feature plugin. Importing `store` keeps that history from mattering.
 
 ## Executing
 
@@ -335,7 +348,7 @@ unregisterAbilityCategory( 'my-plugin-actions' );
 
 Both functions remove any entry from the store by name or slug, including the ones `@wordpress/core-abilities` registered from the server.
 
-The `meta.annotations.serverRegistered` flag that `@wordpress/core-abilities` stamps *is* read — but only on the way in. `registerAbility()` filters the annotation allow-list and then sets `annotations.clientRegistered = true` **only when `annotations.serverRegistered` is falsy**, so a server-fetched ability is never mislabelled as client-registered. **Unregistration does not check it.** `unregisterAbility()` is a bare action object and the reducer deletes the entry unconditionally, so there is no "this one came from the server, refuse" guard anywhere — despite an `@throws {Error} If the ability is server-side and cannot be unregistered` line in the `api.ts` JSDoc that the implementation does not honour (verified in Gutenberg 23.8.0).
+The `meta.annotations.serverRegistered` flag that `@wordpress/core-abilities` stamps *is* read — but only on the way in. `registerAbility()` filters the annotation allow-list and then sets `annotations.clientRegistered = true` **only when `annotations.serverRegistered` is falsy**, so a server-fetched ability is never mislabelled as client-registered. **Unregistration does not check it.** `unregisterAbility()` is a bare action object and the reducer deletes the entry unconditionally, so there is no "this one came from the server, refuse" guard anywhere — despite an `@throws {Error} If the ability is server-side and cannot be unregistered` line in the `api.ts` JSDoc that the implementation does not honour (verified in Gutenberg 23.9.0).
 
 Unregistering a server ability client-side only hides it from this page's store; the `/run` route still executes it, and the next page load fetches it back. To actually retire a server ability, unregister it in PHP.
 

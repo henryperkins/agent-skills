@@ -280,8 +280,8 @@ core. Both statements are now wrong; do not carry them forward.
 ## Where the API lives
 
 The Abilities API is **core** from WordPress 6.9 onward — `wp-includes/abilities-api.php` plus
-`wp-includes/abilities-api/`. The `WordPress/abilities-api` feature plugin that preceded it was
-archived on 5 February 2026 and is read-only; its last tagged release was the `v0.5.0-rc`
+`wp-includes/abilities-api/`. The `WordPress/abilities-api` feature plugin that preceded it is
+archived and read-only; its last tagged release was the `v0.5.0-rc`
 prerelease (14 November 2025), and its last stable release was `v0.4.0`. Do not install it, and
 do not treat it as a back-compat shim for WP < 6.9 — MCP Adapter 0.6.0 dropped support for that
 path explicitly. Projects that must run below 6.9 should feature-detect

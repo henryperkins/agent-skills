@@ -37,6 +37,8 @@ jobs:
           node-version: 20
 
       - name: Update upstream indices
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node shared/scripts/update-upstream-indices.mjs
 
       - name: Check for index changes
@@ -85,6 +87,7 @@ jobs:
       - name: Refresh and verify canonical upstream state
         env:
           EXPECTED_STATE_HASH: ${{ needs.refresh-indices.outputs.state_hash }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           node shared/scripts/update-upstream-indices.mjs
           ACTUAL_STATE_HASH=$(node shared/scripts/ai-generate-updates.mjs --print-state-hash)
@@ -188,6 +191,7 @@ jobs:
       - name: Refresh and verify canonical upstream state
         env:
           EXPECTED_STATE_HASH: ${{ needs.refresh-indices.outputs.state_hash }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           node shared/scripts/update-upstream-indices.mjs
           ACTUAL_STATE_HASH=$(node shared/scripts/ai-generate-updates.mjs --print-state-hash)

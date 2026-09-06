@@ -46,8 +46,9 @@ absent on 6.9/7.0. Do **not** gate on
 pre-release site you would be testing against. Compare against `'7.1-alpha'` if you want a version
 check anyway.
 
-`execute()` also gained a `normalize_input()` failure check in 7.1 — normalization returning a
-`WP_Error` now aborts the call. On 7.0 a normalization error fell through into validation.
+`execute()` also checks `normalize_input()` for a `WP_Error` in 7.1 because the new
+`wp_ability_normalize_input` filter can return one. On 6.9/7.0 no Core path produced a normalization
+error; only a subclass override could return one, and `execute()` did not special-case it.
 
 ## The ordered chain
 

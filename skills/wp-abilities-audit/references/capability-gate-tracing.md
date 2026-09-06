@@ -230,11 +230,13 @@ registered with `capability_type='page'` inherits the Pages cap map, so
 private-item reads resolve to `read_private_pages` and writes gate on
 `edit_others_pages`.
 
-Example B — WooCommerce-style sidebar. WooCommerce's `shop_subscription` is
-registered with `capability_type='shop_order'`, so private-item reads resolve
-to `read_private_shop_orders` and author-sensitive writes gate on
-`edit_others_shop_orders`.
-Mechanically identical to Example A; the cap names are project-specific.
+Example B — WooCommerce-style sidebar. A `shop_subscription` post type belongs
+to the WooCommerce Subscriptions extension, not WooCommerce core. Some versions
+may use `capability_type='shop_order'`; confirm it in the target checkout before
+recording the gate. With that mapping, private-item reads resolve to
+`read_private_shop_orders` and author-sensitive writes gate on
+`edit_others_shop_orders`. Mechanically identical to Example A; the cap names
+are project-specific.
 
 Do not substitute `edit_shop_orders` here. That name is
 `$post_type->cap->edit_posts` — the author-**insensitive** primitive, checked
@@ -244,9 +246,12 @@ ID. The author-sensitive primitive is `edit_others_shop_orders`, reached only on
 the not-the-author branch of `map_meta_cap()`. Recording the wrong one in an
 audit produces an ability whose `permission_callback` lets any user holding the
 base capability edit another customer's order.
-WooCommerce also exposes a helper `wc_rest_check_post_permissions()` that
-wraps the same core machinery — the helper is convenience; the underlying
-mechanism is core's `map_meta_cap()`.
+WooCommerce also exposes `wc_rest_check_post_permissions()`, but its contexts
+do not all use the same mechanism. `read` checks the author-blind
+`read_private_<type>s` primitive directly; `create` uses `publish_posts`, and
+`batch` uses `edit_others_posts`. Only the `edit` and `delete` contexts route through `map_meta_cap()`
+by passing the post type's `edit_post` or `delete_post`
+meta capability with an object ID.
 
 ## Compound-string form (accepted, not preferred)
 

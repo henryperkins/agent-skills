@@ -2,17 +2,17 @@
 
 The MCP Adapter (`WordPress/mcp-adapter`) bridges the Abilities API to the Model Context Protocol, letting external AI agents (Claude Desktop, Claude Code, Cursor, ChatGPT) discover and execute WordPress abilities as MCP tools, resources, and prompts.
 
-The adapter is a separate Composer package and plugin. WordPress ships the Abilities API in core
-from 6.9 onward but does **not** ship the adapter. The base Abilities skill supports PHP 7.2.24+,
-but the adapter requires PHP `^7.4 || ^8.0`. On PHP 7.2 or 7.3, stop before installation: upgrade
-the site runtime to PHP 7.4+ or do not enable MCP exposure.
+The adapter is a separate WordPress plugin. WordPress ships the Abilities API in core from 6.9
+onward but does **not** ship the adapter. WordPress 6.9 supports PHP 7.2.24+, while WordPress 7.0
+and 7.1 require PHP 7.4+. MCP Adapter requires PHP `^7.4 || ^8.0`, so a 6.9 site on PHP 7.2 or
+7.3 must upgrade PHP before activating it.
 
 **Current release: 0.6.1.** Verify against the version the project actually pulls in — this
 package moves faster than core, and 0.6.0 changed both the exposure default and the minimum
 platform:
 
 - **WordPress 6.9+ is now required**, and the standalone `WordPress/abilities-api` plugin is no
-  longer a supported installation path (that repository was archived in February 2026; the API
+  longer a supported installation path (that repository is archived; the API
   lives in core).
 - **`meta.public` now grants MCP exposure** unless `meta.mcp.public` opts out — see below. This
   reverses the 0.5.0 rule and is the single most important thing to get right in a registration.
@@ -25,28 +25,41 @@ platform:
 
 ## Installation
 
-The adapter is designed to be a Composer dependency, not a standalone plugin install for distributed use:
+Install the canonical **WordPress plugin (recommended)** and activate it:
 
 ```bash
-composer require wordpress/mcp-adapter
-composer require automattic/jetpack-autoloader
+wp plugin install https://github.com/WordPress/mcp-adapter/releases/latest/download/mcp-adapter.zip --activate
 ```
 
-Then load the Jetpack Autoloader from your plugin's bootstrap and start the adapter. The autoloader resolves compatible package versions when multiple plugins on the site depend on the adapter; `McpAdapter::instance()` is what actually boots it:
+Declare the dependency in the header of every plugin that integrates with the adapter, then guard
+the integration at runtime so deactivation never causes a fatal:
 
 ```php
-require_once plugin_dir_path( __FILE__ ) . 'vendor/autoload_packages.php';
+/**
+ * Plugin Name: My MCP Integration
+ * Requires Plugins: mcp-adapter
+ */
 
-use WP\MCP\Core\McpAdapter;
+add_action( 'plugins_loaded', function () {
+    if ( ! class_exists( 'WP\MCP\Core\McpAdapter' ) ) {
+        return;
+    }
 
-if ( class_exists( McpAdapter::class ) ) {
-    McpAdapter::instance();
-}
+    // Attach callbacks for mcp_adapter_init here.
+} );
 ```
 
-**The `instance()` call is not optional.** The package declares PSR-4 autoloading and no `files` entry, so as a pure Composer dependency nothing invokes it for you — autoloading a class is not the same as running it. Skip it and the default server is never created and `mcp_adapter_init` never fires, so a custom server registered on that action silently does not exist. `instance()` hooks the adapter's `init()` on `rest_api_init` at priority 15, or on `init` at priority 20 under WP-CLI, so calling it at plugin-bootstrap time is right.
+`Requires Plugins: mcp-adapter` gives WordPress the activation-order dependency; the `class_exists()`
+guard handles deactivation and partial installations. The plugin bootstrap calls `McpAdapter::instance()`
+for you.
 
-For local exploration / smoke testing, the standalone plugin zip from the [adapter's Releases page](https://github.com/WordPress/mcp-adapter/releases) is fine. Don't ship that to production with multiple consumers — version conflicts will bite.
+**Composer bundling is a legacy path.** Release 0.6.1 still supports `composer require
+wordpress/mcp-adapter`; a bundled copy must load `vendor/autoload_packages.php` and call
+`McpAdapter::instance()` because Composer autoloading alone does not boot it. The package already
+requires Jetpack Autoloader, so a second `composer require automattic/jetpack-autoloader` is redundant;
+the relevant Composer prerequisite is allowing its plugin in `config.allow-plugins`. Upstream trunk
+deprecates bundled loading and directs integrations to the canonical plugin, so do not start a new
+deployment with the Composer path.
 
 ## How abilities become MCP tools
 
@@ -211,7 +224,7 @@ Each of the three requires a logged-in user and then a capability that also defa
 
 So on a stock install a Subscriber can enumerate every effectively MCP-public ability and attempt to execute it. Each target ability's own `permission_callback` is the final operation-specific authorization check. Raise these baseline capabilities before relying on the default server anywhere but a local site.
 
-For finer control (exposing only a subset, separating tool/resource/prompt categorization, server-level metadata), register a custom server. A custom server with an explicit allow-list is also the cleanest way to stay insulated from the 0.6.0 exposure default. **`create_server()` has 13 parameters (verified in v0.6.1); the 7th is required and takes an array of transport class names, not a config array.** The signature and convention follow what `DefaultServerFactory::create()` does internally:
+For finer control (exposing only a subset, separating tool/resource/prompt categorization, server-level metadata), register a custom server. A custom server with an explicit allow-list is also the cleanest way to stay insulated from the 0.6.0 exposure default. **`create_server()` has 13 parameters (verified in v0.6.1); the 7th and 8th are required. The 7th takes an array of transport class names, and the 8th is a nullable error-handler class name, so it may be `null`; only parameters 9–13 have defaults.** The signature and convention follow what `DefaultServerFactory::create()` does internally:
 
 ```php
 use WP\MCP\Core\McpAdapter;
@@ -258,7 +271,7 @@ A custom callback that throws or returns `WP_Error` fails closed — the transpo
 
 `create_server()` enforces that it can only be called inside the `mcp_adapter_init` action — calling it elsewhere triggers `_doing_it_wrong()`. The function returns either an `McpAdapter` instance or a `WP_Error`.
 
-The tools/resources/prompts lists decide which abilities this server projects; they do not grant access. Each selected ability retains its own `permission_callback`, which runs when the ability executes. These entries are **ability** names with the slash intact — `my-plugin/list-comments`, not `my-plugin-list-comments`. The adapter sanitizes them into tool names on its own; writing the hyphenated form here means `wp_get_ability()` returns nothing and the tool is silently not registered.
+The tools/resources/prompts lists decide which abilities this server projects; they do not grant access. Each selected ability retains its own `permission_callback`, which runs when the ability executes. These entries are **ability** names with the slash intact — `my-plugin/list-comments`, not `my-plugin-list-comments`. The adapter sanitizes them into tool names on its own; writing the hyphenated form here means `wp_get_ability()` returns nothing and the tool is not registered. The only trace is an error-handler log line (the default handler writes to the PHP error log).
 
 Read the `create_server()` docblock in `includes/Core/McpAdapter.php` for the complete parameter documentation, and `includes/Servers/DefaultServerFactory.php` for the canonical "how to call it" example.
 
@@ -302,20 +315,24 @@ External agents authenticate via WordPress's standard mechanisms. For Claude Des
 
 1. Users → Profile → Application Passwords → create one for "My MCP Server".
 2. Copy the generated password (shown once).
-3. The MCP client uses it as basic auth or a bearer credential, depending on the client.
+3. The MCP client sends the WordPress username and Application Password with HTTP Basic authentication.
 
-For self-hosted scenarios with stricter requirements, the adapter supports JWT and OAuth in different deployments — but the canonical pattern documented in the WordPress.com MCP work is OAuth 2.1 with browser-based authorization. Production setups should use that rather than long-lived application passwords.
+The adapter does not implement Bearer, JWT, or OAuth authentication. Those schemes require a
+WordPress authentication plugin or a custom `transport_permission_callback` integrated with the
+site's authentication layer.
 
 ## STDIO transport
 
 For local development and CLI integration, the adapter ships a STDIO transport, wrapped by two WP-CLI commands:
 
 ```bash
-wp mcp-adapter serve [--server=<server-id>] [--user=<id|login|email>]
+wp mcp-adapter serve [--server=<server-id>] --user=<id|login|email>
 wp mcp-adapter list [--format=<format>]
 ```
 
-`serve` runs a server over STDIO — point an MCP client's STDIO config at it. `--user` sets the WordPress user the session runs as; without it the session is unauthenticated and capability-gated abilities will fail. `list` enumerates registered servers.
+`serve` runs a server over STDIO — point an MCP client's STDIO config at it. `--user` is WP-CLI's
+global option, not a local `serve` option; it sets the WordPress user for the process. Without it the
+session is unauthenticated and capability-gated abilities fail. `list` enumerates registered servers.
 
 **Omitting `--server` does not select the default server — it selects the first registered server.** `McpCommand::serve()` falls through to `array_values( $adapter->get_servers() )[0]`, which is insertion order, and insertion order is registration order. The built-in default server is itself registered from a `mcp_adapter_init` callback, so which server lands first depends on hook priority and load order, not on any notion of "default". Any command whose identity matters — production, CI, a committed MCP client config, or any site that may ever register a second server — must pass `--server=<server-id>` explicitly.
 
@@ -325,7 +342,8 @@ STDIO is enabled by default and can be switched off:
 add_filter( 'mcp_adapter_enable_stdio_transport', '__return_false' );
 ```
 
-With it disabled, `serve` throws a `RuntimeException` rather than starting.
+With it disabled, the bridge throws internally, `McpCommand::serve()` catches the exception, and the
+command exits with a WP-CLI error rather than starting.
 
 This is the right transport for:
 
@@ -385,7 +403,7 @@ Validate untrusted arguments at the ability boundary instead. `WP_Ability::execu
 
 ## Verifying the server
 
-A quick way to confirm the MCP server is registered: hit the WordPress REST API root (`/wp-json/`) and look for your server's namespace. If it shows up, the server registered. If it doesn't, the server creation hook didn't fire or the ID conflicted.
+A quick way to confirm the MCP server is registered: hit the WordPress REST API root (`/wp-json/`) and look for your server's namespace. The built-in server endpoint is `/wp-json/mcp/mcp-adapter-default-server`. If it shows up, the server registered. If it doesn't, the server creation hook didn't fire or the ID conflicted.
 
 For a more thorough check, connect an MCP client (Claude Desktop, MCP Inspector, or similar) and:
 

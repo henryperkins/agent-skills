@@ -42,7 +42,7 @@ each ability against a live environment.
   (return-value equality is a signal, not a verdict — core defines
   idempotent as "no additional effect on the environment").
 
-Both modes produce the same structured report format.
+Both modes share the structured report format; runtime mode adds the `## Runtime harness` section.
 
 A static-mode PASS means "no obvious-shape violations," not "verified
 write-free." For high-stakes plugins, run runtime mode before landing
@@ -90,7 +90,7 @@ and the execute-callback location. Use a multi-line tool (`rg
 across lines. Record each ability's source-file + line + annotations +
 callback byte range.
 
-### 3. (Runtime only) Enumerate via REST + wp-cli
+### 3. (Runtime only) Enumerate via wp-cli
 
 Read `references/runtime-harness.md`. Bring the env up using the
 command from `AGENTS.md`, then enumerate over wp-cli and cross-check
@@ -132,7 +132,8 @@ False positives get suppressed via an inline `// verify-ignore:
 ### 5. Permission roundtrip
 
 Read `references/permission-roundtrip.md`. Static: classify each
-`permission_callback` against the six shapes (preferred Shape A
+`permission_callback` against shapes A–F (seven classifications, because B has
+a B-bad variant; preferred Shape A
 `current_user_can(...)`; FAIL on Shape B-bad `WP_REST_Request`
 patterns or Shape E literal `true`). Runtime: anon and subscriber
 denied; admin allowed (unless deliberately public). On WP 7.1+ also
@@ -224,6 +225,11 @@ Last updated: <YYYY-MM-DD HH:MM>
 | Ability | public | show_in_rest | mcp.public | mcp.type | Effective REST | Effective MCP | Audit | Result |
 |---|---|---|---|---|---|---|---|---|
 
+## Runtime harness (runtime mode only)
+
+Omit this section in static mode. In runtime mode, include environment, raw and
+filtered enumeration, execution, permission roundtrip, and idempotency evidence.
+
 ## Schema lints
 
 ## Error-code vocabulary
@@ -242,8 +248,9 @@ WARNs without FAILs → WARN; otherwise PASS.
 - **Audit schema mismatch** — point at
   `references/audit-schema-validation.md`; don't auto-fix the audit.
 - **False positive on readonly-writes** — see the `// verify-ignore`
-  mechanism in `references/annotation-correctness.md`. Document why
-  each suppression is legitimate.
+  mechanism in `references/annotation-correctness.md`. Document evidence that
+  the flagged call does not modify the environment; cache, timestamp, and log
+  writes are not suppressible.
 - **Runtime enumeration smaller than static** — registration hook
   isn't firing. Check init hook timing, activation state, autoloader
   order.

@@ -1,7 +1,7 @@
 ---
 name: wp-ai-connectors
 description: "Use when building or debugging a WordPress AI provider plugin, registering an AI service with the PHP AI Client, exposing it through Settings → Connectors, declaring model capabilities/options, or adding text, media, function-calling, or embedding support at the provider layer."
-compatibility: "Targets WordPress 7.0+ (PHP 7.4+); WordPress Core verified through: 7.1; Gutenberg verified through: 23.8.0; PHP AI Client verified through: 1.4.0 (Core bundles 1.3.1); Anthropic provider verified through: 1.0.4; Google provider verified through: 1.1.1; OpenAI provider verified through: 1.1.0. `application_password` needs Core 7.1 or Gutenberg 23.6+. Embeddings need standalone PHP AI Client 1.4+ and runtime gating. Filesystem-based agent with bash + node; some workflows require WP-CLI."
+compatibility: "Targets WordPress 7.0+ (PHP 7.4+); WordPress Core verified through: 7.1; Gutenberg verified through: 23.9.0; PHP AI Client verified through: 1.4.0 (Core 1.3.1); Anthropic provider verified through: 1.0.4; Google provider verified through: 1.1.1; OpenAI provider verified through: 1.1.0. `application_password` requires WordPress 7.1. Embeddings require standalone 1.4.0 with runtime gates. Local files; some WP-CLI."
 license: GPL-2.0-or-later
 ---
 
@@ -12,7 +12,7 @@ license: GPL-2.0-or-later
 Use this skill when the task involves:
 
 - writing a plugin that integrates a new AI provider (commercial API, self-hosted Ollama, OpenRouter, Mistral, etc.) with the WordPress AI Client,
-- adding or correcting embedding models, dimension support, input modalities, or other model metadata in a PHP AI Client 1.4+ provider,
+- adding or correcting embedding models, dimension support, input modalities, or other model metadata in a PHP AI Client 1.4.0 provider,
 - overriding metadata for a built-in connector (Anthropic, Google, OpenAI) — for example, customizing the description or pre-filling the credentials URL for an internal deployment,
 - diagnosing "my provider plugin is installed but doesn't appear in Settings → Connectors,"
 - understanding why a provider's API key is being read from the wrong source (env vs constant vs database).
@@ -70,7 +70,7 @@ Notes:
 - The method is `registerProvider()`, not `register()`. Argument is a class name string, not an instance.
 - `class_exists( AiClient::class )` makes the plugin safely activate on sites without the SDK.
 - `hasProvider()` makes the registration idempotent.
-- `init` priority 5 runs before `_wp_connectors_init`, which Core hooks on `init` at **priority 15** (`wp-includes/default-filters.php`). Any priority earlier than 15 works (`plugins_loaded`, or `init` ≤ 14); `init` priority 5 is what every official provider plugin uses, so match it for consistency.
+- `init` priority 5 runs before connector discovery at **priority 15** (`_wp_connectors_init` in Core, or Gutenberg's replacement `_gutenberg_connectors_init`). Any priority earlier than 15 works (`plugins_loaded`, or `init` ≤ 14); `init` priority 5 is what every official provider plugin uses, so match it for consistency.
 
 The provider class itself (`AnthropicProvider` in this example) implements the SDK's provider interface and lives in your plugin's `src/` directory. See `references/provider-registration.md` for the full annotated pattern and where to look in the SDK source for the current interface contract.
 
@@ -89,7 +89,7 @@ Do not bundle the SDK to close the gap. `WordPress/ai-provider-for-openai` 1.1.0
 Once your provider is in `AiClient::defaultRegistry()`, the Connectors API discovers it automatically and creates the connector entry with the right metadata. **You do not need to call `register()` on the connector registry yourself.** The flow:
 
 1. WordPress fires `init`.
-2. `_wp_connectors_init()` runs, registers built-in connectors (Anthropic/Google/OpenAI), then queries `AiClient::defaultRegistry()` for everything else.
+2. Core's `_wp_connectors_init()` runs, registers built-in connectors (Anthropic/Google/OpenAI), then queries `AiClient::defaultRegistry()` for everything else. Gutenberg 23.9 replaces that callback with `_gutenberg_connectors_init()`, gated on `class_exists( AiClient::class )`; it keeps the same priority and net discovery flow.
 3. Your provider's metadata is merged on top of any defaults (provider registry values win).
 4. The `wp_connectors_init` action fires, giving plugins a final chance to override.
 
@@ -118,7 +118,7 @@ Notes:
 
 ### 5) Confirm the API key source order
 
-For `api_key` connectors, the AI Client looks up the key in this order. Document this in your provider plugin's readme so admins know:
+For `api_key` connectors, the SDK itself reads the environment variable and PHP constant. Core's `_wp_connectors_pass_default_keys_to_ai_client()` callback then supplies the database value on `init` priority 20. The effective order is:
 
 1. **Environment variable** — `{PROVIDER_ID}_API_KEY` (uppercased)
 2. **PHP constant** — `define( '{PROVIDER_ID}_API_KEY', '...' );` in `wp-config.php`
@@ -126,26 +126,26 @@ For `api_key` connectors, the AI Client looks up the key in this order. Document
 
 Database storage is unencrypted by default but masked in the UI. The canonical AI plugin (`WordPress/ai` v1.1.0+) ships an opt-in **Key Encryption** experiment that transparently encrypts `connectors_ai_*_api_key` options at rest (libsodium via a bundled secrets API) and restores plaintext on opt-out or deactivation. Core-level encryption is still being explored upstream ([#64789](https://core.trac.wordpress.org/ticket/64789)).
 
-**Application-password connectors (core 7.1).** `authentication.method` accepts `'api_key' | 'application_password' | 'none'`. This is **core**, not a Gutenberg-only evolution: `wordpress-develop` branch `7.1` carries it in `src/wp-includes/class-wp-connector-registry.php` and `src/wp-includes/connectors.php` under `@since 7.1.0`, and the built Settings → Connectors route (`src/wp-includes/build/routes/connectors-home/`) renders the credentials UI. It reached core through Gutenberg 23.6 ([#79403](https://github.com/WordPress/gutenberg/pull/79403)); Gutenberg still ships its own copy under `lib/compat/wordpress-7.0/`, so a 7.0 site with a current Gutenberg gets the same surface. The contract mirrors `api_key` with one twist — the credential is a *pair*:
+**Application-password connectors require WordPress 7.1.** `authentication.method` accepts `'api_key' | 'application_password' | 'none'` there. The 7.1 registry and implementing functions carry the released surface, and the built Settings → Connectors route renders the credentials UI. Gutenberg 23.6+ contains a compatibility copy, but it cannot extend a WordPress 7.0 site: Core creates its 7.0 registry before plugins load, so Gutenberg's guarded registry class is skipped and the 7.0 `register()` allow-list still rejects `application_password`. On WordPress 6.9, where Core has no registry, Gutenberg's copy can matter only when an SDK-providing plugin is also active. The 7.1 contract mirrors `api_key` with one twist — the credential is a *pair*:
 
 - `env_var_name` / `constant_name` hold a single `username:password` string (e.g. `remote-user:abcd efgh ijkl mnop 1234`), split on the **first** colon so passwords may contain colons. A non-empty value that won't parse triggers `_doing_it_wrong()` and is skipped, falling through to the next source.
 - The database setting stores an array of `username` + `password`, registered as an `object` setting and masked in `/wp/v2/settings` (the password becomes 16 `•` characters). Resubmitting the masked value keeps the stored password, and an empty username discards both fields so a partial update can't orphan a secret. `setting_name` is auto-generated as `connectors_{$type}_{$id}_application_password` when omitted (hyphens in type/ID normalized to underscores), or can be set explicitly.
 - `credentials_url` should point where the user *creates* the application password (e.g. the remote site's `wp-admin/profile.php`).
 - Unlike `api_key`, these credentials are masked but **not validated** on write — there is no provider round-trip.
 
-Typical use is non-AI connector types like `content_source` (remote WordPress) rather than `ai_provider`. A complete registration example ships as Gutenberg's e2e fixture `packages/e2e-tests/plugins/connectors-application-password.php`. On core 7.0 without Gutenberg 23.6+, the method is rejected by `register()` — gate on the target version.
+Typical use is non-AI connector types like `content_source` (remote WordPress) rather than `ai_provider`. A complete registration example ships as Gutenberg's e2e fixture `packages/e2e-tests/plugins/connectors-application-password.php`. On every WordPress 7.0.x site the Core registry rejects the method, regardless of the active Gutenberg version; gate on WordPress 7.1.
 
 ### 6) Verify the connector card appears
 
-Check Settings → Connectors. You should see a card with your provider's name, description, logo, a "Get API key" link pointing at `authentication.credentials_url`, and a status indicator showing where the key is being read from (or "not configured").
+Check Settings → Connectors. You should see a card with your provider's name, description, logo, the "Get your API key at %s" link pointing at `authentication.credentials_url`, and a status indicator showing where the key is being read from (or "not configured").
 
 If the connector isn't showing up:
 
-- Confirm `var_dump( wp_supports_ai() )` is `true`. If it's false — `WP_AI_SUPPORT` defined falsey in `wp-config.php`, or a plugin/host filtering `wp_supports_ai` — `register()` returns `null` for every `ai_provider` connector with **no** `_doing_it_wrong()` (core treats a disabled AI surface as intentional), and `_wp_connectors_init()` skips AI discovery entirely. The tell is that the built-in Anthropic/Google/OpenAI cards are missing too.
+- Confirm `var_dump( wp_supports_ai() )` is `true`. If it's false — `WP_AI_SUPPORT` defined falsey in `wp-config.php`, or a plugin/host filtering `wp_supports_ai` — `register()` returns `null` for every `ai_provider` connector with **no** `_doing_it_wrong()` (Core treats a disabled AI surface as intentional), and AI discovery is skipped. With Gutenberg 23.9 active the callback is `_gutenberg_connectors_init()`, not `_wp_connectors_init()`, so inspect the callback actually installed. The tell is that the built-in Anthropic/Google/OpenAI cards are missing too.
 - Confirm the provider class actually registers — add a temporary `error_log()` in your registration callback and reload.
-- Confirm the registration runs *before* `_wp_connectors_init` (priority 15 on `init`). Use `init` priority 5 or earlier (anything ≤ 14).
+- Confirm the registration runs before the active connector-discovery callback at priority 15 (`_wp_connectors_init` in Core or `_gutenberg_connectors_init` with Gutenberg). Use `init` priority 5 or earlier (anything ≤ 14).
 - Confirm the connector ID matches `/^[a-z0-9_-]+$/` — hyphens are allowed (normalized to underscores in the derived key names); an invalid ID (e.g. uppercase) triggers `_doing_it_wrong()` and `register()` returns `null`.
-- Confirm `type` is `ai_provider` so the connector is treated as an AI provider and discovered from the AI Client registry. (The admin screen actually renders a card for *any* connector whose `authentication.method` is `api_key` — the built-in Akismet connector is `type` `spam_filtering` and still appears — so a missing card isn't explained by `type` alone. A `none`-auth connector is the reverse: it registers fine and `wp_get_connector()` returns it, but the screen assigns a render component only for `api_key` and `application_password`, so it never gets a card.)
+- Confirm `type` is `ai_provider` so the connector is treated as an AI provider and discovered from the AI Client registry. (The admin screen actually renders a card for *any* connector whose `authentication.method` is `api_key` — the built-in Akismet connector is `type` `spam_filtering` and appears when the Akismet plugin is installed — so a missing card isn't explained by `type` alone. A `none`-auth connector is the reverse: it registers fine and `wp_get_connector()` returns it, but the screen assigns a render component only for `api_key` and `application_password`, so it never gets a card.)
 
 ## Saving an API key runs a live provider call — make discovery reliable
 
@@ -160,7 +160,7 @@ There is no admin-visible error from the server: no `WP_Error`, no `add_settings
 
 What that means for a provider you ship:
 
-- Make `availability()` / model discovery fast and reliable, and prefer the cheapest `ProviderAvailabilityInterface` your API supports. Note that `listModelMetadata()` results are cached for 86400 seconds keyed on provider class plus AI Client version — **not** on the API key — so on a site with a persistent object cache the check may not be live at all, and on a site without one it is live on every save.
+- Make `availability()` / model discovery fast and reliable, and prefer the cheapest `ProviderAvailabilityInterface` your API supports. Note that `listModelMetadata()` results are cached for 86400 seconds keyed on the model metadata directory class plus AI Client version — **not** on the API key — so on a site with a persistent object cache the check may not be live at all, and on a site without one it is live on every save.
 - Test all three paths before shipping: an invalid key (expect blanking plus the screen's alert), an unreachable or slow endpoint (same outcome — this is the surprising one), and a valid key (expect persistence).
 - When a user reports a blanked key, look at provider reachability from the server, not at the settings form.
 
@@ -175,7 +175,7 @@ What that means for a provider you ship:
 
 ## Failure modes / debugging
 
-- **Connector doesn't appear**: registration runs too late (after `_wp_connectors_init`), or `type` isn't `ai_provider`, or ID has invalid characters, or `wp_supports_ai()` is false. The last one is the silent case — core deliberately skips `_doing_it_wrong()` there — and it takes the built-in AI connectors down with yours; check it with `var_dump( wp_supports_ai() )`.
+- **Connector doesn't appear**: registration runs too late (after the priority-15 Core or Gutenberg discovery callback), or `type` isn't `ai_provider`, or ID has invalid characters, or `wp_supports_ai()` is false. The last one is the silent case — Core deliberately skips `_doing_it_wrong()` there — and it takes the built-in AI connectors down with yours; check it with `var_dump( wp_supports_ai() )`.
 - **"Settings → Connectors shows the card but says no key configured" even though `MY_PROVIDER_API_KEY` is set**: confirm the constant/env var name matches `{PROVIDER_ID}_API_KEY` exactly (uppercased ID, `_API_KEY` suffix). The system does not respect alternate naming.
 - **Override not taking effect**: hooked too late, or hooked outside `wp_connectors_init`. Setting the registry instance outside `init` triggers `_doing_it_wrong()`.
 - **Duplicate-ID error during `register()`**: another plugin already registered that ID. Use `is_registered()` first; if you need to override, follow the unregister-modify-register pattern.

@@ -62,7 +62,7 @@ Apply the field-shape rules defined in
    output).
 6. Each ability's `exposure` is either absent or an object with
    `agent_facing` (bool), `mcp` (one of `allow` / `deny` / `inherit`),
-   and `rationale` (string). Absent → WARN (audit predates the field,
+   and optional `rationale` (string). Absent → WARN (audit predates the field,
    added 2026-08-15). Present but with a non-boolean `agent_facing`, an
    `mcp` value outside the enum, or a missing `rationale` when
    `agent_facing` is `true` or `mcp` is `allow` → FAIL.

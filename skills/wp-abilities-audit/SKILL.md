@@ -77,8 +77,8 @@ Trace each controller's `permission_callback` to its `current_user_can()` call
 post-type-backed base).
 
 Read `references/capability-gate-tracing.md` now — it documents the two
-common mechanisms (direct `check_permission()` vs post-type-backed
-`wc_rest_check_post_permissions()`) and how to represent each in the schema.
+common mechanisms (direct `check_permission()` vs post-type-backed core `map_meta_cap()`)
+and how to represent each in the schema.
 Note explicitly whether read and write gates differ: compound gates are
 represented as a `{read, write}` object, not a single string.
 
@@ -180,10 +180,10 @@ land — typically the smallest, safest, highest-leverage read. This gives
 downstream workflows a deterministic starting point.
 
 Pick one that needs no required input: the reference ability must be
-invocable as `execute([])`, and `wp-abilities-verify` Lint 6 FAILs a
-registration whose reference ability declares a non-empty
-`input_schema.required`. A list ability whose filters are all optional
-qualifies; one that requires an id does not.
+invocable as `execute([])` and must declare an `input_schema` with a root
+`type: object`, a root `'default' => (object) array()`, and no required inputs.
+`wp-abilities-verify` Lint 6 enforces that complete contract.
+A list ability whose filters are all optional qualifies; one that requires an id does not.
 
 ## Verification
 

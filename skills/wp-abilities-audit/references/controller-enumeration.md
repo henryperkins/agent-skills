@@ -78,7 +78,8 @@ non-standard locations:
 
 ## Implicit — core-derived routes
 
-`create_initial_rest_routes()` (`src/wp-includes/rest-api.php`, WP 7.1) loops
+`create_initial_rest_routes()` (`wp-includes/rest-api.php` in the release package;
+`src/wp-includes/rest-api.php` in wordpress-develop, WP 7.1) loops
 over `get_post_types( array( 'show_in_rest' => true ) )` and
 `get_taxonomies( array( 'show_in_rest' => true ) )` and calls
 `register_routes()` on each object's controller. The plugin never calls

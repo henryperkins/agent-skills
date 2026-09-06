@@ -65,7 +65,7 @@ Input travels as the `input` argument: a query-string parameter on `GET` and `DE
 body** parameter on `POST` — `{"input": { ... }}` sent with `Content-Type: application/json`.
 `get_input_from_request()` reads `get_json_params()` and nothing else on `POST`, so a form-encoded
 or multipart body is ignored outright: the ability receives `null` input and either runs on schema
-defaults or fails `validate_input()` with a 400 complaining about a missing property rather than
+defaults or fails `validate_input()` with a 400 complaining that `input` is not an object rather than
 about the content type. See `client-side.md` for how the JS packages apply the same mapping.
 
 ### The list endpoints are paginated — a single request is not the full set
@@ -299,8 +299,10 @@ The pipeline runs in this order: declarative filters, then `item_include_callbac
 registry.
 
 The pipeline runs even with no arguments, so the two filters always fire — that is the
-supported place for a plugin to enforce a site-wide inclusion rule. For raw registry data that
-bypasses filtering entirely, call `WP_Abilities_Registry::get_all_registered()`.
+supported place for a plugin to enforce a site-wide inclusion rule. There is no supported public
+bypass for those filters. `WP_Abilities_Registry::get_all_registered()` returns the raw registry,
+but the registry class and this direct method are private API and are not covered by backward
+compatibility; reserve it for diagnostic tooling that accepts that risk.
 
 `item_include_callback` runs per ability and receives the `WP_Ability` object, so it can do
 capability checks — but note that filtering a list for display is not the same as authorizing
@@ -416,7 +418,7 @@ still supports 7.0:
 ```php
 $args = array( 'meta' => array( 'public' => true ) );
 
-if ( version_compare( get_bloginfo( 'version' ), '7.1', '>=' ) ) {
+if ( version_compare( get_bloginfo( 'version' ), '7.1-alpha', '>=' ) ) {
     $abilities = wp_get_abilities( $args );
 } else {
     $abilities = array_filter(

@@ -20,6 +20,8 @@ jobs:
           node-version: 20
 
       - name: Update every registry-owned index
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node shared/scripts/update-upstream-indices.mjs
 
       - name: Detect index changes

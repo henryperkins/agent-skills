@@ -1,6 +1,6 @@
 # Standalone PHP AI Client embedding reference
 
-Embedding generation arrived in `wordpress/php-ai-client` 1.4.0. It is a standalone SDK surface, not a method on `WP_AI_Client_Prompt_Builder` and not a WordPress procedural wrapper.
+Embedding generation in this reference is pinned to `wordpress/php-ai-client` 1.4.0. It is a standalone SDK surface, not a method on `WP_AI_Client_Prompt_Builder` and not a WordPress procedural wrapper.
 
 ## Version boundary
 
@@ -8,7 +8,7 @@ Embedding generation arrived in `wordpress/php-ai-client` 1.4.0. It is a standal
 - The canonical WordPress/ai 1.3.0 plugin does not activate a replacement generation path on stock Core: its `SDK_Overlay::register()` call is commented out in `ai.php`. Its embedding helpers therefore feature-detect as unsupported. Do not load a second unprefixed SDK to work around that boundary; see `../../wp-ai-plugin/references/hooks-and-filters.md` for the plugin-specific contract.
 - Do not load the unprefixed standalone 1.4 package beside Core's bundled copy. Both use the same namespaces.
 - On stock Core, wait for the bundled dependency to update. If an earlier Core version must use 1.4 behavior, isolate/prefix the dependency or call a separate service rather than relying on Composer load order.
-- In a standalone PHP application where WordPress Core is not loading the SDK, require `wordpress/php-ai-client:^1.4` and register a compatible provider before using `AiClient::input()`.
+- In a standalone PHP application where WordPress Core is not loading the SDK, require the tested `wordpress/php-ai-client:1.4.0` release and register a compatible provider before using `AiClient::input()`.
 - For a future Core build, verify `AiClient::VERSION`, `method_exists( AiClient::class, 'input' )`, the Core wrapper surface, and provider availability independently. The standalone release does not prove Core availability.
 
 ## Entry point and builder
@@ -40,9 +40,11 @@ $values    = $embedding->getValues();
 | `generateEmbeddings()` | `list<Embedding>` |
 | `generateEmbeddingResult()` | `EmbeddingResult` with embeddings and metadata |
 
-`EmbeddingBuilder` also uses `ModelResolutionTrait`: `usingModel()`, `usingModelPreference()`, `usingModelConfig()`, `usingProvider()`, and `usingRequestOptions()`. Model preferences accept model IDs, model instances, or `[ $provider_id, $model_id ]` tuples. Generation honors those constraints and falls back to the first compatible discovered model if preferences do not match.
+At 1.4.0, `EmbeddingBuilder` uses `ModelResolutionTrait`: `usingModel()`, `usingModelPreference()`, `usingModelConfig()`, `usingProvider()`, and `usingRequestOptions()`. Model preferences accept model IDs, model instances, or `[ $provider_id, $model_id ]` tuples. Generation honors those constraints and falls back to the first compatible discovered model if preferences do not match.
 
 At 1.4.0, `isSupported()` behaves more broadly than generation: it honors an explicit `usingModel()`, but without one it searches the whole registry and does not apply `usingProvider()` or model preferences. Treat it as a broad availability probe unless you set the exact model.
+
+After 1.4.0, merged but unreleased changes require an explicit `usingModel()` or `usingProviderModel()` selection, remove `usingProvider()` and `usingModelPreference()` from `EmbeddingBuilder`, and make the static `generateEmbedding*()` methods take the model before an optional `ModelConfig`. Re-check the released tag before advancing this reference.
 
 ## Static entry points
 

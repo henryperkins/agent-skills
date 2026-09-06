@@ -3,8 +3,9 @@
 Enumerate a plugin's abilities from source, with no running
 environment. Static enumeration is necessarily best-effort — PHP's
 dynamism (variable indirection, runtime-conditional registration)
-means a complete inventory only comes from a live `wp_get_abilities()`
-call. When static and runtime inventories diverge, trust runtime;
+means a complete inventory requires a live raw-registry enumeration.
+`wp_get_abilities()` is an ecosystem-filtered view and can omit correctly
+registered abilities. In runtime mode, compare source with both surfaces;
 static drives the diff so the reviewer knows where to look.
 
 ## Typical registration shape
@@ -119,7 +120,7 @@ Cases where the inventory is incomplete or ambiguous:
   verdicts are advisory only and runtime mode is required for an
   authoritative reading.
 
-Record each in the report's "Static enumeration limitations" section
+Record each in the report's `### Limitations` subsection under `## Static inventory`
 and recommend a runtime-mode rerun for the authoritative inventory.
 
 ## Output format

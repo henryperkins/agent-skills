@@ -1,7 +1,7 @@
 ---
 name: wp-abilities-api
 description: "Use when working with the WordPress Abilities API (wp_register_ability, wp_register_ability_category, wp_get_abilities, /wp-json/wp-abilities/v1/*, @wordpress/abilities, @wordpress/core-abilities) including defining abilities, categories, meta, the meta.public and show_in_rest exposure flags, filtered ability discovery, permissions checks for clients, the seven execution lifecycle hooks new in WP 7.1 (wp_ability_invoked, wp_pre_execute_ability, wp_ability_normalize_input, wp_ability_validate_input, wp_ability_permission_result, wp_ability_execute_result, wp_ability_validate_output) and the two 6.9 actions wp_before_execute_ability and wp_after_execute_ability that only gained a trailing ability argument in 7.1, the WP 7.0+ client-side JS API (registerAbility, executeAbility, the core/abilities store), and exposing abilities to external AI agents via the MCP Adapter (Claude Desktop, Cursor, ChatGPT)."
-compatibility: "Targets WordPress 6.9+ (PHP 7.2.24+); sections marked WP 7.1+ do not exist on 6.9/7.0. WordPress Core verified through: 7.1; Gutenberg verified through: 23.8.0 (`packages/abilities` and `packages/core-abilities`); MCP Adapter verified through: 0.6.1 (requires PHP 7.4+). Filesystem-based agent with bash + node. Some workflows require WP-CLI."
+compatibility: "Targets WordPress 6.9+ (PHP 7.2.24+ on 6.9; PHP 7.4+ on 7.0/7.1); sections marked WP 7.1+ do not exist on 6.9/7.0. WordPress Core verified through: 7.1; Gutenberg verified through: 23.9.0 (`packages/abilities` and `packages/core-abilities`); MCP Adapter verified through: 0.6.1 (requires PHP 7.4+). Filesystem-based agent with bash + node. Some workflows require WP-CLI."
 license: GPL-2.0-or-later
 ---
 
@@ -30,7 +30,7 @@ Before deciding what to register, read `references/domain-vs-projection.md` — 
 
 - If this is WP core work, check `signals.isWpCoreCheckout` and `versions.wordpress.core`.
 - The Abilities API is in core from **6.9** onward. The `WordPress/abilities-api` feature plugin
-  was archived in February 2026 and is read-only — do not install it, and do not treat it as a
+  is archived and read-only — do not install it, and do not treat it as a
   shim for older sites. A project targeting WP < 6.9 should feature-detect
   (`function_exists( 'wp_register_ability' )`) and degrade.
 - **Establish the target version before writing 7.1 features.** WP 7.1 adds the `meta.public`
@@ -225,20 +225,20 @@ should still cast defensively.
 ### 6) Consume from JS (if needed)
 
 - For the WP 7.0+ client-side surface (registering abilities in JS, the `core/abilities` store, `executeAbility`, and how annotations affect the HTTP method used to dispatch server abilities), see `references/client-side.md`.
-- Two packages: `@wordpress/abilities` (pure store, registration, execution) and `@wordpress/core-abilities` (auto-loads server-registered abilities into the client store). Register your script module during `init`, then explicitly enqueue both your page-scoped module and `@wordpress/core-abilities` with `wp_enqueue_script_module()` on the screen that needs them.
+- Two packages: `@wordpress/abilities` (pure store, registration, execution) and `@wordpress/core-abilities` (auto-loads server-registered abilities into the client store). Register `@wordpress/core-abilities` as a static or dynamic dependency of your page module, enqueue the page module, and explicitly enqueue the classic `wp-data`, `wp-i18n`, `wp-api-fetch`, and `wp-url` scripts that the built modules read from `window.wp`.
 - For older clients or non-WP 7.0 contexts, prefer `@wordpress/abilities` APIs for client-side access and checks; ensure the build pipeline bundles the dependency.
 - **Await `@wordpress/core-abilities`'s `ready` before any imperative read or execution — but read it as settled, not succeeded.** Both initialization fetches are wrapped in a `try/catch` that only logs, so `ready` always resolves. After awaiting it, an empty store can still mean an authentication or network failure, not an empty registry; check the console and the `/wp-abilities/v1/abilities` response before concluding anything. `useSelect` consumers do not need the await.
 
 ### 7) Expose via MCP for external AI agents (optional)
 
-If external agents (Claude Desktop, Cursor, ChatGPT) should be able to discover and invoke your abilities, first check the site's PHP and WordPress versions. This base skill supports PHP 7.2.24+ and WP 6.9+, but MCP Adapter 0.6.1 requires PHP 7.4+ (`^7.4 || ^8.0`) and WordPress 6.9+; on PHP 7.2 or 7.3, upgrade the site runtime or stop before installing the adapter. Read `references/mcp-exposure.md` before giving installation, bootstrap, or server code. Install `wordpress/mcp-adapter`; for multi-plugin dependency use, also run `composer require automattic/jetpack-autoloader` and bootstrap `vendor/autoload_packages.php` **followed by `McpAdapter::instance()`** — consumed as a Composer package the adapter starts nothing on its own, so without that call the default server is never created and `mcp_adapter_init` never fires.
+If external agents (Claude Desktop, Cursor, ChatGPT) should be able to discover and invoke your abilities, first check the site's PHP and WordPress versions. WordPress 6.9 supports PHP 7.2.24+, while WordPress 7.0 and 7.1 require PHP 7.4+. MCP Adapter 0.6.1 requires PHP 7.4+ (`^7.4 || ^8.0`) and WordPress 6.9+, so only a 6.9 site can meet Core's floor while missing the adapter's. Read `references/mcp-exposure.md` before giving installation or server code. Install and activate the canonical `mcp-adapter` plugin, add `Requires Plugins: mcp-adapter` to the dependent plugin header, and guard integration code with `class_exists( 'WP\MCP\Core\McpAdapter' )`. Composer bundling remains supported by 0.6.1 but is a legacy path that upstream trunk deprecates.
 
 **Confirm the adapter version before writing exposure metadata — the rule reversed in 0.6.0.** The default server (`mcp-adapter-default-server`) surfaces its discover/get/execute flow for abilities that resolve to MCP-public, and `McpAbilityExposure::is_public()` resolves `meta.mcp.public ?? meta.public ?? false`. On 0.6.0+, an ability marked `meta.public => true` for REST is therefore exposed to agents unless you add `meta.mcp.public => false`; on 0.5.0 and earlier only an explicit `meta.mcp.public => true` did anything. Write `meta.mcp.public` explicitly whenever MCP status matters — it means the same thing on every version. Every execution still runs the ability's `permission_callback`, so this governs discovery rather than authorization; but the default server's own built-in abilities gate on `read`, which every role holds. A custom server can explicitly allow-list selected ability IDs, and is the cleanest way to stay insulated from the 0.6.0 default; it also does not bypass permission callbacks. The adapter maps `meta.annotations` (`readonly`, `destructive`, `idempotent`) to the corresponding MCP tool annotations.
 
 Two adapter details that bite when you wire the client up:
 
 - **`mcp_adapter_validation_enabled` has variable arity.** Seven DTO call sites pass one argument and only `McpServer::__construct()` passes three. WordPress does not pad missing filter arguments, so a callback registered `10, 3` with three *required* parameters is a fatal `ArgumentCountError` at those seven. Declare them optional: `function ( $enabled, $server_id = null, $server = null )`.
-- **`wp mcp-adapter serve` without `--server` selects the first registered server, not the default server.** Registration order is hook order, so pass `--server=<server-id>` explicitly anywhere identity matters, and `--user=<id|login|email>` or the session is unauthenticated.
+- **`wp mcp-adapter serve` without `--server` selects the first registered server, not the default server.** Registration order is hook order, so pass `--server=<server-id>` explicitly anywhere identity matters, and use WP-CLI's global `--user=<id|login|email>` option or the session is unauthenticated.
 
 For agent access over HTTP, set up an **Application Password** for the client's WordPress user, and check that **Settings → Permalinks is not set to Plain** — the REST routes the transport relies on need pretty permalinks.
 

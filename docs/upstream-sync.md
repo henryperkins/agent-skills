@@ -14,7 +14,7 @@ Core AI maintenance has two deliberately separate paths:
 3. WordPress/ai releases
 4. MCP Adapter releases
 5. `wordpress/php-ai-client` on Packagist
-6. standalone WP AI Client releases
+6. standalone WP AI Client releases (archived and deprecated; 0.4.0 is final, so this index is retained as a fixed compatibility record)
 7. Anthropic provider releases
 8. Google provider releases
 9. OpenAI provider releases
@@ -36,7 +36,7 @@ node eval/harness/run.mjs --skip-upstream-drift
 node shared/scripts/check-upstream-drift.mjs --format markdown --allow-drift
 ```
 
-The updater fetches every source concurrently and normalizes every payload before writing any index. GitHub error objects, empty stable-release arrays, missing Packagist packages, and an unparseable mapping all fail before the first write. Drafts and prereleases are excluded, versions sort numerically, and output is bounded and deterministic.
+The updater fetches every source concurrently and normalizes every payload before writing any index. When `GITHUB_TOKEN` is present, requests to `api.github.com` receive `Authorization: Bearer <token>`; the token is never attached to WordPress.org, Packagist, or handbook requests and is never logged. Tokenless local runs remain supported. GitHub error objects, empty stable-release arrays, missing Packagist packages, and an unparseable mapping all fail before the first write. Drafts and prereleases are excluded, versions sort numerically, and output is bounded and deterministic.
 
 `--skip-upstream-drift` skips only the expected “index advanced before skill marker” failure. Frontmatter, scenario, parser, registry, release-conformance, and quality checks still run. The default harness remains strict.
 
@@ -86,7 +86,7 @@ If `UPSTREAM_SYNC_TOKEN` is absent, the workflow falls back to `GITHUB_TOKEN`. P
 
 ## AI maintenance configuration
 
-Index refresh and state-hash verification need **no AI credentials**. `node shared/scripts/update-upstream-indices.mjs` and `node shared/scripts/ai-generate-updates.mjs --print-state-hash` are deterministic, provider-independent, and read no environment secret:
+Index refresh and state-hash verification need **no AI provider credentials**. `node shared/scripts/update-upstream-indices.mjs` and `node shared/scripts/ai-generate-updates.mjs --print-state-hash` are deterministic and provider-independent. The updater optionally reads `GITHUB_TOKEN` only to authenticate GitHub API requests; the state-hash command reads no environment secret:
 
 ```bash
 node shared/scripts/update-upstream-indices.mjs

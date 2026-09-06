@@ -3,19 +3,19 @@
 Originally audited 2026-07-03 against the Agent Skills specification and the skill-creation guides
 (best practices, optimizing descriptions, using scripts, evaluating skills).
 
-**Re-verified against the working tree on 2026-08-10.** Three of the seven original findings are
-closed and two are partly closed; the scorecard and finding bodies below carry current status, not
+**Re-verified against the working tree on 2026-09-06.** Four of the seven original findings are
+closed and one is partly closed; the scorecard and finding bodies below carry current status, not
 the July snapshot. Where a finding is closed, the original text is kept so the fix is legible.
 
 ## Scorecard
 
-| Area | Status (2026-07-03) | Status (2026-08-10) |
+| Area | Status (2026-07-03) | Status (2026-09-06) |
 |---|---|---|
 | Spec compliance (frontmatter, naming, size budgets) | Pass, one gap (license) | **Pass** |
 | Description triggering | Strong, one weak skill (wpds) | Strong, wpds still weak |
 | Progressive disclosure | Exemplary | Exemplary |
-| Instruction patterns (checklists, validation loops, gotchas) | Strong, two skills missing Verification | Strong, one skill missing Verification |
-| Script portability | **Fails when skills are installed standalone** | **Fixed, one straggler** |
+| Instruction patterns (checklists, validation loops, gotchas) | Strong, two skills missing Verification | **Strong; fixed** |
+| Script portability | **Fails when skills are installed standalone** | **Fixed** |
 | Script agent-interface design | Partial (4 of 8 scripts lack `--help`) | **Pass (8 of 8)** |
 | Output-quality evals | Not implemented (specs exist, no loop) | Not implemented |
 | Trigger evals | Not implemented | **Partial (3 of 21 skills)** |
@@ -46,7 +46,7 @@ applied correctly.
 
 ## Findings, by impact
 
-### 1. Cross-skill script paths break standalone installs (high) — **fixed, one straggler**
+### 1. Cross-skill script paths break standalone installs (high) — **closed**
 
 *Original:* The spec requires paths relative to the skill root. Nine skills instead used repo-root
 paths (`node skills/wp-project-triage/scripts/detect_wp_project.mjs`), so a user who runs
@@ -64,10 +64,9 @@ installed alongside; otherwise classify the project manually.
 `eval/harness/run.mjs::validatePortableTriageCommand()` gates the regression by rejecting the
 bare-local `scripts/detect_wp_project.mjs` form in any skill other than wp-project-triage itself.
 
-**Still open:** `skills/wp-ai-plugin/SKILL.md:33` retains the old repo-root form —
-`` 1. Run triage: `node skills/wp-project-triage/scripts/detect_wp_project.mjs` `` — with no
-fallback clause. The harness check does not catch it, because it only rejects the *local* form. Fix
-the line and widen the gate to reject `node skills/` paths too.
+`wp-ai-plugin` now uses the sibling path with the manual-classification fallback. The harness rejects
+both non-portable forms: a bare local `scripts/detect_wp_project.mjs` path outside the triage skill
+and a repository-root `skills/wp-project-triage/scripts/detect_wp_project.mjs` path.
 
 ### 2. No eval loop (high, but effort-gated) — **open**
 
@@ -114,16 +113,14 @@ All 8 scripts now handle `--help`: `detect_ai_client`, `list_blocks`, `detect_bl
 `perf_inspect`, `phpstan_inspect`, `detect_plugins`, `detect_wp_project`, `wpcli_inspect`. The
 original gap (`list_blocks`, `detect_block_themes`, `detect_plugins`, `wpcli_inspect`) is resolved.
 
-### 7. Two skills missing Verification sections (low) — **partly closed**
+### 7. Two skills missing Verification sections (low) — **closed**
 
-`wpds` now has a `## Verification` section. **`blueprint` still does not** — and it is the one that
-most needs it, since a JSON format skill is exactly where a validation loop (schema check,
-`run-blueprint` smoke test) pays off.
+`wpds` and `blueprint` now have `## Verification` sections. The Blueprint loop validates against the
+current schema, runs the result on its target surface, checks the resulting environment, and opens
+share URLs in a fresh session.
 
 ## Suggested order
 
-1. `wp-ai-plugin` triage path + widen the harness gate to `node skills/` (finishes finding 1)
-2. `blueprint` Verification section (finishes finding 7)
-3. wpds description rewrite (finding 4)
-4. Extend `eval/descriptions/` corpora beyond the current three skills (finding 3)
-5. Pilot output-quality evals on 2–3 skills (finding 2)
+1. wpds description rewrite (finding 4)
+2. Extend `eval/descriptions/` corpora beyond the current three skills (finding 3)
+3. Pilot output-quality evals on 2–3 skills (finding 2)

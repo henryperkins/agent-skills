@@ -85,7 +85,7 @@ $images = wp_ai_client_prompt( $prompt )->generate_images( 4 );
 $res    = wp_ai_client_prompt( $prompt )->generate_image_result();
 ```
 
-`generate_image()` returns a `File` DTO. Read the data with `$image->getDataUri()` for inline embedding, or persist via the Media Library however your plugin already handles uploads.
+`generate_image()` returns a `File` DTO. Check `$image->isRemote()` first: `getDataUri()` is nullable and is usable only for a non-remote file, while `getUrl()` is nullable and is usable only for a remote file. Validate either representation before rendering or persist it through the bounded Media Library pattern in `rest-patterns.md`.
 
 ### Other modalities
 
@@ -131,7 +131,19 @@ foreach ( $result->toMessage()->getParts() as $part ) {
     if ( $part->getType()->isText() ) {
         echo wp_kses_post( $part->getText() );
     } elseif ( $part->getType()->isFile() && $part->getFile()->isImage() ) {
-        echo '<img src="' . esc_url( $part->getFile()->getDataUri() ) . '">';
+        $file = $part->getFile();
+        $src  = $file->isRemote() ? $file->getUrl() : $file->getDataUri();
+
+        if ( $file->isRemote() && is_string( $src ) && wp_http_validate_url( $src ) ) {
+            echo '<img src="' . esc_url( $src ) . '">';
+        } elseif (
+            ! $file->isRemote()
+            && is_string( $src )
+            && preg_match( '#^data:image/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$#', $src )
+        ) {
+            // esc_url() rejects data: URIs; validate the complete shape first.
+            echo '<img src="' . esc_attr( $src ) . '">';
+        }
     }
 }
 ```
@@ -140,7 +152,7 @@ The `isText()` / `isFile()` predicates live on the `MessagePartTypeEnum` returne
 
 ## Feature detection
 
-These methods are synchronous and never run your prompt — they match the builder's configuration against the models each registered provider advertises. They are not a local lookup, though. Resolving that model list probes every registered API-based provider over HTTP: providers built on `ListModelsApiBasedProviderAvailability` send a list-models request, cached 24h in the `wp_ai_client` object-cache group (per-request only, unless the site runs a persistent object cache), while providers built on `GenerateTextApiBasedProviderAvailability` send an uncached 1-token test generation on *every* check. Cache the boolean yourself, or run the check on admin/editor screens only — not on every front-end request and never inside a loop. Use them before showing UI:
+These methods are synchronous and never run your prompt — they match the builder's configuration against the models each registered provider advertises. They are not a local lookup, though. Resolving that model list probes every registered API-based provider over HTTP: providers built on `ListModelsApiBasedProviderAvailability` send a list-models request, cached 24h in the `wp_ai_client` object-cache group (filterable since WordPress 7.1 with `wp_ai_client_cache_group`; per-request only unless the site runs a persistent object cache), while providers built on `GenerateTextApiBasedProviderAvailability` send an uncached 1-token test generation on *every* check. Cache the boolean yourself, or run the check on admin/editor screens only — not on every front-end request and never inside a loop. Use them before showing UI:
 
 - `is_supported_for_text_generation()`
 - `is_supported_for_image_generation()`
@@ -188,30 +200,30 @@ Embedding generation is not a prompt-builder operation. Standalone PHP AI Client
 
 ### A class-name nuance worth knowing
 
-The dev note documents the Core 7.0 wrapper class as `WP_AI_Client_Prompt_Builder`. The standalone `wordpress/wp-ai-client` package (used on WP < 7.0) returns a different class name — `WordPress\AI_Client\Builders\Prompt_Builder_With_WP_Error`, a subclass of `WordPress\AI_Client\Builders\Prompt_Builder` that adds the `WP_Error` translation. The fluent method names are identical between the two; both proxy to the underlying `php-ai-client` SDK via `__call`. So:
+The dev note documents the Core 7.0 wrapper class as `WP_AI_Client_Prompt_Builder`. The deprecated, archived `wordpress/wp-ai-client` 0.4.0 package returns a different class name — `WordPress\AI_Client\Builders\Prompt_Builder_With_WP_Error`, a subclass of `WordPress\AI_Client\Builders\Prompt_Builder` that adds the `WP_Error` translation. The fluent method names are identical between the two; both proxy to the underlying `php-ai-client` SDK via `__call`. So:
 
 - **Type hints in published code**: prefer interface-style typing over the concrete class name when possible. If you must reference the class, use `WP_AI_Client_Prompt_Builder` for Core 7.0+ and the fully-qualified plugin class for WP < 7.0 — handle both paths if your plugin supports both.
-- **Method names**: identical across both for the common surface. Code that uses `wp_ai_client_prompt( ... )->using_temperature( 0.7 )->generate_text()` works on either. The standalone package predates the video generators (`generate_video*`) and the newer media-output methods (`as_output_media_orientation` / `as_output_media_aspect_ratio` / `as_output_speech_voice`) the Core 7.0 wrapper exposes — verify those exist before relying on them on WP < 7.0.
+- **Method names**: identical across both for the common surface. The 0.4.0 wrapper proxies unknown methods to its installed SDK, so newer video or media-output calls may reach that SDK, but those names are absent from its documented surface and from `Prompt_Builder_With_WP_Error::$terminate_methods`; a failing terminal call can therefore return the builder instead of `WP_Error`. Do not treat that deprecated bridge as a stable compatibility promise.
 
 ## Migration
 
-If your plugin used the standalone Composer packages before WP 7.0:
+If your plugin used the standalone Composer packages before WordPress 7.0, remember that `wordpress/wp-ai-client` 0.4.0 is final, deprecated, and archived. Its 7.0+ REST routes, JavaScript API, and `prompt_ai` / `list_ai_providers_models` capability filters still run, but upstream's upgrade guide says to remove the package once the site requires WordPress 7.0+.
 
 ### Recommended: bump to WP 7.0
 
 Update your plugin header to `Requires at least: 7.0` and remove the Composer dependencies on `wordpress/php-ai-client` and its transitive deps. Replace `AI_Client::prompt()` calls with `wp_ai_client_prompt()`. Remove `wordpress/wp-ai-client` if you weren't using its REST/JS layer.
 
-### If you must support WP < 7.0
+### If you must support WordPress < 7.0
 
-`wordpress/php-ai-client` is loaded by Core on 7.0+. Loading it via Composer too will cause duplicate-class errors. Wrap the autoloader:
+Always load your plugin's own Composer autoloader; gating the entire `vendor/autoload.php` on `wp_ai_client_prompt()` also disables your own PSR-4 classes and unrelated dependencies on WordPress 7.0+. Never ship an unprefixed `wordpress/php-ai-client` beside Core's bundled SDK. Both autoloaders are lazy, so the main hazard is a mixed SDK: Core 1.3.1 uses scoped PSR namespaces while standalone 1.4.0 uses unscoped PSR namespaces, and one version's classes can load against the other's DTOs.
 
-```php
-if ( ! function_exists( 'wp_ai_client_prompt' ) ) {
-    require_once __DIR__ . '/vendor/autoload.php';
-}
-```
+Choose one supported boundary:
 
-Composer doesn't allow more granular conditional autoloading without splitting into two Composer setups. The `wordpress/wp-ai-client` package handles 7.0 transparently — no change needed.
+- require WordPress 7.0+ and use Core's `wp_ai_client_prompt()`;
+- for a distributed plugin that still supports 6.x, prefix/scope a tested standalone SDK with a tool such as PHP-Scoper or Strauss, and select the prefixed entry point only when Core's `\WordPress\AiClient\AiClient` is absent; or
+- depend on the deprecated WP AI Client 0.4.0 plugin for its remaining pre-7.0 bridge while planning its removal.
+
+Use `class_exists( \WordPress\AiClient\AiClient::class )` and `function_exists( 'wp_ai_client_prompt' )` to select an entry point after the normal plugin bootstrap has loaded. They are runtime feature gates, not conditions for loading all of your dependencies.
 
 ## Sources
 

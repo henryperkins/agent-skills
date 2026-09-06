@@ -75,11 +75,11 @@ and surprising to agents that expect defaults to be static.
 
 If an audit doc is provided and an ability has `reference_ability: true`,
 it must work with `execute([])` — it is the smallest, safest bootstrap
-call an implementer lands first. Two things break that, and both FAIL:
+call an implementer lands first. The complete contract is an object-root
+schema with an empty-object root `default` and no required inputs. Optional
+property definitions are allowed. Any violation FAILs:
 
-1. **A non-empty `input_schema.required` array.** `execute([])` cannot
-   satisfy a required property.
-2. **A missing `input_schema` altogether.** This is the one that reads
+1. **A missing `input_schema` altogether.** This is the one that reads
    like a pass and is not. `WP_Ability::validate_input()` guards on
    `null === $input`, not `empty( $input )`, so a schema-less ability
    accepts `execute()` and `execute( null )` but rejects
@@ -92,9 +92,17 @@ call an implementer lands first. Two things break that, and both FAIL:
    fails. Declare `'input_schema' => array( 'type' => 'object',
    'properties' => array(), 'default' => (object) array() )` on any
    reference ability instead of omitting it.
+2. **A root type other than `object`.** A no-argument agent call supplies an
+   object; a scalar or array root does not describe that call.
+3. **A missing or non-object root `default`.** The schema must carry
+   `'default' => (object) array()` in PHP (`default: {}` in the audit YAML), so
+   the default remains a JSON object rather than becoming `[]`.
+4. **A non-empty `input_schema.required` array.** `execute([])` cannot satisfy
+   a required property. An absent or empty `required` is valid.
 
-So the lint is: `reference_ability: true` FAILS when `input_schema` is
-absent, and FAILS when `input_schema.required` is non-empty.
+So the lint is: `reference_ability: true` FAILS unless all three schema-shape
+requirements hold and `input_schema.required` is absent or empty. A list
+ability with optional filters remains a valid reference ability.
 
 (No audit provided → this lint is skipped — no reference ability is
 declared.)

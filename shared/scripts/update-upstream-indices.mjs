@@ -13,12 +13,21 @@ function writeJson(filePath, value) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+export function buildUpstreamRequestHeaders(url, env = process.env) {
+  const headers = {
+    "user-agent": "wp-agent-skills-upstream-sync/0.2",
+    accept: "text/html,application/json",
+  };
+  const token = typeof env.GITHUB_TOKEN === "string" ? env.GITHUB_TOKEN.trim() : "";
+  if (token !== "" && new URL(url).hostname === "api.github.com") {
+    headers.authorization = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 async function fetchText(url) {
   const response = await fetch(url, {
-    headers: {
-      "user-agent": "wp-agent-skills-upstream-sync/0.2",
-      accept: "text/html,application/json",
-    },
+    headers: buildUpstreamRequestHeaders(url),
   });
   if (!response.ok) throw new Error(`Fetch failed ${response.status} for ${url}`);
   return await response.text();

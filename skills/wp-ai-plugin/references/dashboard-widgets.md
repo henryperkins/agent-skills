@@ -93,6 +93,6 @@ The `AI_Request_Logging` experiment (`includes/Experiments/AI_Request_Logging/`,
 
 ## Source
 
-- `includes/Admin/Dashboard/Dashboard_Widgets.php` — the orchestrator (~80 lines)
+- `includes/Admin/Dashboard/Dashboard_Widgets.php` — the orchestrator (~90 lines)
 - `includes/Admin/Dashboard/AI_Status_Widget.php` — Status widget renderer
 - `includes/Admin/Dashboard/AI_Capabilities_Widget.php` — Capabilities widget renderer

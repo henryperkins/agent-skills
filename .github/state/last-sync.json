@@ -1,11 +1,11 @@
 {
-  "hash": "7d9e7fa72da5dddec95b33d60b1737fd1fe5337489d2cc5d5a27516fb7dda205",
+  "hash": "602d4b07ec6a969c68095c97fd25d5e040f2dddd61db6b71ee582ce49e02b1fe",
   "state": {
     "schemaVersion": 3,
     "versions": {
       "anthropic-provider": "1.0.4",
       "google-provider": "1.1.1",
-      "gutenberg": "v23.8.0",
+      "gutenberg": "v23.9.0",
       "mcp-adapter": "v0.6.1",
       "openai-provider": "1.1.0",
       "php-ai-client": "1.4.0",
@@ -17,7 +17,7 @@
     "fingerprints": {
       "anthropic-provider": "4c9a462d19cfcc478f988b275dd00df8d611038e748f49494063e6a0e11df7b2",
       "google-provider": "c1c05efee4a70c40aaf0053530d41ed3ca7609a0aab82e13935401ab49dfa071",
-      "gutenberg": "baffb862219eed415242e91f3e519c72aaf1a95ee56019b91ea0bb777cb1803f",
+      "gutenberg": "ae3aad92569121a4bf3e2fa9788383c80f8329f6a66a0ac9654138cad89fb02d",
       "mcp-adapter": "9627f0bbb29e2a64ef40d69c2433c1913a6d6998a88a22bfc18a7c23f9ceafcc",
       "openai-provider": "316606f9db4d6e456f09e65208c4e0783770271be98a61f73bd924fb32289033",
       "php-ai-client": "e5a3842717805a36fc69f0e4baa7d9f792fb54d7e440084c435b6f039f2f71ac",
@@ -27,11 +27,22 @@
       "wp-gutenberg-version-map": "0b23b58988e90fe847011874a482c4d4160cc9b1023e33f64750152415f82401"
     }
   },
-  "lastSync": "2026-08-25T16:02:39Z",
+  "lastSync": "2026-09-06T18:04:48.368Z",
   "lastChanges": [
     {
-      "type": "state-schema-migration",
-      "description": "Rebaselined schema 3 with complete canonical fingerprints for all ten upstream indices."
+      "type": "upstream-release",
+      "sourceId": "gutenberg",
+      "description": "gutenberg updated: v23.8.0 → v23.9.0",
+      "oldVersion": "v23.8.0",
+      "newVersion": "v23.9.0",
+      "releaseUrl": "https://github.com/WordPress/gutenberg/releases/tag/v23.9.0",
+      "affectedSkills": [
+        "wp-abilities-api",
+        "wp-ai-plugin",
+        "wp-ai-connectors"
+      ],
+      "riskLevel": "medium",
+      "taggedFiles": []
     }
   ]
 }

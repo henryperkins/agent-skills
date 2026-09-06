@@ -105,7 +105,7 @@ Other Feature and Experiment Abilities, including the three Image Generation Abi
 
 ### Advanced feature settings
 
-Features supply advanced settings through their own metadata and settings-field methods. Use `wpai_settings_feature_groups` and `wpai_settings_feature_metadata` to extend that data. `wpai_feature_{$id}_settings` exists only where a Feature applies it (Type Ahead does in v1.3.0); it is not a universal framework filter.
+Features supply advanced settings through their own metadata and settings-field methods. Use `wpai_settings_feature_groups` and `wpai_settings_feature_metadata` to extend that data. `wpai_feature_{$id}_settings` exists only where an implementation applies it; the Type Ahead Experiment does in v1.3.0, and that hook has existed since 1.1.0. It is not a universal framework filter.
 
 ### Added in v1.2.0
 
@@ -117,7 +117,7 @@ Features supply advanced settings through their own metadata and settings-field 
 
 ### Added in v1.3.0
 
-- **`Content_Translation`** (`content-translation`, `Experiment_Category::EDITOR`) — translates paragraph and heading blocks into a different language, and registers the paired `ai/content-translation` Ability (#747, merged 2026-07-29). Requires a connector with text-generation support.
+- **`Content_Translation`** (`content-translation`, `Experiment_Category::EDITOR`) — translates paragraph and heading blocks into a different language, and registers the paired `ai/content-translation` Ability (#747, merged 2026-07-28 UTC). Requires a connector with text-generation support.
 
   Target languages come from `Languages.php` and are filterable:
 
@@ -130,7 +130,7 @@ Features supply advanced settings through their own metadata and settings-field 
 
   Codes are normalised with `sanitize_key()`, entries with a non-string or empty label are discarded, and a non-array return value is ignored entirely so the language picker and the ability schema keep working. The filtered list feeds the ability's input schema, so adding a language your provider cannot handle produces runtime failures rather than a validation error.
 
-- **`Custom_Abilities`** (`custom-abilities`, `Experiment_Category::ADMIN`, `capability` `'none'`) — a single toggle that gates *all* of the plugin's custom Abilities. Its `register()` pulls `Gated_Abilities::get_all()` and registers each one, running the `Show_In_Abilities` polyfill first when any gated ability needs core objects exposed. `Gated_Abilities::GATED_ABILITY_CLASSES` currently holds `Post_Utilities`, `Read_Settings`, `Read_Users`, `Read_Content` — i.e. exactly the five IDs that 1.2.0 registers unconditionally (`core/read-content`, `core/read-settings`, `core/read-users`, `ai/get-post-details`, `ai/get-post-terms`). Third parties add their own via the `wpai_gated_abilities` filter.
+- **`Custom_Abilities`** (`custom-abilities`, `Experiment_Category::ADMIN`, `capability` `'none'`) — a single toggle that gates *all* of the plugin's custom Abilities. `Gated_Abilities::get_all()` only instantiates the wrapper classes. `Custom_Abilities::register()` runs the `Show_In_Abilities` polyfill when needed and calls each wrapper's `register()`. `Gated_Abilities::GATED_ABILITY_CLASSES` currently holds `Post_Utilities`, `Read_Settings`, `Read_Users`, `Read_Content` — together registering five IDs (`core/read-content`, `core/read-settings`, `core/read-users`, `ai/get-post-details`, `ai/get-post-terms`). Third parties add their own via `wpai_gated_abilities`.
 
   This is a behavioral inversion from 1.2.0: those Ability IDs are absent until a site admin enables the Experiment through `wpai_feature_custom-abilities_enabled`, and the `show_in_abilities` polyfill goes with them. Any downstream resolver must handle null.
 
@@ -201,7 +201,7 @@ If you're building an Experiment with the explicit goal of seeing it graduate, w
 
 ## Where to put your Experiment
 
-- **Upstream contribution to `WordPress/ai`**: PR adding `includes/Experiments/My_Experiment/My_Experiment.php` and `includes/Abilities/My_Experiment/My_Experiment.php`. Follow the contributor guide (`CONTRIBUTING.md`); AI-authored code requires explicit disclosure per the AI Authorship guidelines.
+- **Upstream contribution to `WordPress/ai`**: PR adding `includes/Experiments/My_Experiment/My_Experiment.php` and `includes/Abilities/My_Experiment/My_Experiment.php`. Follow `CONTRIBUTING.md`; the disclosure checkbox and wording live in `.github/PULL_REQUEST_TEMPLATE.md` and the linked contributor handbook.
 - **Downstream plugin extending the AI plugin**: your own plugin normally registers an instance on `wpai_register_features`; use `wpai_default_feature_classes` when class-list mutation is the requirement. Treat the AI plugin as an optional dependency and gate every entry point.
 
 The downstream pattern is what most agencies and hosts will use. Upstream contribution is for Experiments general enough to belong in the canonical plugin.

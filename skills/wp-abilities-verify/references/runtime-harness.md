@@ -74,35 +74,33 @@ diagnosing anything:
 
 ```bash
 <env-cli> wp --user=admin eval '
-$filtered = wp_get_abilities();
+$prefix   = "<plugin-slug>/";
+$filter   = static function ( $name ) use ( $prefix ) {
+    return strpos( $name, $prefix ) === 0;
+};
+$filtered = array_values( array_filter( array_keys( (array) wp_get_abilities() ), $filter ) );
 $registry = WP_Abilities_Registry::get_instance();
-$raw      = $registry ? $registry->get_all_registered() : array();
-printf( "filtered=%d raw=%d" . PHP_EOL, count( $filtered ), count( $raw ) );
-print_r( array_values( array_diff( array_keys( (array) $raw ), array_keys( (array) $filtered ) ) ) );
+$raw      = array_values( array_filter(
+    array_keys( (array) ( $registry ? $registry->get_all_registered() : array() ) ),
+    $filter
+) );
+sort( $raw );
+sort( $filtered );
+$filtered_out = array_values( array_diff( $raw, $filtered ) );
+printf( "raw_count=%d" . PHP_EOL, count( $raw ) );
+echo implode( PHP_EOL, $raw ) . PHP_EOL;
+printf( "filtered_count=%d" . PHP_EOL, count( $filtered ) );
+echo implode( PHP_EOL, $filtered ) . PHP_EOL;
+echo "filtered_out:" . PHP_EOL;
+echo $filtered_out ? implode( PHP_EOL, $filtered_out ) . PHP_EOL : "none" . PHP_EOL;
 '
 ```
 
 Anything printed by that `array_diff` registered successfully and was filtered
 out afterwards. Do not report it as a registration failure.
 
-Then diff the runtime names against the static inventory from
+Diff both emitted name lists against the static inventory from
 `static-enumeration.md`:
-
-```bash
-<env-cli> wp --user=admin eval '
-$names = array_filter(
-    array_keys( (array) wp_get_abilities() ),
-    function ( $n ) {
-        return strpos( $n, "<plugin-slug>/" ) === 0;
-    }
-);
-sort( $names );
-echo "count=" . count( $names ) . PHP_EOL;
-echo implode( PHP_EOL, $names ) . PHP_EOL;
-'
-```
-
-Compare against the static inventory:
 
 - Source contains ability, absent from **`$raw`** → FAIL. Only now is
   "the registration hook is not firing" a supportable claim; check init
@@ -115,14 +113,16 @@ Compare against the static inventory:
   This is not a registration failure and must not be reported as one.
 - Runtime contains ability, source missing → WARN. Dynamic registration
   path the enumerator couldn't follow. Document but don't block.
-- Counts match → OK.
+- Raw names exactly equal the static inventory → OK. Equal counts alone are
+  insufficient because one missing and one unexpected name can cancel out.
 
 ## Check 2 — annotations read back as declared
 
 ```bash
 <env-cli> wp --user=admin eval '
+$registry = WP_Abilities_Registry::get_instance();
 $names = array_filter(
-    array_keys( (array) wp_get_abilities() ),
+    array_keys( (array) ( $registry ? $registry->get_all_registered() : array() ) ),
     function ( $n ) {
         return strpos( $n, "<plugin-slug>/" ) === 0;
     }
@@ -477,8 +477,14 @@ The runtime harness writes a dedicated section in the run report:
 
 ### Check 1 — enumeration
 
-count=7 (expected 7 from static inventory)
-<sorted list>
+raw_count=7 (expected 7 from static inventory)
+<sorted raw-registry list>
+
+filtered_count=6
+<sorted ecosystem-filtered list>
+
+filtered_out:
+<names present in raw but absent from filtered, or `none`>
 
 ### Check 2 — annotations
 
@@ -497,8 +503,8 @@ count=7 (expected 7 from static inventory)
 
 ### Check 5 — permission gate
 
-| Ability | admin | subscriber | Expected |
-|---|---|---|---|
+| Ability | anon | subscriber | admin | Expected |
+|---|---|---|---|---|
 
 ### Check 6 — idempotency
 
