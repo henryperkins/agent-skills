@@ -17,11 +17,13 @@ The exact PHP shape is in the SDK source — the existing flagship providers are
 
 `using_model_preference()` / standalone `usingModelPreference()` are preferences, not hard constraints. If none match, resolution falls back to the first compatible model in registry order. Provider model ordering therefore affects the fallback.
 
+This applies to prompt generation only. Since PHP AI Client 1.5.0, embedding callers must name a model, so ordering never decides which embedding model runs — but it still decides what a discovery listing shows first.
+
 The convention (followed by the three flagship providers): list newer models before older ones within a family. So `gpt-5.4` before `gpt-5.0` before `gpt-4.5-turbo`. A feature plugin that says "give me your best Anthropic model" gets `claude-opus-4-7` instead of a 2-year-old Claude 3. (Model IDs throughout this skill are illustrative — use the IDs your provider actually advertises.)
 
 ## CapabilityEnum is not an option list
 
-At PHP AI Client 1.4.0, `CapabilityEnum` contains exactly:
+At PHP AI Client 1.5.0 (unchanged since 1.4.0), `CapabilityEnum` contains exactly:
 
 - `textGeneration()`
 - `imageGeneration()`
@@ -33,6 +35,14 @@ At PHP AI Client 1.4.0, `CapabilityEnum` contains exactly:
 - `chatHistory()`
 
 Names such as `json_response`, `system_instruction`, `function_calling`, and `streaming` are not `CapabilityEnum` cases. Structured output uses `OptionEnum::outputSchema()`, system instructions use `OptionEnum::systemInstruction()`, and function calling uses `OptionEnum::functionDeclarations()`. Input/output modalities are also options.
+
+`OptionEnum` is not a fixed list: it reflects over `ModelConfig`'s `KEY_*` constants and adds `INPUT_MODALITIES`. Read `ModelConfig` at the SDK version you target rather than memorising cases.
+
+### Function declaration annotations (1.5.0)
+
+`FunctionDeclaration` takes an optional fourth constructor argument, `array $annotations`, exposed via `getAnnotations()` and serialized under an `annotations` key. The values are open-ended and JSON-serializable; the SDK does not interpret them, so a provider may read them to drive provider-native behaviour. Treat them as advisory hints, not contract — a declaration with no annotations is valid and yields `[]`.
+
+Deferred tool loading is still in flux upstream: the 1.5.0 development line briefly added an `OptionEnum::toolSearch()` option and a `PROVIDER_DATA` message-part type, then walked both back before the tag ("Keep tool search policy in providers and limit core to conversation data"). Neither exists in 1.5.0. Do not declare or consume them.
 
 ## SupportedOption and modalities
 
@@ -75,7 +85,9 @@ public function generateEmbeddingResult( array $inputs ): EmbeddingResult;
 
 Read `$this->getConfig()->getDimensions()`, forward it when present, preserve input order, and return exactly one numeric vector per input. `EmbeddingResult` must contain at least one vector, a positive concrete dimension count, and vectors whose lengths match that count. `EmbeddingBuilder` separately rejects a result count that differs from the input count.
 
-There is no implemented `EmbeddingOperation` or `EmbeddingGenerationOperationModelInterface` in 1.4.0; use the synchronous interface above.
+There is no implemented `EmbeddingOperation` or `EmbeddingGenerationOperationModelInterface` as of 1.5.0; use the synchronous interface above.
+
+The provider-side contract is unchanged between 1.4.0 and 1.5.0. What changed in 1.5.0 is the *consumer* side: `EmbeddingBuilder` no longer resolves a model, so callers must name one with `usingProviderModel()` or `usingModel()`. Your metadata is what they match against when they look one up, which makes accurate `dimensions()` and input-modality declarations more load-bearing than before, not less.
 
 ## Logo and brand assets
 
@@ -95,4 +107,4 @@ Models change. New ones launch, old ones get deprecated, capabilities expand. Tw
 
 ## Cross-checking with feature detection
 
-Build a small smoke test in your provider plugin that exercises every declared capability/option against a configured key. For embeddings, include `AiClient::input( ... )->usingDimensions( ... )->isSupported()` and a real single/batch generation check. Verify the output count, order, and dimensions instead of trusting metadata alone.
+Build a small smoke test in your provider plugin that exercises every declared capability/option against a configured key. For embeddings, include `AiClient::input( ... )->usingProviderModel( $provider_id, $model_id )->usingDimensions( ... )->isSupported()` and a real single/batch generation check. On 1.5.0 the model argument is required; omitting it throws rather than probing the registry. Verify the output count, order, and dimensions instead of trusting metadata alone.

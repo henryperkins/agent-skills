@@ -228,14 +228,23 @@ export function runReleaseConformance(repoRoot) {
     "is_wp_error( $result )",
     "get_error_message()",
     "PHP AI Client 1.3.1",
-    "PHP AI Client 1.4.0",
+    "PHP AI Client 1.5.0",
     "AiClient::generateEmbeddingResult()",
+    "usingProviderModel(",
   ]);
+  // php-ai-client 1.5.0 removed automatic model resolution from EmbeddingBuilder
+  // (#274). Every embedding example must name a model, and the builder must no
+  // longer be described as sharing the prompt builder's resolution trait.
   requireIncludes(repoRoot, "skills/wp-ai-client/references/embedding-builder.md", [
-    "usingModelPreference()",
+    "usingProviderModel(",
+    "An embedding model must be specified",
     "AiClient::generateEmbeddings()",
     "BeforeGenerateEmbeddingEvent",
     "AfterGenerateEmbeddingEvent",
+  ]);
+  requireExcludes(repoRoot, "skills/wp-ai-client/references/embedding-builder.md", [
+    "`EmbeddingBuilder` also uses `ModelResolutionTrait`",
+    "$model_or_config",
   ]);
   requireExcludes(repoRoot, "skills/wp-ai-client/SKILL.md", [
     "Pull `getProviderMetadata()` off the result",

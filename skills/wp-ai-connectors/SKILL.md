@@ -1,7 +1,7 @@
 ---
 name: wp-ai-connectors
 description: "Use when building or debugging a WordPress AI provider plugin, registering an AI service with the PHP AI Client, exposing it through Settings → Connectors, declaring model capabilities/options, or adding text, media, function-calling, or embedding support at the provider layer."
-compatibility: "Targets WordPress 7.0+ (PHP 7.4+). Embedding-provider guidance requires PHP AI Client 1.4+ in standalone use or a Core build verified to bundle it. Filesystem-based agent with bash + node. Some workflows require WP-CLI."
+compatibility: "Targets WordPress 7.0+ (PHP 7.4+). Embedding-provider guidance requires PHP AI Client 1.4+ in standalone use or a Core build verified to bundle it; consumer-side embedding calls follow the 1.5.0 explicit-model contract. Filesystem-based agent with bash + node. Some workflows require WP-CLI."
 license: GPL-2.0-or-later
 ---
 
@@ -76,11 +76,11 @@ The provider class itself (`AnthropicProvider` in this example) implements the S
 
 ### 2) Declare capabilities and options from the exact SDK version
 
-`ModelMetadata` keeps two different axes. `CapabilityEnum` contains generation kinds plus chat history; configuration features belong in `SupportedOption` entries keyed by `OptionEnum`. For example, embedding support in PHP AI Client 1.4 is `CapabilityEnum::embeddingGeneration()`, while caller-selectable dimensions are `OptionEnum::dimensions()`. Structured output, system instructions, function declarations, and modalities are options, not invented `CapabilityEnum` cases.
+`ModelMetadata` keeps two different axes. `CapabilityEnum` contains generation kinds plus chat history; configuration features belong in `SupportedOption` entries keyed by `OptionEnum`. For example, embedding support (unchanged from 1.4.0 through 1.5.0) is `CapabilityEnum::embeddingGeneration()`, while caller-selectable dimensions are `OptionEnum::dimensions()`. Structured output, system instructions, function declarations, and modalities are options, not invented `CapabilityEnum` cases.
 
 An embedding model must implement both `ModelInterface` and `EmbeddingGenerationModelInterface`; the latter adds `generateEmbeddingResult( array $inputs ): EmbeddingResult` but does not itself extend `ModelInterface`. Declare `OptionEnum::inputModalities()` so automatic resolution can match the actual text/file inputs, and declare `OptionEnum::dimensions()` only when the model accepts caller-selected dimensions. Return exactly one vector per input in input order.
 
-This is a 1.4-only surface. Before applying it inside WordPress, verify the Core build actually bundles PHP AI Client 1.4+; the standalone package release does not establish Core availability. Read `references/capabilities-declaration.md` for the exact enum, metadata, and model contract.
+This surface arrived in 1.4.0 and is unchanged in 1.5.0. Before applying it inside WordPress, verify the Core build actually bundles PHP AI Client 1.4+ — WordPress 7.1 still bundles 1.3.1, so the standalone package release does not establish Core availability. Read `references/capabilities-declaration.md` for the exact enum, metadata, and model contract.
 
 ### 3) Let auto-discovery handle the connector
 
@@ -150,7 +150,7 @@ If the connector isn't showing up:
 - The connector card renders on Settings → Connectors with the correct logo, description, and credentials link.
 - Setting an API key via env var, constant, and database (in turn) shows the right source on the card.
 - A feature plugin calling `wp_ai_client_prompt()->is_supported_for_text_generation()` returns `true` once your provider is configured.
-- For every advertised PHP AI Client 1.4 embedding model, `AiClient::input( ... )->usingDimensions( ... )->isSupported()` and generation succeed with one correctly sized vector per input.
+- For every advertised embedding model, `AiClient::input( ... )->usingProviderModel( $provider_id, $model_id )->usingDimensions( ... )->isSupported()` and generation succeed with one correctly sized vector per input. Since 1.5.0 the model is mandatory — an `isSupported()` call with no model throws instead of probing.
 
 ## Failure modes / debugging
 
