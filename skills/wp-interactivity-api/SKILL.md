@@ -164,7 +164,9 @@ export function disposeNavigationAnalytics() {
 
 Invoke `disposeNavigationAnalytics()` from the owning integration's actual teardown. Do not call it immediately after registering the watcher.
 
-In WordPress 7.0, direct reads of `state.navigation.hasStarted` and `state.navigation.hasFinished` are deprecated and emit development warnings. Do not use those navigation internals; use the reactive router state your integration actually needs. Do not infer or suggest unreleased replacements.
+Direct reads of `state.navigation.hasStarted` and `state.navigation.hasFinished` are deprecated and emit a development warning under `SCRIPT_DEBUG`. Do not use those navigation internals; use the reactive router state your integration actually needs. Do not infer or suggest unreleased replacements.
+
+The warning text reads "will stop working in WordPress 7.1", but **the deadline has passed and the properties still work**: Gutenberg 24.0 still assigns them and still only warns (`packages/interactivity-router/src/index.ts`). Treat that as a reprieve, not a reversal — code written against them is still on a removal path with no announced new date. Do not read the surviving behaviour as permission to use them.
 
 ### 7) Debug common failure modes
 

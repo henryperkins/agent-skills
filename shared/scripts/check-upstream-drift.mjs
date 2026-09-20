@@ -12,7 +12,7 @@ import path from "node:path";
  * and its declared canonical release is bumped.
  *
  * A check only earns its place when the skill makes version-specific claims
- * that a release can falsify. All four below do:
+ * that a release can falsify. All five below do:
  *
  * - wp-ai-plugin tracks Experiments, Abilities, and hooks that change per
  *   release (1.3.0 moved five built-in Abilities behind an opt-in Experiment).
@@ -20,8 +20,17 @@ import path from "node:path";
  *   (0.6.0 reversed both).
  * - wp-ai-client documents the standalone embedding contract (1.5.0 made the
  *   model mandatory and removed two builder methods).
+ * - wp-block-themes carries a per-core-version theme.json section; 7.1 added
+ *   responsive style states and two top-level settings.
  * - wp-ai-client also states which PHP AI Client version Core bundles, which
  *   is only checkable against a known Core version.
+ *
+ * Deliberately NOT tracked: the Gutenberg plugin. It releases fortnightly, so
+ * a marker pinned to it would be red most of the time and would be switched
+ * off rather than acted on. The block skills describe what is in core, and the
+ * two core-version checks fire on the ~2-3 minor releases a year that actually
+ * move that line. Gutenberg-ahead-of-core claims are labelled as such in prose
+ * instead.
  */
 
 const CHECKS = [
@@ -47,6 +56,19 @@ const CHECKS = [
     skillFile: "skills/wp-ai-client/SKILL.md",
     skillPattern: /Verified against PHP AI Client\s+v?(\d+(?:\.\d+)+)/,
     hint: "Re-sync skills/wp-ai-client (SKILL.md and references/embedding-builder.md) against the tagged SDK source — the embedding builder's model contract has already broken once — then bump the 'Verified against PHP AI Client' marker.",
+  },
+  {
+    name: "wp-block-themes theme.json baseline vs WordPress core releases",
+    indexFile: "shared/references/wordpress-core-versions.json",
+    skillFile: "skills/wp-block-themes/SKILL.md",
+    skillPattern: /Verified against WordPress\s+v?(\d+(?:\.\d+)+)/,
+    // theme.json grows a "WordPress X.Y additions" section most minor
+    // releases (6.9 form elements and radius presets, 7.0 dimensionSizes and
+    // button pseudo-selectors, 7.1 responsive states and blockVisibility), so
+    // a minor bump is exactly when the reference needs re-reading. Patch
+    // releases never move it.
+    compareDepth: 2,
+    hint: "Diff WP_Theme_JSON::VALID_SETTINGS, VALID_STYLES, VALID_BLOCK_PSEUDO_SELECTORS, and VALID_BLOCK_CUSTOM_STATES between the old and new core branches, add a 'WordPress X.Y additions' section to references/theme-json.md for anything new, then bump the 'Verified against WordPress' marker.",
   },
   {
     name: "wp-ai-client bundled-SDK baseline vs WordPress core releases",

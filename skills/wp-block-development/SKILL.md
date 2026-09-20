@@ -69,6 +69,7 @@ Read:
 
 - **Static block** (markup saved into post content): implement `save()`; keep attributes serialization stable.
 - **Dynamic block** (server-rendered): use `render` in `block.json` (or `render_callback` in PHP) and keep `save()` minimal or `null`.
+- **PHP-only block** (WordPress 7.1+): a dynamic block can also set `supports.autoRegister: true` and skip JavaScript registration entirely — core exposes it to the editor, which renders it with `ServerSideRender`. Needs a `render_callback` as well as the flag, and gives up inline editing and custom inspector controls. Good for display-only blocks; wrong for anything people type into. See `references/block-json.md`.
 - **Interactive frontend behavior**:
   - Prefer `viewScriptModule` for modern module-based view scripts where supported.
   - If you're working primarily on `data-wp-*` directives or stores, also use `wp-interactivity-api`.

@@ -345,6 +345,29 @@ export function runReleaseConformance(repoRoot) {
     requireIncludes(repoRoot, file, ["every block inserted", "API version 3"]);
     requireExcludes(repoRoot, file, ["regardless of block apiVersion", "always use the iframe"]);
   }
+  // WordPress 7.1 added responsive style states and two top-level settings to
+  // theme.json. The @desktop trap is the expensive one: core only emits that
+  // media query for callers passing include_desktop, and nothing in theme.json
+  // validation does, so a "@desktop" block validates away silently.
+  requireIncludes(repoRoot, "skills/wp-block-themes/references/theme-json.md", [
+    "## WordPress 7.1 additions",
+    "settings.viewport",
+    "blockVisibility",
+    "@mobile",
+    "@tablet",
+    "There is no `@desktop` key in `theme.json`.",
+    "core/navigation-link",
+    "VALID_BLOCK_CUSTOM_STATES",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-block-themes/SKILL.md", [
+    "Verified against WordPress 7.1",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-block-development/references/block-json.md", [
+    "supports.autoRegister",
+    "_wp_enqueue_auto_register_blocks()",
+    "ServerSideRender",
+    "selectors.states",
+  ]);
   requireIncludes(repoRoot, "skills/wp-block-themes/references/theme-json.md", [
     "## WordPress 7.0 additions",
     "settings.dimensions",

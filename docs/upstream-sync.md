@@ -40,8 +40,11 @@ This keeps automation deterministic and reviewable before it starts rewriting sk
 | `WordPress/mcp-adapter` | `mcp-adapter-releases.json` | `Verified against MCP Adapter X.Y.Z` in `skills/wp-abilities-api/SKILL.md` |
 | `WordPress/php-ai-client` | `php-ai-client-releases.json` | `Verified against PHP AI Client X.Y.Z` in `skills/wp-ai-client/SKILL.md` |
 | WordPress core | `wordpress-core-versions.json` | `and WordPress X.Y (bundles ...)` in `skills/wp-ai-client/SKILL.md`, compared at major.minor |
+| WordPress core | `wordpress-core-versions.json` | `Verified against WordPress X.Y` in `skills/wp-block-themes/SKILL.md`, compared at major.minor |
 
-A pair earns a check when the skill makes version-specific claims a release can falsify. All four qualify: the AI plugin moves Experiments and Abilities every release, the adapter reversed both its packaging advice and its exposure rule in 0.6.0, the SDK made the embedding model mandatory in 1.5.0, and the Core claim is about which SDK version Core bundles.
+A pair earns a check when the skill makes version-specific claims a release can falsify. All five qualify: the AI plugin moves Experiments and Abilities every release, the adapter reversed both its packaging advice and its exposure rule in 0.6.0, the SDK made the embedding model mandatory in 1.5.0, `theme.json` grows a "WordPress X.Y additions" section most core minors, and the remaining Core claim is about which SDK version Core bundles.
+
+**The Gutenberg plugin is deliberately not tracked.** It releases fortnightly; a marker pinned to it would be red most of the time and would get switched off rather than acted on. The block skills document what is in core, so the two core-version checks fire on the two or three minor releases a year that actually move that line. Claims about Gutenberg running ahead of core are labelled in prose instead — re-read them whenever you touch the surrounding section.
 
 The core check compares only major.minor, because Core ships patch releases that never change the bundled SDK; a minor bump is the event worth re-checking.
 
