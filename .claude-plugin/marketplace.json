@@ -11,7 +11,7 @@
       "name": "wordpress-skills",
       "source": "./",
       "description": "All WordPress agent skills in one plugin: block/theme development, plugin architecture, REST API, Abilities API, AI Client/Connectors, WP-CLI, performance, PHPStan, and Playground.",
-      "version": "1.3.0",
+      "version": "1.4.0",
       "license": "GPL-2.0-or-later"
     }
   ]
