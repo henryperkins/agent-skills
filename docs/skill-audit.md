@@ -3,19 +3,20 @@
 Originally audited 2026-07-03 against the Agent Skills specification and the skill-creation guides
 (best practices, optimizing descriptions, using scripts, evaluating skills).
 
-**Re-verified against the working tree on 2026-08-10.** Three of the seven original findings are
-closed and two are partly closed; the scorecard and finding bodies below carry current status, not
-the July snapshot. Where a finding is closed, the original text is kept so the fix is legible.
+**Re-verified against the working tree on 2026-08-10**, and finding 1 re-checked on 2026-09-20
+during the upstream re-sync. Four of the seven original findings are now closed and two are partly
+closed; the scorecard and finding bodies below carry current status, not the July snapshot. Where a
+finding is closed, the original text is kept so the fix is legible.
 
 ## Scorecard
 
-| Area | Status (2026-07-03) | Status (2026-08-10) |
+| Area | Status (2026-07-03) | Status (current) |
 |---|---|---|
 | Spec compliance (frontmatter, naming, size budgets) | Pass, one gap (license) | **Pass** |
 | Description triggering | Strong, one weak skill (wpds) | Strong, wpds still weak |
 | Progressive disclosure | Exemplary | Exemplary |
 | Instruction patterns (checklists, validation loops, gotchas) | Strong, two skills missing Verification | Strong, one skill missing Verification |
-| Script portability | **Fails when skills are installed standalone** | **Fixed, one straggler** |
+| Script portability | **Fails when skills are installed standalone** | **Fixed** (closed 2026-09-20) |
 | Script agent-interface design | Partial (4 of 8 scripts lack `--help`) | **Pass (8 of 8)** |
 | Output-quality evals | Not implemented (specs exist, no loop) | Not implemented |
 | Trigger evals | Not implemented | **Partial (3 of 21 skills)** |
@@ -46,7 +47,7 @@ applied correctly.
 
 ## Findings, by impact
 
-### 1. Cross-skill script paths break standalone installs (high) — **fixed, one straggler**
+### 1. Cross-skill script paths break standalone installs (high) — **closed**
 
 *Original:* The spec requires paths relative to the skill root. Nine skills instead used repo-root
 paths (`node skills/wp-project-triage/scripts/detect_wp_project.mjs`), so a user who runs
@@ -64,10 +65,14 @@ installed alongside; otherwise classify the project manually.
 `eval/harness/run.mjs::validatePortableTriageCommand()` gates the regression by rejecting the
 bare-local `scripts/detect_wp_project.mjs` form in any skill other than wp-project-triage itself.
 
-**Still open:** `skills/wp-ai-plugin/SKILL.md:33` retains the old repo-root form —
-`` 1. Run triage: `node skills/wp-project-triage/scripts/detect_wp_project.mjs` `` — with no
-fallback clause. The harness check does not catch it, because it only rejects the *local* form. Fix
-the line and widen the gate to reject `node skills/` paths too.
+**Closed 2026-09-20.** `skills/wp-ai-plugin/SKILL.md` now uses the sibling form with the same
+fallback clause as the other eight, landed alongside the 1.3.0 re-sync. A
+`requireExcludes` in `eval/harness/release-conformance.mjs` rejects the repo-root
+`node skills/wp-project-triage/...` form in that file, so the straggler cannot come back.
+
+Remaining nuance: the gate is file-scoped rather than global. `run.mjs::validatePortableTriageCommand()`
+still rejects only the bare-local form repo-wide. A future skill could reintroduce a `node skills/`
+path elsewhere and pass. Widening that check repo-wide is a small follow-up.
 
 ### 2. No eval loop (high, but effort-gated) — **open**
 
@@ -122,7 +127,8 @@ most needs it, since a JSON format skill is exactly where a validation loop (sch
 
 ## Suggested order
 
-1. `wp-ai-plugin` triage path + widen the harness gate to `node skills/` (finishes finding 1)
+1. ~~`wp-ai-plugin` triage path~~ — **done 2026-09-20**; widening the harness gate repo-wide to any
+   `node skills/` path remains open
 2. `blueprint` Verification section (finishes finding 7)
 3. wpds description rewrite (finding 4)
 4. Extend `eval/descriptions/` corpora beyond the current three skills (finding 3)
