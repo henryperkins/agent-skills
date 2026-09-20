@@ -10,6 +10,18 @@ import path from "node:path";
  * Upstream Sync workflow opens a PR with the refreshed index); once a newer
  * release lands in the index, this check fails until the skill is re-synced
  * and its declared canonical release is bumped.
+ *
+ * A check only earns its place when the skill makes version-specific claims
+ * that a release can falsify. All four below do:
+ *
+ * - wp-ai-plugin tracks Experiments, Abilities, and hooks that change per
+ *   release (1.3.0 moved five built-in Abilities behind an opt-in Experiment).
+ * - wp-abilities-api documents MCP Adapter packaging and exposure resolution
+ *   (0.6.0 reversed both).
+ * - wp-ai-client documents the standalone embedding contract (1.5.0 made the
+ *   model mandatory and removed two builder methods).
+ * - wp-ai-client also states which PHP AI Client version Core bundles, which
+ *   is only checkable against a known Core version.
  */
 
 const CHECKS = [
@@ -18,28 +30,64 @@ const CHECKS = [
     indexFile: "shared/references/ai-plugin-releases.json",
     skillFile: "skills/wp-ai-plugin/SKILL.md",
     // Matches the frontmatter compatibility line, e.g.
-    // "(current canonical release: v1.2.0)".
+    // "(current canonical release: v1.3.0)".
     skillPattern: /current canonical release:\s*v?(\d+(?:\.\d+)+)/,
     hint: "Re-sync skills/wp-ai-plugin to the newer release (verify against the tagged source per docs/upstream-sync.md), then bump the 'current canonical release' marker in its SKILL.md compatibility line.",
   },
+  {
+    name: "wp-abilities-api vs WordPress/mcp-adapter releases",
+    indexFile: "shared/references/mcp-adapter-releases.json",
+    skillFile: "skills/wp-abilities-api/SKILL.md",
+    skillPattern: /Verified against MCP Adapter\s+v?(\d+(?:\.\d+)+)/,
+    hint: "Re-sync skills/wp-abilities-api (SKILL.md and references/mcp-exposure.md) against the tagged adapter source — check packaging guidance, McpAbilityExposure, create_server(), and the default-server capability floors — then bump the 'Verified against MCP Adapter' marker.",
+  },
+  {
+    name: "wp-ai-client vs WordPress/php-ai-client releases",
+    indexFile: "shared/references/php-ai-client-releases.json",
+    skillFile: "skills/wp-ai-client/SKILL.md",
+    skillPattern: /Verified against PHP AI Client\s+v?(\d+(?:\.\d+)+)/,
+    hint: "Re-sync skills/wp-ai-client (SKILL.md and references/embedding-builder.md) against the tagged SDK source — the embedding builder's model contract has already broken once — then bump the 'Verified against PHP AI Client' marker.",
+  },
+  {
+    name: "wp-ai-client bundled-SDK baseline vs WordPress core releases",
+    indexFile: "shared/references/wordpress-core-versions.json",
+    skillFile: "skills/wp-ai-client/SKILL.md",
+    skillPattern: /and WordPress\s+v?(\d+(?:\.\d+)+)\s+\(bundles/,
+    // Core ships patch releases that never change the bundled SDK, so compare
+    // only major.minor. A minor bump is the event worth re-checking.
+    compareDepth: 2,
+    hint: "A new WordPress minor release may bundle a different PHP AI Client version. Re-check AiClient::VERSION and src/Builders/ in the new branch's src/wp-includes/php-ai-client/, update the bundled-versus-standalone section, then bump the 'and WordPress X.Y (bundles ...)' marker.",
+  },
 ];
 
-function parseVersion(value) {
-  return String(value)
+function parseVersion(value, depth) {
+  const parts = String(value)
     .replace(/^v/, "")
     .split(".")
     .map((n) => Number.parseInt(n, 10) || 0);
+  return typeof depth === "number" ? parts.slice(0, depth) : parts;
 }
 
-function compareVersions(a, b) {
-  const pa = parseVersion(a);
-  const pb = parseVersion(b);
+function compareVersions(a, b, depth) {
+  const pa = parseVersion(a, depth);
+  const pb = parseVersion(b, depth);
   const len = Math.max(pa.length, pb.length);
   for (let i = 0; i < len; i += 1) {
     const d = (pa[i] ?? 0) - (pb[i] ?? 0);
     if (d !== 0) return d;
   }
   return 0;
+}
+
+/**
+ * Reads the newest release from an index.
+ *
+ * GitHub Releases indices store objects (`latest.tag`); the WordPress core
+ * index stores a bare version string (`latest`).
+ */
+function latestFromIndex(index) {
+  if (typeof index?.latest === "string") return index.latest;
+  return index?.latest?.tag ?? null;
 }
 
 function main() {
@@ -63,14 +111,13 @@ function main() {
 
     let latestTag = null;
     try {
-      const index = JSON.parse(fs.readFileSync(indexPath, "utf8"));
-      latestTag = index?.latest?.tag ?? null;
+      latestTag = latestFromIndex(JSON.parse(fs.readFileSync(indexPath, "utf8")));
     } catch {
       failures.push(`[${check.name}] Could not parse ${check.indexFile} as JSON.`);
       continue;
     }
     if (!latestTag) {
-      failures.push(`[${check.name}] ${check.indexFile} has no latest.tag.`);
+      failures.push(`[${check.name}] ${check.indexFile} has no latest release.`);
       continue;
     }
 
@@ -84,9 +131,9 @@ function main() {
     }
 
     const declared = match[1];
-    if (compareVersions(latestTag, declared) > 0) {
+    if (compareVersions(latestTag, declared, check.compareDepth) > 0) {
       failures.push(
-        `[${check.name}] Upstream latest is ${latestTag} but the skill declares v${declared}. ${check.hint}`
+        `[${check.name}] Upstream latest is ${latestTag} but the skill declares ${declared}. ${check.hint}`
       );
     }
   }
@@ -98,7 +145,7 @@ function main() {
     process.exit(1);
   }
 
-  process.stdout.write("OK: upstream drift checks passed.\n");
+  process.stdout.write(`OK: upstream drift checks passed (${CHECKS.length} tracked).\n`);
 }
 
 main();

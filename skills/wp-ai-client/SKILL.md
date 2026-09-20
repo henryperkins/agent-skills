@@ -1,7 +1,7 @@
 ---
 name: wp-ai-client
 description: "Use when building provider-agnostic AI features in a WordPress plugin or theme with the WP 7.0+ AI Client, or when a task involves standalone `wordpress/php-ai-client` 1.5+ embeddings. Triggers include text/image/speech/video generation, vector embeddings, semantic search, prompt builders, model preferences, feature detection, REST endpoints, and AI Client ability function calling."
-compatibility: "Targets WordPress 7.0+ (PHP 7.4+). Filesystem-based agent with bash + node. Some workflows require WP-CLI."
+compatibility: "Targets WordPress 7.0+ (PHP 7.4+). Verified against PHP AI Client 1.5.0 (standalone) and WordPress 7.1 (bundles 1.3.1). Filesystem-based agent with bash + node. Some workflows require WP-CLI."
 license: GPL-2.0-or-later
 ---
 

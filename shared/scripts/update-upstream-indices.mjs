@@ -6,6 +6,8 @@ const SOURCES = {
   wordpressCoreVersionCheck: "https://api.wordpress.org/core/version-check/1.7/",
   gutenbergReleases: "https://api.github.com/repos/WordPress/gutenberg/releases?per_page=50",
   aiPluginReleases: "https://api.github.com/repos/WordPress/ai/releases?per_page=30",
+  mcpAdapterReleases: "https://api.github.com/repos/WordPress/mcp-adapter/releases?per_page=30",
+  phpAiClientReleases: "https://api.github.com/repos/WordPress/php-ai-client/releases?per_page=30",
   wpGutenbergMapDoc:
     "https://developer.wordpress.org/block-editor/contributors/versions-in-wordpress/",
 };
@@ -72,7 +74,15 @@ function normalizeWpVersionCheckPayload(payload) {
   };
 }
 
-function normalizeGutenbergReleases(payload) {
+/**
+ * Normalizes a GitHub Releases payload to { latest, recent }.
+ *
+ * Drafts and prereleases are dropped, which is also what keeps non-version tags
+ * out of `latest`: mcp-adapter publishes a rolling `ci-artifacts` release that
+ * is flagged prerelease and would otherwise sort to the front and permanently
+ * fail the drift check.
+ */
+function normalizeGitHubReleases(payload) {
   const releases = Array.isArray(payload) ? payload : [];
   const stable = releases
     .filter((r) => r && !r.draft && !r.prerelease && typeof r.tag_name === "string")
@@ -92,16 +102,27 @@ async function main() {
   const repoRoot = process.cwd();
   const outDir = path.join(repoRoot, "shared", "references");
 
-  const [wpVersionPayload, gbReleasesPayload, aiReleasesPayload, mapHtml] = await Promise.all([
+  const [
+    wpVersionPayload,
+    gbReleasesPayload,
+    aiReleasesPayload,
+    mcpAdapterPayload,
+    phpAiClientPayload,
+    mapHtml,
+  ] = await Promise.all([
     fetchJson(SOURCES.wordpressCoreVersionCheck),
     fetchJson(SOURCES.gutenbergReleases),
     fetchJson(SOURCES.aiPluginReleases),
+    fetchJson(SOURCES.mcpAdapterReleases),
+    fetchJson(SOURCES.phpAiClientReleases),
     fetchText(SOURCES.wpGutenbergMapDoc),
   ]);
 
   const wordpress = normalizeWpVersionCheckPayload(wpVersionPayload);
-  const gutenberg = normalizeGutenbergReleases(gbReleasesPayload);
-  const aiPlugin = normalizeGutenbergReleases(aiReleasesPayload); // Same GitHub Releases shape.
+  const gutenberg = normalizeGitHubReleases(gbReleasesPayload);
+  const aiPlugin = normalizeGitHubReleases(aiReleasesPayload);
+  const mcpAdapter = normalizeGitHubReleases(mcpAdapterPayload);
+  const phpAiClient = normalizeGitHubReleases(phpAiClientPayload);
   const map = parseWpGutenbergMapFromHtml(mapHtml);
 
   writeJson(path.join(outDir, "wordpress-core-versions.json"), {
@@ -117,6 +138,16 @@ async function main() {
   writeJson(path.join(outDir, "ai-plugin-releases.json"), {
     source: SOURCES.aiPluginReleases,
     ...aiPlugin,
+  });
+
+  writeJson(path.join(outDir, "mcp-adapter-releases.json"), {
+    source: SOURCES.mcpAdapterReleases,
+    ...mcpAdapter,
+  });
+
+  writeJson(path.join(outDir, "php-ai-client-releases.json"), {
+    source: SOURCES.phpAiClientReleases,
+    ...phpAiClient,
   });
 
   writeJson(path.join(outDir, "wp-gutenberg-version-map.json"), {

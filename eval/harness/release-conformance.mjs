@@ -110,16 +110,26 @@ export function runReleaseConformance(repoRoot) {
   const core = readJson(repoRoot, "shared/references/wordpress-core-versions.json");
   const gutenberg = readJson(repoRoot, "shared/references/gutenberg-releases.json");
   const map = readJson(repoRoot, "shared/references/wp-gutenberg-version-map.json");
-  assert(core.latest === "7.0.2", "WordPress latest must be 7.0.2");
+  const mcpAdapter = readJson(repoRoot, "shared/references/mcp-adapter-releases.json");
+  const phpAiClient = readJson(repoRoot, "shared/references/php-ai-client-releases.json");
+  assert(core.latest === "7.1.1", "WordPress latest must be 7.1.1");
   assert(
-    core.recent.includes("6.9.5"),
-    "WordPress recent must include maintained release 6.9.5"
+    core.recent.includes("6.9.8"),
+    "WordPress recent must include maintained release 6.9.8"
   );
-  assert(gutenberg.latest?.tag === "v23.5.3", "Gutenberg latest must be v23.5.3");
+  assert(gutenberg.latest?.tag === "v24.0.0", "Gutenberg latest must be v24.0.0");
+  assert(mcpAdapter.latest?.tag === "v0.6.1", "MCP Adapter latest must be v0.6.1");
+  assert(phpAiClient.latest?.tag === "1.5.0", "PHP AI Client latest must be 1.5.0");
+  // mcp-adapter publishes a rolling prerelease tag; if it ever reaches `latest`
+  // the drift check pins every skill to a tag that is not a release.
+  assert(
+    !/^ci-/.test(String(mcpAdapter.latest?.tag ?? "")),
+    "MCP Adapter latest must be a version tag, not a CI artifact tag"
+  );
   assert(map.note === null && map.rows.length > 0, "WP/Gutenberg map must be non-empty");
   assert(
-    map.rows.some((row) => row.wordpress === "7.0.X" && row.gutenberg === "22.6"),
-    "WP/Gutenberg map must include WordPress 7.0.X → Gutenberg 22.6"
+    map.rows.some((row) => row.wordpress === "7.1.X" && row.gutenberg === "23.6"),
+    "WP/Gutenberg map must include WordPress 7.1.X → Gutenberg 23.6"
   );
 
   requireIncludes(repoRoot, "README.md", [

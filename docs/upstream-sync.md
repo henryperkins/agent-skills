@@ -26,10 +26,26 @@ This keeps automation deterministic and reviewable before it starts rewriting sk
 
 - `shared/scripts/update-upstream-indices.mjs`
   - Fetches upstream sources and rewrites JSON indexes in `shared/references/`.
-  - Covers WordPress core versions, Gutenberg releases, WordPress/ai (canonical AI plugin) releases, and the WP↔Gutenberg mapping.
+  - Covers WordPress core versions, Gutenberg releases, WordPress/ai (canonical AI plugin) releases, WordPress/mcp-adapter releases, WordPress/php-ai-client releases, and the WP↔Gutenberg mapping.
+  - Drafts and prereleases are dropped. That filter is load-bearing: mcp-adapter publishes a rolling `ci-artifacts` prerelease that would otherwise sort to the front and pin every skill to a tag that is not a release.
 - `shared/scripts/check-upstream-drift.mjs`
-  - Offline check (run by `eval/harness/run.mjs` and therefore CI): compares the committed release indexes against the canonical release each skill declares (e.g. the `current canonical release: vX.Y.Z` marker in `skills/wp-ai-plugin/SKILL.md`).
+  - Offline check (run by `eval/harness/run.mjs` and therefore CI): compares the committed release indexes against the version each skill declares in its `compatibility:` frontmatter line.
   - When the Upstream Sync workflow's refresh PR lands a newer release, CI turns red until the affected skill is re-synced against the tagged source and its marker is bumped. This converts "someone notices the skill is stale" into a forced, reviewable follow-up.
+
+### Tracked pairs
+
+| Upstream | Index | Skill marker |
+| --- | --- | --- |
+| `WordPress/ai` | `ai-plugin-releases.json` | `current canonical release: vX.Y.Z` in `skills/wp-ai-plugin/SKILL.md` |
+| `WordPress/mcp-adapter` | `mcp-adapter-releases.json` | `Verified against MCP Adapter X.Y.Z` in `skills/wp-abilities-api/SKILL.md` |
+| `WordPress/php-ai-client` | `php-ai-client-releases.json` | `Verified against PHP AI Client X.Y.Z` in `skills/wp-ai-client/SKILL.md` |
+| WordPress core | `wordpress-core-versions.json` | `and WordPress X.Y (bundles ...)` in `skills/wp-ai-client/SKILL.md`, compared at major.minor |
+
+A pair earns a check when the skill makes version-specific claims a release can falsify. All four qualify: the AI plugin moves Experiments and Abilities every release, the adapter reversed both its packaging advice and its exposure rule in 0.6.0, the SDK made the embedding model mandatory in 1.5.0, and the Core claim is about which SDK version Core bundles.
+
+The core check compares only major.minor, because Core ships patch releases that never change the bundled SDK; a minor bump is the event worth re-checking.
+
+**Adding a pair:** add the source to `update-upstream-indices.mjs`, run it to write the index, add a `Verified against <Name> X.Y.Z` marker to the skill's `compatibility:` line, and add a `CHECKS` entry. Then confirm the gate actually fires by lowering the marker and re-running — a drift check that cannot fail is worse than none, because it reads as coverage.
 
 ## CI / PR bot design (recommended)
 
