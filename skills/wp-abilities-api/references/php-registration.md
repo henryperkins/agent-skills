@@ -31,9 +31,10 @@ add_action( 'wp_abilities_api_init', function() {
         'execute_callback'    => 'my_plugin_get_info_callback',
         'permission_callback' => 'my_plugin_get_info_permissions',
         'meta'                => [
+            'public'       => true, // WP 7.1+: seeds show_in_rest and MCP exposure.
             'show_in_rest' => true,
             'mcp'          => [
-                'public' => true, // Expose via the bundled WordPress MCP adapter.
+                'public' => true, // Explicit; wins over meta.public either way.
             ],
             'annotations'  => [
                 'readonly'    => true,
@@ -61,9 +62,10 @@ add_action( 'wp_abilities_api_init', function() {
 | `permission_callback` | **Required** | Function that checks whether the current user may execute. Receives the same mixed input as `execute_callback`; returns `bool` or `WP_Error`. WP core throws `InvalidArgumentException` if this is missing — there is no implicit default. |
 | `input_schema` | Optional | JSON Schema for expected input (enables validation). Required when the ability accepts input. |
 | `output_schema` | Optional | JSON Schema for returned output (enables validation of the result). |
-| `meta.show_in_rest` | Optional (default `false`) | Set `true` to expose via the `wp-abilities/v1` REST API namespace. |
-| `meta.mcp.public` | Optional (default `false`) | Set `true` to expose the ability as a tool via the bundled WordPress MCP adapter. Independent from `show_in_rest`. |
-| `meta.mcp.type` | Optional (default `'tool'`) | One of `'tool'`, `'resource'`, `'prompt'`. Controls how the bundled MCP adapter projects the ability. Values outside this enum silently coerce to `'tool'`. |
+| `meta.public` | Optional (default `false`, **`@since 7.1.0`**) | High-level "meant for clients" flag. Seeds `show_in_rest` when that is unset, and MCP Adapter 0.6+ inherits exposure from it. |
+| `meta.show_in_rest` | Optional (defaults to `meta.public`, then `false`) | Set `true` to expose via the `wp-abilities/v1` REST API namespace. On WP 7.1 core resolves `$meta['show_in_rest'] ?? $meta['public'] ?? false`. |
+| `meta.mcp.public` | Optional (**defaults to `meta.public`** on MCP Adapter 0.6+) | Set `true` to expose the ability as a tool through the adapter's default MCP server, or `false` to opt a public ability out. Independent from `show_in_rest`. |
+| `meta.mcp.type` | Optional (default `'tool'`) | One of `'tool'`, `'resource'`, `'prompt'`. Controls how the MCP adapter projects the ability. Values outside this enum silently coerce to `'tool'`. |
 | `meta.annotations.readonly` | **Strongly recommended** (default `null`) | `true` if the ability does not modify its environment. |
 | `meta.annotations.destructive` | **Strongly recommended** (default `null`) | `true` if the ability may perform destructive updates. `false` for additive-only updates. |
 | `meta.annotations.idempotent` | **Strongly recommended** (default `null`) | `true` if calling the ability repeatedly with the same arguments has no additional effect. |
@@ -74,12 +76,24 @@ The three annotations under `meta.annotations` are *hints* for tooling and docum
 
 These two meta keys answer different questions and do not imply each other:
 
-- `show_in_rest` controls visibility on the WordPress core REST namespace `wp-abilities/v1` (the abilities REST API). Clients that talk to that namespace see the ability iff this is `true`.
-- `mcp.public` is read by the bundled WordPress MCP adapter package. The adapter's default MCP server only surfaces abilities whose `meta.mcp.public` is strictly `true`. Without it, the ability is registered but invisible to MCP clients connecting through that adapter.
+- `show_in_rest` controls visibility on the WordPress core REST namespace `wp-abilities/v1` (the abilities REST API). Clients that talk to that namespace see the ability iff this resolves `true`.
+- `mcp.public` is read by the MCP adapter. The adapter's default MCP server surfaces the ability when this resolves `true`. Without it, the ability is registered but invisible to MCP clients connecting through that adapter.
 
-A plugin can set both, either, or neither. If you want the ability discoverable to agents through MCP, set `mcp.public => true`. If you also want it on the abilities REST namespace (for tooling that talks to `wp-abilities/v1` directly), set `show_in_rest => true`. The two surfaces are independent.
+Both now sit downstream of one flag. WordPress 7.1 added `meta.public` to `WP_Ability` and resolves REST visibility from it:
 
-Set `mcp.public` explicitly rather than relying on any higher-level flag. Released adapter 0.5.0 consults no other key, and `meta.public` is not a key the core Abilities API defines — see `mcp-exposure.md` for the version detail.
+```php
+// WP 7.1, WP_Ability::__construct()
+$args['meta']['show_in_rest'] = $args['meta']['show_in_rest'] ?? $args['meta']['public'] ?? false;
+$args['meta']['public']       = $args['meta']['public'] ?? false;
+```
+
+MCP Adapter 0.6.0 mirrors that for MCP: `McpAbilityExposure::is_public()` takes an explicit `meta.mcp.public` when present and otherwise inherits `true === meta.public`. Malformed `meta.mcp` fails closed.
+
+**So `meta.public => true` now opens two doors at once.** Marking an ability public makes it REST-visible *and*, on any site running MCP Adapter 0.6+, discoverable and executable through the default MCP server. Every core ability in WP 7.1 (`core/get-site-info`, `core/get-user-info`, `core/get-environment-info`) registers `'public' => true`, so on a 7.1 site with the adapter active those reach MCP clients without anyone opting in.
+
+**Set `mcp.public` explicitly on every ability you care about — in both directions.** Write `true` to expose, and `false` to keep a REST-public ability off MCP. Relying on inheritance means a later change to `meta.public`, by you or by a `wp_register_ability_args` filter, silently moves the ability across the MCP boundary. (The adapter resolves exposure from the stored ability *after* registration precisely because those filters can still rewrite `meta.public`, and no filter priority is guaranteed to run last.)
+
+Exposure is not authorization: `permission_callback` still runs on every execution. But discovery is a real surface — see `mcp-exposure.md` for the default server's capability floors.
 
 ## Recommended patterns
 

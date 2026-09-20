@@ -65,11 +65,12 @@ Implement the ability in PHP registration with:
 - `category`,
 - `meta`:
   - add `readonly: true` when the ability is informational,
-  - set `show_in_rest: true` for abilities you want visible to clients.
+  - set `show_in_rest: true` for abilities you want visible to clients,
+  - decide `public` and `mcp.public` deliberately. On WP 7.1+, `meta.public` seeds `show_in_rest`, and MCP Adapter 0.6+ inherits MCP exposure from it — one flag opens two surfaces. Write `mcp.public` explicitly, including `false` to keep a REST-public ability off MCP.
 
 Use the documented init hooks for Abilities API registration so they load at the right time (see `references/php-registration.md`).
 
-For worked examples of read-only, permission-gated abilities (single-item *and* collection modes, field-level access gated on `current_user_can`), study the AI plugin's `core/read-content`, `core/read-users`, and `core/read-settings` abilities (WordPress/ai 1.2.0, `includes/Abilities/`). They mirror the proposed WordPress core ability classes closely and use the `show_in_abilities` registration flag to decide which post types/settings to expose.
+For worked examples of read-only, permission-gated abilities (single-item *and* collection modes, field-level access gated on `current_user_can`), study the AI plugin's `core/read-content`, `core/read-users`, and `core/read-settings` abilities (WordPress/ai 1.3.0, `includes/Abilities/Gated/`). They mirror the WordPress core ability classes closely and use the `show_in_abilities` registration flag to decide which post types/settings to expose. As of AI plugin 1.3.0 they only register when the **Custom Abilities** experiment is enabled.
 
 ### 5) Confirm REST exposure
 
@@ -84,7 +85,11 @@ For worked examples of read-only, permission-gated abilities (single-item *and* 
 
 ### 7) Expose via MCP for external AI agents (optional)
 
-If external agents (Claude Desktop, Cursor, ChatGPT) should be able to discover and invoke your abilities, first check the site's PHP version. This base skill supports PHP 7.2.24+, but MCP Adapter 0.5.0 requires PHP 7.4+ (`^7.4 || ^8.0`); on PHP 7.2 or 7.3, upgrade the site runtime or stop before installing the adapter. Read `references/mcp-exposure.md` before giving installation, bootstrap, or server code. Install `wordpress/mcp-adapter`; for multi-plugin dependency use, also run `composer require automattic/jetpack-autoloader` and bootstrap `vendor/autoload_packages.php`. The default server (`mcp-adapter-default-server`) exposes its discover/get/execute surface only for registered abilities whose `meta.mcp.public` is strictly `true`; released adapter 0.5.0 reads that key and nothing else, so set it explicitly on every ability you intend to expose. Every execution still runs the ability's `permission_callback`. A custom server can explicitly allow-list selected ability IDs, but it also does not bypass their permission callbacks. The adapter maps `meta.annotations` (`readonly`, `destructive`, `idempotent`) to the corresponding MCP tool annotations.
+If external agents (Claude Desktop, Cursor, ChatGPT) should be able to discover and invoke your abilities, first check the runtime. This base skill supports PHP 7.2.24+, but MCP Adapter 0.6.x requires **WordPress 6.9+ and PHP 7.4+**; on PHP 7.2 or 7.3, upgrade the site runtime or stop before installing the adapter. Read `references/mcp-exposure.md` before giving installation, bootstrap, or server code.
+
+**Install the canonical MCP Adapter plugin — do not bundle it.** 0.6.x deprecated Composer bundling and emits `_deprecated_function()` when the adapter loads as a library rather than the plugin. `Requires Plugins: mcp-adapter` is the intended dependency declaration, but the adapter is not on WordPress.org yet ([#178](https://github.com/WordPress/mcp-adapter/issues/178)), so pair it with a `class_exists()` guard and an admin notice.
+
+**Exposure now inherits.** The default server (`mcp-adapter-default-server`) surfaces every ability that `McpAbilityExposure::is_public()` resolves true: an explicit `meta.mcp.public` wins, and an absent one falls back to `meta.public`. WordPress 7.1 added `meta.public` and marks every core ability public, so on 7.1 + adapter 0.6+ the core abilities are MCP-reachable without anyone opting in. Set `meta.mcp.public` explicitly on anything you care about, in both directions. Every execution still runs the ability's `permission_callback`. A custom server can explicitly allow-list selected ability IDs, but it also does not bypass their permission callbacks. The adapter maps `meta.annotations` (`readonly`, `destructive`, `idempotent`) to the corresponding MCP tool annotations.
 
 ## Verification
 
@@ -98,8 +103,9 @@ If external agents (Claude Desktop, Cursor, ChatGPT) should be able to discover 
 
 - Ability never appears:
   - registration code not running (wrong hook / file not loaded),
-  - missing `meta.show_in_rest`,
+  - missing `meta.show_in_rest` (on WP 7.1+ it also resolves from `meta.public`),
   - incorrect category/ID mismatch.
+- Ability appears to an MCP client you never exposed it to: `meta.public` is set and `meta.mcp.public` is not, so adapter 0.6+ inherited it. Set `meta.mcp.public => false`.
 - REST shows ability but JS doesn’t:
   - wrong REST base/namespace,
   - JS dependency not bundled,

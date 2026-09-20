@@ -187,11 +187,17 @@ export function runReleaseConformance(repoRoot) {
     "references/debugging.md",
   ]);
 
+  // MCP Adapter 0.6.0 reversed the packaging recommendation (bundling is
+  // deprecated in favour of the canonical plugin) and moved exposure into
+  // McpAbilityExposure::is_public(), which inherits meta.public when
+  // meta.mcp.public is absent. WordPress 7.1 added meta.public and marks every
+  // core ability public, so "omitting meta.mcp.public hides it" is now false.
   requireIncludes(repoRoot, "skills/wp-abilities-api/references/mcp-exposure.md", [
     "meta.mcp.public",
-    "composer require automattic/jetpack-autoloader",
-    "vendor/autoload_packages.php",
-    "^7.4 || ^8.0",
+    "McpAbilityExposure",
+    "Requires Plugins: mcp-adapter",
+    "wp plugin install https://github.com/WordPress/mcp-adapter/releases/latest/download/mcp-adapter.zip",
+    "WordPress 6.9+ and PHP 7.4+",
     "WP\\MCP\\Transport\\HttpTransport",
     "WP\\MCP\\Infrastructure\\ErrorHandling\\ErrorLogMcpErrorHandler",
     "WP\\MCP\\Infrastructure\\Observability\\NullMcpObservabilityHandler",
@@ -202,18 +208,28 @@ export function runReleaseConformance(repoRoot) {
     "WP\\MCP\\Transport\\Http\\HttpTransport",
     "ErrorHandling\\Implementations",
     "Observability\\Implementations",
+    "The adapter is designed to be a Composer dependency",
+    "ships in no release as of 0.5.0",
+    "reads that key and nothing else",
   ]);
   requireIncludes(repoRoot, "skills/wp-abilities-api/SKILL.md", [
-    "MCP Adapter 0.5.0 requires PHP 7.4+",
+    "MCP Adapter 0.6.x requires **WordPress 6.9+ and PHP 7.4+**",
     "upgrade the site runtime or stop before installing the adapter",
     "Read `references/mcp-exposure.md` before giving installation, bootstrap, or server code.",
-    "composer require automattic/jetpack-autoloader",
-    "vendor/autoload_packages.php",
+    "Install the canonical MCP Adapter plugin",
+    "Requires Plugins: mcp-adapter",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-abilities-api/references/php-registration.md", [
+    "@since 7.1.0",
+    "$args['meta']['show_in_rest'] ?? $args['meta']['public'] ?? false",
+  ]);
+  requireExcludes(repoRoot, "skills/wp-abilities-api/references/php-registration.md", [
+    "`meta.public` is not a key the core Abilities API defines",
   ]);
   requireIncludes(repoRoot, "eval/scenarios/abilities-mcp-expose.json", [
     "PHP 7.4+",
-    "composer require automattic/jetpack-autoloader",
-    "vendor/autoload_packages.php",
+    "Requires Plugins",
+    "meta.public",
   ]);
   requireExcludes(repoRoot, "skills/wp-abilities-api/references/client-side.md", [
     "currentUserCan(",

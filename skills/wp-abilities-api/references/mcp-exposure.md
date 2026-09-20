@@ -2,30 +2,46 @@
 
 The MCP Adapter (`WordPress/mcp-adapter`) bridges the Abilities API to the Model Context Protocol, letting external AI agents (Claude Desktop, Claude Code, Cursor, ChatGPT) discover and execute WordPress abilities as MCP tools, resources, and prompts.
 
-The adapter is a separate Composer package and plugin. WordPress 7.0 ships the Abilities API in core but does **not** ship the adapter. The base Abilities skill supports PHP 7.2.24+, but MCP Adapter 0.5.0 requires PHP `^7.4 || ^8.0`. On PHP 7.2 or 7.3, stop before installation: upgrade the site runtime to PHP 7.4+ or do not enable MCP exposure.
+The adapter is a separate plugin. WordPress ships the Abilities API in core (6.9+) but does **not** ship the adapter. MCP Adapter 0.6.x requires **WordPress 6.9+ and PHP 7.4+** — 0.6.0 dropped the standalone Abilities API plugin as a supported installation path. The base Abilities skill supports PHP 7.2.24+, so on PHP 7.2 or 7.3 stop before installation: upgrade the site runtime to PHP 7.4+ or do not enable MCP exposure.
 
 ## Installation
 
-The adapter is designed to be a Composer dependency, not a standalone plugin install for distributed use:
+**Install the canonical plugin. Do not bundle the adapter.** This reversed in 0.6.x: bundling as a Composer library is deprecated in favour of the canonical plugin, and loading the adapter as a bundled dependency now triggers `_deprecated_function()` (`McpAdapter::check_plugin_loaded()`, gated on the `WP_MCP_VERSION` constant that only the plugin defines).
 
 ```bash
-composer require wordpress/mcp-adapter
-composer require automattic/jetpack-autoloader
+wp plugin install https://github.com/WordPress/mcp-adapter/releases/latest/download/mcp-adapter.zip --activate
 ```
 
-Then load the Jetpack Autoloader from your plugin's bootstrap. It resolves compatible package versions when multiple plugins on the site depend on the adapter:
+Declaring it as a plugin dependency is the intended path for a distributed plugin:
 
 ```php
-require_once plugin_dir_path( __FILE__ ) . 'vendor/autoload_packages.php';
+<?php
+/**
+ * Plugin Name:      My MCP Plugin
+ * Requires Plugins: mcp-adapter
+ */
 ```
 
-For local exploration / smoke testing, the standalone plugin zip from the [adapter's Releases page](https://github.com/WordPress/mcp-adapter/releases) is fine. Don't ship that to production with multiple consumers — version conflicts will bite.
+**`Requires Plugins` resolves against the WordPress.org directory, and the adapter is not listed there yet** ([#178](https://github.com/WordPress/mcp-adapter/issues/178)). Until it is, the header installs nothing — pair it with a runtime guard and an admin notice telling site owners to install the release zip:
+
+```php
+add_action( 'admin_notices', function () {
+    if ( class_exists( 'WP\MCP\Core\McpAdapter' ) ) {
+        return;
+    }
+    echo '<div class="notice notice-warning"><p>';
+    esc_html_e( 'My Plugin: install and activate the MCP Adapter plugin to enable MCP features.', 'my-plugin' );
+    echo '</p></div>';
+} );
+```
+
+If you already bundle the adapter via Composer, migrate: `composer remove wordpress/mcp-adapter`, drop `automattic/jetpack-autoloader` if nothing else needs it, switch `vendor/autoload_packages.php` back to `vendor/autoload.php`, and clear the generated files (`rm -rf vendor && composer install`) — a leftover `autoload_packages.php` works locally and fails in production. Upstream's [migration guide](https://github.com/WordPress/mcp-adapter/blob/trunk/docs/migration/vx.y.z.md) has the full sequence. Bundling still functions today and will be removed in a future version; if you genuinely cannot migrate yet, use Jetpack Autoloader or a prefixer such as Strauss.
 
 ## How abilities become MCP tools
 
 Once the adapter is loaded:
 
-1. The default server's `discover-abilities`, `get-ability-info`, and `execute-ability` abilities only surface registered abilities whose `meta.mcp.public` value is strictly `true`.
+1. The default server's `discover-abilities`, `get-ability-info`, and `execute-ability` abilities only surface registered abilities that resolve as MCP-public (see below).
 2. A custom server may explicitly list selected ability IDs as tools, resources, or prompts; that selection does not bypass each ability's `permission_callback`.
 3. The adapter respects the ability's `permission_callback` at execution — agents can only invoke what the authenticated user is authorized to do.
 4. The ability's `input_schema` and `output_schema` translate directly into the MCP tool's input and output schemas.
@@ -46,16 +62,40 @@ Mark an ability public for the default-server flow only after reviewing it for e
 
 `meta.mcp.public` controls default-server discovery, not authorization. A well-shaped ability still needs a namespaced ID, label, description, schemas, permission callback, and accurate annotations.
 
-**Set `meta.mcp.public` explicitly — do not rely on a fallback.** In released 0.5.0 this key is the only input to the decision:
+### Exposure inherits from `meta.public` since 0.6.0
+
+`McpAbilityExposure::is_public()` is the single source of truth, and it is **not** a bare read of `meta.mcp.public`:
 
 ```php
-// McpAbilityHelperTrait::is_ability_mcp_public(), v0.5.0
-return (bool) ( $meta['mcp']['public'] ?? false );
+// McpAbilityExposure::is_meta_public(), v0.6.0+
+$mcp_meta = $meta['mcp'] ?? array();
+if ( ! is_array( $mcp_meta ) ) {
+    return false;                                // malformed meta.mcp fails closed
+}
+if ( isset( $mcp_meta['public'] ) ) {
+    return (bool) $mcp_meta['public'];           // explicit wins, either direction
+}
+return true === ( $meta['public'] ?? false );    // otherwise inherit
 ```
 
-There is no inheritance from any higher-level flag, and `meta.public` is not a key the core Abilities API defines. An ability that omits `meta.mcp.public` is registered but invisible to MCP clients through the default server.
+This composes with a core change landing at the same time. WordPress 7.1 added `meta.public` to `WP_Ability` (`@since 7.1.0`, default `false`) and seeds `show_in_rest` from it, and **every core ability in 7.1 registers `'public' => true`** — `core/get-site-info`, `core/get-user-info`, `core/get-environment-info`.
 
-Unreleased adapter trunk moves this decision into `McpAbilityExposure::is_public()`, where an explicit `meta.mcp.public` still wins but an absent one falls back to a high-level `meta.public` flag (malformed `meta.mcp` fails closed). That class is tagged `@since n.e.x.t` and ships in no release as of 0.5.0. Writing `meta.mcp.public` explicitly is correct under both, which is why it is the guidance here.
+**Net effect on a WP 7.1 site running MCP Adapter 0.6+:** those core abilities, and any of yours marked `meta.public`, are discoverable and executable through the default MCP server with nobody having opted in. The 0.5.0-era assumption that omitting `meta.mcp.public` means "invisible to MCP" no longer holds.
+
+**Set `meta.mcp.public` explicitly, in both directions.** Write `true` on what you intend to expose, and `false` on anything REST-public that should stay off MCP:
+
+```php
+'meta' => array(
+    'public' => true,          // REST-visible to clients
+    'mcp'    => array(
+        'public' => false,     // ...but not through MCP
+    ),
+),
+```
+
+The adapter resolves exposure from the stored ability *after* registration completes, not during it, because `wp_register_ability_args` callbacks can still rewrite `meta.public` and no filter priority is guaranteed to run last. That is also why inheritance is fragile as a deliberate strategy: a flag you did not set, changed by code you do not control, moves the ability across the MCP boundary. An explicit `meta.mcp.public` is immune to that.
+
+Auditing an existing site: enumerate abilities where `meta.public` is true and `meta.mcp.public` is unset. Those are exactly the ones whose MCP exposure changed when the adapter reached 0.6.0.
 
 ## Default server vs custom server
 
@@ -67,7 +107,7 @@ On activation, the adapter registers a default MCP server (`mcp-adapter-default-
 
 (Ability names follow the `namespace/ability` convention — slash, not hyphen, between the two parts. They register inside the `mcp-adapter` ability namespace.)
 
-This is enough for most use cases when the abilities intended for agent access are explicitly marked `meta.mcp.public => true`. The default server's discovery, get, and execute flow excludes every other registered ability.
+The set this reaches is every ability that resolves MCP-public, which since adapter 0.6.0 includes anything carrying `meta.public` without an explicit `meta.mcp.public` — on WP 7.1 that is all three core abilities. Audit the resolved set rather than assuming it matches what you opted in.
 
 Each of the three requires a logged-in user and then a capability that also defaults to `'read'`:
 
@@ -79,7 +119,7 @@ Each of the three requires a logged-in user and then a capability that also defa
 
 So on a stock install a Subscriber can enumerate every effectively MCP-public ability and attempt to execute it. Each target ability's own `permission_callback` is the final operation-specific authorization check. Raise these baseline capabilities before relying on the default server anywhere but a local site.
 
-For finer control (exposing only a subset, separating tool/resource/prompt categorization, server-level metadata), register a custom server. **`create_server()` has 13 parameters in current source (v0.5.0+); the 7th is required and takes an array of transport class names, not a config array.** The signature and convention follow what `DefaultServerFactory::create()` does internally:
+For finer control (exposing only a subset, separating tool/resource/prompt categorization, server-level metadata), register a custom server. **`create_server()` has 13 parameters in current source (verified unchanged through v0.6.1); the 7th is required and takes an array of transport class names, not a config array.** The signature and convention follow what `DefaultServerFactory::create()` does internally:
 
 ```php
 use WP\MCP\Core\McpAdapter;
@@ -201,6 +241,18 @@ This is the right transport for:
 
 HTTP transport is the right choice for production, remote sites, and any case where the AI client and the WordPress site aren't on the same machine.
 
+## What changed in 0.6.0 / 0.6.1
+
+Beyond the exposure and packaging changes above:
+
+- **`resources/templates/list`** is supported, returning an empty template list when none are registered.
+- **Session storage is per-site on multisite.** Active Streamable HTTP sessions must reconnect once after upgrading; single-site installs are unaffected. Concurrent session mutations are now guarded with bounded retries.
+- **`McpValidator`'s MIME validation helpers were removed.** Integrations that called them directly must apply their own MIME validation. `mimeType` is now emitted exactly as declared, including parameterised values such as `text/html;profile=mcp-app`.
+- **`_meta` is preserved** on resource contents, embedded resources, content blocks, and prompt messages; malformed `_meta` is dropped without discarding the payload it accompanied.
+- **Resource URI schemes match case-insensitively**, so a client that lowercases the scheme can still read the resource.
+- **`WP\MCP\Cli` classes are `final`** as of the 0.6.x line; do not subclass them.
+- **0.6.1 is a packaging fix only.** 0.6.0's release ZIP shipped a Jetpack Autoloader class map pointing at test-only files, so `class_exists( 'WP_CLI' )` could fatal on a normal web request. No API, hook, or protocol behaviour changed; upgrading from 0.6.0 needs no migration.
+
 ## Protocol version negotiation
 
 `McpVersionNegotiator::SUPPORTED_PROTOCOL_VERSIONS` accepts `2025-11-25`, `2025-06-18`, and `2024-11-05`, in that preference order. A client requesting a supported version gets it; anything else is negotiated down to `2025-11-25`. Pin nothing client-side unless a specific version is required.
@@ -235,7 +287,8 @@ For a more thorough check, connect an MCP client (Claude Desktop, MCP Inspector,
 
 MCP clients act as authenticated WordPress users. An overly permissive ability is the same risk as giving an external service the user's credentials.
 
-- **Default-deny.** Don't expose abilities you haven't reviewed for safety. Use a custom server with an explicit allow-list rather than the default server in production.
+- **The default is no longer deny.** Since adapter 0.6.0 exposure inherits `meta.public`, and WP 7.1 marks every core ability public, so a stock 7.1 + 0.6.x site already serves `core/get-site-info`, `core/get-user-info`, and `core/get-environment-info` over MCP. Treat the exposed set as something to audit and narrow, not something you build up.
+- **Narrow it deliberately.** Use a custom server with an explicit allow-list in production, or restrict the default server's `tools` through `mcp_adapter_default_server_config`, or disable it with `mcp_adapter_create_default_server`. Setting `meta.mcp.public => false` opts an individual public ability out.
 - **Raise the transport and built-in-ability capabilities.** Both default to `'read'`, which every role has. An MCP server left on defaults is reachable by any Subscriber.
 - **Discipline `permission_callback`.** Every write or destructive ability needs one. Read-only abilities should still have one if they expose anything sensitive.
 - **Mark annotations honestly.** `readonly: true` on an ability that actually mutates state misleads both human reviewers and the MCP client's safety logic.
@@ -243,8 +296,9 @@ MCP clients act as authenticated WordPress users. An overly permissive ability i
 
 ## Sources
 
-- MCP Adapter repo: https://github.com/WordPress/mcp-adapter
+- MCP Adapter repo: https://github.com/WordPress/mcp-adapter — verified against **v0.6.1**: `includes/Abilities/McpAbilityExposure.php`, `includes/Core/McpAdapter.php`, `includes/Servers/DefaultServerFactory.php`, `includes/Transport/HttpTransport.php`, `docs/getting-started/installation.md`, `docs/migration/vx.y.z.md`, `CHANGELOG.md`
 - Adapter releases: https://github.com/WordPress/mcp-adapter/releases
+- WordPress 7.1 `WP_Ability` (`meta.public`, `@since 7.1.0`) and core ability registrations: `src/wp-includes/abilities-api/class-wp-ability.php`, `src/wp-includes/abilities.php`
 - Developer Blog walkthrough: https://developer.wordpress.org/news/2026/02/from-abilities-to-ai-agents-introducing-the-wordpress-mcp-adapter/
 - Make/AI overview of MCP: https://make.wordpress.org/ai/2025/07/17/mcp-adapter/
 - Archived predecessor (do not use for new work): https://github.com/Automattic/wordpress-mcp
