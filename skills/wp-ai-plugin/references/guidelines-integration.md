@@ -2,14 +2,14 @@
 
 The AI plugin v0.8.0 introduced Guidelines integration (#359). Site editorial standards live in Gutenberg's `wp_guideline` custom post type, and the AI plugin reads them into prompts when an Ability declares interest.
 
-> **Upstream rename in progress — verify names before relying on them.** This reference documents the AI plugin at **v1.3.0**, where the store is still Gutenberg's `wp_guideline` CPT (`Services\Guidelines::POST_TYPE`) with the `site` / `copy` / `images` / `additional` categories, so everything below is accurate for that release. Gutenberg **23.6** replaces this primitive with **"Knowledge"** (verified against `lib/experimental/knowledge/` at v23.6.0-rc.1 — note it ships as Gutenberg-plugin *experimental* code, not yet staged in `lib/compat/wordpress-7.1/`, so core-merge timing is not settled):
+> **Upstream rename in progress — verify names before relying on them.** This reference documents the AI plugin at **v1.3.0**, where the store is still Gutenberg's `wp_guideline` CPT (`Services\Guidelines::POST_TYPE`) with the `site` / `copy` / `images` / `additional` categories, so everything below is accurate for that release. Gutenberg **23.6** introduced a replacement primitive, **"Knowledge"**, and as of **Gutenberg 24.0 it is still plugin-only experimental code** (`lib/experimental/knowledge/`) — not staged in `lib/compat/wordpress-7.1/` *or* `lib/compat/wordpress-7.2/`, so it did not make WordPress 7.1 and is not queued for 7.2 either. The API names below were re-verified as stable at 24.0, but core-merge timing remains unsettled:
 >
 > - Storage becomes a **`wp_knowledge`** CPT with a `wp_knowledge_type` taxonomy; knowledge *types* are `guideline`, `memory`, and `note` (filterable via `wp_knowledge_types`) — Guidelines become one type of Knowledge.
 > - The post-meta singleton dissolves into **per-scope rows**: each scope is backed by one `guideline`-typed row with slug `guideline-{scope}`; the `blocks` scope instead holds per-block rows slugged `guideline-block-*`.
 > - The scope registry is `wp_guideline_scopes()` (filterable), shipping `site`, `copy`, `images`, `blocks`, `additional`. Registering a new scope via the filter grows the Settings → Guidelines page automatically.
 > - REST: rows through the standard `/wp/v2/knowledge` collection; the read-only scope registry at `/wp/v2/knowledge/guideline-scopes`. Per-scope length is `wp_guideline_max_length()` (default 5000, filter `wp_guideline_max_length` — parallel to the AI plugin's own `wpai_max_guideline_length`).
 >
-> The AI plugin's `Guidelines` service will need to follow this model. If the target site runs Gutenberg 23.6+, confirm which storage the installed AI plugin version actually reads before depending on the names below.
+> The AI plugin's `Guidelines` service will need to follow this model eventually. Until Knowledge reaches core, `wp_guideline` is the storage on every stock site; Knowledge only exists where the Gutenberg plugin is active. Confirm which storage the installed AI plugin version actually reads before depending on either set of names.
 
 ## Where Guidelines live
 
