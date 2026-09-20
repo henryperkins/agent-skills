@@ -274,23 +274,47 @@ export function runReleaseConformance(repoRoot) {
   ]) {
     requireExcludes(repoRoot, file, ["v1.0.2", "'1.0.2'"]);
   }
+  // AI plugin 1.3.0 gated the five built-in read Abilities behind the
+  // Custom Abilities experiment (#881) and released the ability-scoped prompt
+  // hooks that 1.2.0-era notes called unreleased.
   requireIncludes(repoRoot, "skills/wp-ai-plugin/references/experiments-framework.md", [
-    "v1.2.0",
+    "v1.3.0",
     "Type_Ahead",
     "Key_Encryption",
     "Suggest_Reply",
+    "Custom_Abilities",
+    "Slug_Generation",
+    "wpai_gated_abilities",
+    "Abstract_Gated_Ability",
     "core/read-content",
     "core/read-users",
+  ]);
+  requireExcludes(repoRoot, "skills/wp-ai-plugin/references/experiments-framework.md", [
+    "### Added after v1.2.0 (unreleased on",
+    "The v1.2.0 plugin directly registers five non-Experiment utility/read Abilities",
   ]);
   requireIncludes(repoRoot, "skills/wp-ai-plugin/references/hooks-and-filters.md", [
     "wpai_default_request_timeout",
     "wpai_settings_feature_groups",
     "wpai_settings_feature_metadata",
     "The global `wpai_system_instruction` hook ships in v1.2.0",
+    "wpai_gated_abilities",
+    "wpai_remove_data_on_uninstall",
+    "log_ai_request",
+    "### Ability-scoped prompt filters (v1.3.0+)",
   ]);
   requireIncludes(repoRoot, "skills/wp-ai-plugin/references/guidelines-integration.md", [
     "that hook ships in v1.2.0",
     "wpai_{$ability_slug}_system_instruction",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-ai-plugin/SKILL.md", [
+    "current canonical release: v1.3.0",
+    "Custom Abilities",
+  ]);
+  // docs/skill-audit.md finding 1: cross-skill scripts must resolve from the
+  // skill root, so a standalone install degrades instead of failing.
+  requireExcludes(repoRoot, "skills/wp-ai-plugin/SKILL.md", [
+    "node skills/wp-project-triage/scripts/detect_wp_project.mjs",
   ]);
   requireIncludes(repoRoot, "skills/wp-ai-connectors/references/capabilities-declaration.md", [
     "CapabilityEnum::embeddingGeneration()",

@@ -1,6 +1,6 @@
 # Hooks, filters, constants, and gates
 
-The public extension surface of the AI plugin v1.2.0, plus additions explicitly marked as unreleased on `develop`. Anchored to source — the source is canonical.
+The public extension surface of the AI plugin v1.3.0. Anchored to source — the source is canonical. This file lists the hooks worth reaching for, not every `apply_filters()` in the tree; grep the installed version for feature-specific ones.
 
 ## Constants (v0.6.0+)
 
@@ -8,7 +8,7 @@ Defined in `ai.php` `constants()`. The 0.6.0 release renamed the family from `AI
 
 | Constant | Source | Use |
 | --- | --- | --- |
-| `WPAI_VERSION` | `'1.2.0'` (string literal) | Version detection in downstream code |
+| `WPAI_VERSION` | `'1.3.0'` (string literal) | Version detection in downstream code |
 | `WPAI_PLUGIN_FILE` | `__FILE__` (ai.php) | The main plugin file path |
 | `WPAI_PLUGIN_DIR` | `plugin_dir_path( WPAI_PLUGIN_FILE )` | Filesystem path to the plugin directory |
 | `WPAI_PLUGIN_URL` | `plugin_dir_url( WPAI_PLUGIN_FILE )` | URL to the plugin directory (for asset references) |
@@ -17,7 +17,7 @@ Defined in `ai.php` `constants()`. The 0.6.0 release renamed the family from `AI
 Use these in downstream plugins to detect the AI plugin's presence and version, and to reference its assets when integrating with its UI.
 
 ```php
-if ( defined( 'WPAI_VERSION' ) && version_compare( WPAI_VERSION, '1.2.0', '>=' ) ) {
+if ( defined( 'WPAI_VERSION' ) && version_compare( WPAI_VERSION, '1.3.0', '>=' ) ) {
     // Use the current canonical AI plugin extension surface.
 }
 ```
@@ -71,10 +71,10 @@ These are namespaced functions in `WordPress\AI`. Import as `use function WordPr
 
 | Filter | Where | Use |
 | --- | --- | --- |
-| `wpai_default_request_timeout` (v1.2.0+) | `includes/helpers.php` | Per-request timeout, filtered as `( int $default_timeout, string $feature_id )`; used for the image-generation request. ⚠️ The 1.2.0 changelog/`readme.txt` call this `wp_ai_client_default_request_timeout` — that name is in *no* plugin PHP (most likely the core AI Client's own filter); the plugin applies `wpai_default_request_timeout`. |
+| `wpai_default_request_timeout` (v1.2.0+) | `includes/helpers.php` | Per-request timeout, filtered as `( int $default_timeout, string $feature_id )`; used for the image-generation request. ⚠️ The 1.2.0 changelog/`readme.txt` call this `wp_ai_client_default_request_timeout` — that name is in *no* plugin PHP. Both exist and are distinct: `wp_ai_client_default_request_timeout` is **core's**, applied in `WP_AI_Client_Prompt_Builder` at builder construction (verified in WordPress 7.1) and receiving only the timeout; this one is the plugin's and also receives the feature ID. |
 | `wpai_settings_feature_groups` | Settings → AI feature metadata | Extend or adjust feature groups |
 | `wpai_settings_feature_metadata` | Settings → AI feature metadata | Extend metadata supplied by Features |
-| `wpai_feature_{$id}_settings` | A Feature that explicitly applies the hook | Adjust that Feature's settings; this is not a universal framework hook (v1.2.0's Type Ahead Feature applies it) |
+| `wpai_feature_{$id}_settings` | A Feature that explicitly applies the hook | Adjust that Feature's settings; this is not a universal framework hook (Type Ahead applies it) |
 
 Advanced settings are Feature-provided metadata on the existing Settings → AI surface. These filters extend that data; they do not establish a separate public settings registry.
 
@@ -93,7 +93,7 @@ Advanced settings are Feature-provided metadata on the existing Settings → AI 
 | `wpai_has_image_generation_support` | `WordPress\AI\has_image_generation_support()` | auto-detected bool | Claim Image Generation support when auto-detection misses it (e.g., connectors authenticating without an API key, such as OAuth) |
 | `wpai_is_{$connector_slug}_connector_configured` | AI Status dashboard widget | connector's detected bool | Correct dashboard status for connectors whose configuration cannot be inferred from API-key/OAuth data |
 | `wpai_comment_moderation_moderate_guests` | Comment Moderation experiment | setting value (default yes) | Override whether guest comments are auto-moderated |
-| `wpai_content_translation_languages` | `Content_Translation/Languages.php` | built-in language map | Add or remove target languages for Content Translation. Codes pass through `sanitize_key()`; entries with a non-string or empty label are dropped; a non-array return is ignored. `develop` only — not in 1.2.0 |
+| `wpai_content_translation_languages` | `Content_Translation/Languages.php` | built-in language map | Add or remove target languages for Content Translation. Codes pass through `sanitize_key()`; entries with a non-string or empty label are dropped; a non-array return is ignored. Released in v1.3.0 |
 
 ### Global Ability system instruction (v1.2.0+)
 
@@ -105,9 +105,9 @@ apply_filters( 'wpai_system_instruction', string $instruction, string $name, arr
 
 It is not Ability-ID-scoped; inspect `$name` and `$data` when a change should apply selectively.
 
-### Ability-scoped prompt filters (`develop`, unreleased after v1.2.0)
+### Ability-scoped prompt filters (v1.3.0+)
 
-Commit `1aabfe3` / PR #770 added uniform Ability-scoped prompt extension points to `Abstract_Ability` after the v1.2.0 tag. Do not recommend these scoped hooks for a site pinned to v1.2.0.
+PR #770 added uniform Ability-scoped prompt extension points to `Abstract_Ability`. They shipped in **v1.3.0** — gate downstream use on `WPAI_VERSION >= 1.3.0`, and do not recommend them for a site pinned to v1.2.0.
 
 | Filter | Filtered value | Additional arguments |
 | --- | --- | --- |
@@ -115,7 +115,50 @@ Commit `1aabfe3` / PR #770 added uniform Ability-scoped prompt extension points 
 | `wpai_{$ability_slug}_prompt` | Ability-scoped prompt string | Ability-defined context arguments |
 | `wpai_{$ability_slug}_prompt_builder` | Configured prompt builder | Same ability-defined context arguments |
 
-The slug strips `ai/` and replaces hyphens with underscores; `ai/title-generation` becomes `title_generation`. The prompt-builder filter runs after model preference configuration and must return the builder object it receives; invalid returns fall back to the original builder. Individual Abilities may also add their own `apply_filters()` calls — grep to find them:
+The slug strips `ai/` and replaces hyphens with underscores; `ai/title-generation` becomes `title_generation`. The prompt-builder filter runs after model preference configuration and must return the builder object it receives; invalid returns fall back to the original builder. `filter_prompt_builder()` carries `@since 1.3.0` and runs before generation support is verified.
+
+### Added in v1.3.0
+
+| Hook | Where | Use |
+| --- | --- | --- |
+| `wpai_gated_abilities` | `Abilities\Gated\Gated_Abilities::get_all()` | Add, remove, or replace the class strings the **Custom Abilities** Experiment registers. Non-string entries trigger `_doing_it_wrong()` and are skipped. Classes extend `Abstract_Gated_Ability`. |
+| `wpai_remove_data_on_uninstall` | `Admin\Uninstall` (via `uninstall.php`) | Return `false` to keep the plugin's table, options, and scheduled events when the plugin is **deleted** (not on deactivation). Data is removed by default. |
+| `wpai_request_log_context` | AI Request Log | Adjust the context recorded with a logged request |
+| `wpai_request_log_kind` | AI Request Log | Adjust the recorded request kind |
+| `wpai_request_log_providers` | AI Request Log | Adjust which providers are logged |
+| `wpai_request_log_retention_days` | AI Request Log | Change how long log rows are retained |
+| `wpai_request_logged` (action) | AI Request Log | React to a logged request |
+| `wpai_bulk_action_max_items` | Bulk alt-text / summarization actions | Cap how many items one bulk action processes (security hardening, GHSA-hfp9-55vw-ccjc) |
+| `wpai_alt_text_allowed_image_mime_types` | Alt Text Generation Ability | Restrict MIME types accepted from a custom image URL (GHSA-v2wx-9j88-4rqq) |
+| `wpai_alt_text_image_download_timeout` | Alt Text Generation Ability | Timeout for fetching a custom image URL |
+| `wpai_alt_text_image_max_download_bytes` | Alt Text Generation Ability | Size ceiling for a fetched custom image |
+| `wpai_content_classification_available_terms` | Content Classification | Constrain the candidate term set |
+| `wpai_content_classification_min_confidence` | Content Classification | Minimum confidence before a suggestion surfaces |
+| `wpai_content_classification_candidate_pool_size` | Content Classification | Size of the candidate pool considered |
+| `wpai_slug_generation_number_of_suggestions` | Slug Generation | How many permalink suggestions to request |
+| `wpai_ability_category` | Ability registration | Override the default ability category |
+
+Write to the request log from your own MCP server or ability consumer with the public helper rather than touching the table:
+
+```php
+WordPress\AI\log_ai_request( array(
+    'type'      => 'mcp',         // one of AI_Request_Log_Manager::get_types()
+    'operation' => 'tools/call',
+    'status'    => 'success',
+) );
+```
+
+It returns the log identifier, or `false` when logging is inactive or the write failed.
+
+### Deprecated in v1.3.0
+
+| Symbol | Replacement |
+| --- | --- |
+| `WordPress\AI\Services\AI_Service` | Call `wp_ai_client_prompt()` directly |
+| `WordPress\AI\get_ai_service()` | Call `wp_ai_client_prompt()` directly; the helper calls `_deprecated_function()` |
+| `wpai_meta_description_result_temperature` | No replacement — the plugin no longer sets custom temperatures on any request |
+
+Both `AI_Service` entries are slated for removal in the next major release. The `secrets_accessed` and `secrets_{$operation}` actions now also receive a backtrace-derived `detected_plugin` alongside the caller-asserted `plugin` value, so audit consumers can flag a mismatch. Individual Abilities may also add their own `apply_filters()` calls — grep to find them:
 
 ```bash
 grep -rn "apply_filters" wp-content/plugins/ai/includes/Abilities/

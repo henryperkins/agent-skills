@@ -1,6 +1,6 @@
 # Experiments framework
 
-The conceptual model and lifecycle for AI plugin Experiments, anchored to `WordPress/ai` v1.2.0 source.
+The conceptual model and lifecycle for AI plugin Experiments, anchored to `WordPress/ai` v1.3.0 source.
 
 ## What an Experiment is
 
@@ -27,7 +27,7 @@ From `includes/Abstracts/Abstract_Feature.php`:
 - **`public function get_settings_fields(): array`** — optional override. Return field definitions for the DataForm UI on the AI settings page.
 - **`final public static function get_field_option_name( string $option_name ): string`** — generates `wpai_feature_{$id}_field_{$option_name}`. Use for namespaced option storage.
 
-The interface (`Contracts\Feature`) lists twelve public methods (unchanged as of v1.2.0): `get_id` (static), `get_label`, `get_description`, `get_category`, `get_stability`, `register`, `is_globally_enabled` (added v1.0.1), `is_individually_enabled` (added v1.0.1), `is_enabled`, `get_settings_fields_metadata` (added v0.7.0), `get_image` (added v0.8.0), and `get_capability` (added v0.9.0).
+The interface (`Contracts\Feature`) lists twelve public methods (unchanged as of v1.3.0): `get_id` (static), `get_label`, `get_description`, `get_category`, `get_stability`, `register`, `is_globally_enabled` (added v1.0.1), `is_individually_enabled` (added v1.0.1), `is_enabled`, `get_settings_fields_metadata` (added v0.7.0), `get_image` (added v0.8.0), and `get_capability` (added v0.9.0).
 
 ## The canonical example
 
@@ -77,32 +77,45 @@ Use this action for normal downstream registration as well as custom constructio
 The plugin's own Experiments are registered via `Experiments::register_default_experiment_classes()` hooked to `wpai_default_feature_classes` at priority 9. `Experiments::EXPERIMENT_CLASSES` on `develop` has seventeen entries:
 
 ```
-Abilities_Explorer, Connector_Approval, AI_Request_Logging,
-Content_Classification, Content_Resizing, Content_Translation,
-Excerpt_Generation, Alt_Text_Generation, Meta_Description,
-Editorial_Notes, Editorial_Updates, Summarization, Title_Generation,
-Type_Ahead, Comment_Moderation, Key_Encryption, Suggest_Reply
+Abilities_Explorer, Custom_Abilities, AI_Request_Logging,
+Connector_Approval, Key_Encryption, Comment_Moderation, Suggest_Reply,
+Alt_Text_Generation, Content_Classification, Content_Resizing,
+Summarization, Content_Translation, Editorial_Notes, Editorial_Updates,
+Excerpt_Generation, Meta_Description, Slug_Generation, Title_Generation,
+Type_Ahead
 ```
 
-Sixteen of those shipped in 1.2.0; `Content_Translation` landed after the tag (see below). `Example_Experiment` exists in the tree as an authoring template and is deliberately not registered.
+Nineteen Experiments are registered in v1.3.0 (`includes/Experiments/Experiments.php`), up from sixteen in 1.2.0 — `Custom_Abilities`, `Content_Translation`, and `Slug_Generation` are new. `Example_Experiment` exists in the tree as an authoring template and is deliberately not registered.
 
 Plus the internal `Image_Generation` Feature (registered separately as a stable Feature in `Loader::get_default_features()`).
 
-### Built-in Abilities
+### Built-in Abilities are gated behind an Experiment as of v1.3.0
 
-The v1.2.0 plugin directly registers five non-Experiment utility/read Abilities:
+The five non-Experiment utility/read Abilities still exist, but **v1.3.0 stopped registering them unconditionally.** They now sit behind the `Custom_Abilities` Experiment (#881), so on a site that has not enabled it they do not exist at all:
 
-- `core/read-content`
-- `core/read-settings`
-- `core/read-users`
-- `ai/get-post-details`
-- `ai/get-post-terms`
+- `core/read-content` (`Gated\Read_Content`)
+- `core/read-settings` (`Gated\Read_Settings`)
+- `core/read-users` (`Gated\Read_Users`)
+- `ai/get-post-details` and `ai/get-post-terms` (both `Gated\Post_Utilities`)
+
+This is a breaking change for anything that resolved those IDs on 1.2.0. Check the Experiment before assuming the Ability, and tell site owners to enable **Custom Abilities** on Settings → AI.
+
+The gated set is itself filterable:
+
+```php
+add_filter( 'wpai_gated_abilities', function ( array $classes ): array {
+    $classes[] = My_Gated_Ability::class; // extends WordPress\AI\Abstracts\Abstract_Gated_Ability
+    return $classes;
+} );
+```
+
+Entries must be class strings — anything else triggers `_doing_it_wrong()` and is skipped. `Abstract_Gated_Ability` requires `register(): void` and offers `requires_core_object_exposure(): bool`; when any gated ability returns `true`, the Experiment runs `Show_In_Abilities` once before registering.
 
 Feature and Experiment Abilities, including the three Image Generation Abilities, are conditional on those Features being enabled. Resolve an Ability with `wp_get_ability()` on or after `wp_abilities_api_init`; do not assume a conditional ID exists. The exposed post types and settings used by the read Abilities depend on `show_in_abilities`, so do not assume every object is exposed or re-register these IDs blindly.
 
 ### Advanced feature settings
 
-Features supply advanced settings through their own metadata and settings-field methods. Use the documented `wpai_settings_feature_groups` and `wpai_settings_feature_metadata` filters to extend that existing metadata. `wpai_feature_{$id}_settings` is only available when a specific Feature applies it (Type Ahead does in v1.2.0); it is not a universal framework filter. There is no separate public registry for advanced settings to invent.
+Features supply advanced settings through their own metadata and settings-field methods. Use the documented `wpai_settings_feature_groups` and `wpai_settings_feature_metadata` filters to extend that existing metadata. `wpai_feature_{$id}_settings` is only available when a specific Feature applies it (Type Ahead does in v1.3.0); it is not a universal framework filter. There is no separate public registry for advanced settings to invent.
 
 ### Added in v1.2.0
 
@@ -112,9 +125,12 @@ Features supply advanced settings through their own metadata and settings-field 
   - **`core/read-users`** (`includes/Abilities/Users/Users.php`, category `user`) — fetch a single readable user by ID, email, username, or slug, or a paginated collection filtered by roles, published-post authorship, or included IDs; field-level access is enforced per user (#774).
 - The `show_in_abilities` polyfill (`includes/Abilities/Show_In_Abilities.php`) now also marks curated **post types** (previously only settings), so `core/read-content` returns data on a stock site until WordPress core ships the flag natively — after which core owns it, like `show_in_rest`.
 
-### Added after v1.2.0 (unreleased on `develop`)
+### Added in v1.3.0
 
-- **`Content_Translation`** (`content-translation`, `Experiment_Category::EDITOR`) — translates paragraph and heading blocks into a different language, and registers the paired `ai/content-translation` Ability (#747, merged 2026-07-29). Requires a connector with text-generation support.
+Everything previously listed here as "unreleased on `develop`" shipped in the 1.3.0 tag (2026-08-18). Treat it as available when `WPAI_VERSION >= 1.3.0`.
+
+- **`Custom_Abilities`** (`custom-abilities`, `Experiment_Category::ADMIN`, capability `none`) — the opt-in gate over the five utility/read Abilities described above (#881).
+- **`Content_Translation`** (`content-translation`, `Experiment_Category::EDITOR`) — translates paragraph and heading blocks, and optionally the post title, into a selected language; registers the paired `ai/content-translation` Ability (#747). Requires a connector with text-generation support.
 
   Target languages come from `Languages.php` and are filterable:
 
@@ -127,14 +143,24 @@ Features supply advanced settings through their own metadata and settings-field 
 
   Codes are normalised with `sanitize_key()`, entries with a non-string or empty label are discarded, and a non-array return value is ignored entirely so the language picker and the ability schema keep working. The filtered list feeds the ability's input schema, so adding a language your provider cannot handle produces runtime failures rather than a validation error.
 
-  The class carries `@since x.x.x` placeholders — it is on `develop` but not in any tagged release, and the CHANGELOG's `[Unreleased]` section has not been updated to mention it. Treat it as unavailable when targeting 1.2.0.
+- **`Slug_Generation`** (`slug-generation`, `Experiment_Category::EDITOR`) — suggests SEO-friendly permalinks that can be applied as the post slug (#897, #932). Suggestion count is filterable via `wpai_slug_generation_number_of_suggestions`.
+- **Ability-scoped prompt hooks** — `wpai_{$ability_slug}_system_instruction`, `wpai_{$ability_slug}_prompt`, and `wpai_{$ability_slug}_prompt_builder` are all present in 1.3.0 source. The builder variant is applied by `Abstract_Ability::filter_prompt_builder()` (`@since 1.3.0`), which runs after the model preference is applied and before generation support is verified; a return value that is not a `WP_AI_Client_Prompt_Builder` is discarded and the unfiltered builder is used.
+- **Public request-logging API** — `WordPress\AI\log_ai_request( array $data )` lets MCP servers and ability consumers write to the AI Request Log, returning the log ID or `false` when logging is inactive (#914).
+- **Embedding helpers, staged but inactive** — `WordPress\AI\supports_embedding_generation()` and `WordPress\AI\generate_embeddings()` exist, and a vendored 1.4-era `EmbeddingBuilder` ships under `includes/Vendor/AiClient/`, but `SDK_Overlay::register()` is commented out at `ai.php:85` on purpose. On a stock install the helper returns `WP_Error( 'ai_embeddings_unsupported' )`. See the `wp-ai-client` skill's `references/embedding-builder.md`.
+- **Uninstall cleanup** — deleting the plugin removes its table, options, and scheduled events. Opt out with `wpai_remove_data_on_uninstall` (#692).
+- **Settings import/export** — authenticated `GET /ai/v1/settings/export` and `POST /ai/v1/settings/import` endpoints, both gated by `manage_options`, using schema version 1 and excluding credential-like settings (#734).
+- **Site Health integration** — an AI Plugin debug section and a direct credential-status test that does not expose secrets (#734).
+- **Content Classification controls** — available-term, minimum-confidence, and candidate-pool-size filters plus richer taxonomy descriptors (#633).
 
-- **Ability-scoped prompt hooks** — `wpai_{$ability_slug}_system_instruction`, `wpai_{$ability_slug}_prompt`, and `wpai_{$ability_slug}_prompt_builder`. The global `wpai_system_instruction` hook is already released in v1.2.0; only the scoped family is new on `develop`.
-- **Settings import/export** — authenticated `GET /ai/v1/settings/export` and `POST /ai/v1/settings/import` endpoints, both gated by `manage_options`, using schema version 1 and excluding credential-like settings.
-- **Site Health integration** — an AI Plugin debug section and a direct credential-status test that does not expose secrets.
-- **Content Classification controls** — available-term, minimum-confidence, and candidate-pool-size filters plus richer taxonomy descriptors.
+### Deprecated and removed in v1.3.0
 
-The `develop` branch still declares plugin version `1.2.0`, and these additions carry `@since x.x.x` placeholders. Do not infer a future release number; keep them behind release or capability detection until tagged.
+- **`AI_Service` and `get_ai_service()`** are deprecated (`@deprecated 1.3.0`) and will be removed in the next major release; `get_ai_service()` calls `_deprecated_function()`. Nothing in the plugin uses them — experiments and abilities call `wp_ai_client_prompt()` directly (#905).
+- **`wpai_meta_description_result_temperature`** is no longer applied and will be removed next release. The plugin stopped setting custom temperature values on any request (#913).
+- Preferred models for the three default providers were refreshed (#913). Do not hard-code the plugin's model choices.
+- Meta keys moved to a `wpai_` prefix: `ai_generated`, `ai_generated_summary`, and `ai_note` became `wpai_generated`, `wpai_generated_summary`, and `wpai_note` (#867). Downstream code reading those keys directly must be updated.
+- `core/read-users` collections are now ordered by display name, A to Z (#948).
+
+Tested up to WordPress 7.1 as of 1.3.0 (#934).
 
 ## The enabled-state model
 
@@ -179,7 +205,7 @@ The `ability_class` key is the AI plugin's convention — it points to a class e
 - `category(): string` (defaults to `WPAI_DEFAULT_ABILITY_CATEGORY`)
 - `guideline_categories(): array` (optional, for Guidelines integration)
 
-The Ability is what the Abilities API exposes — reachable via REST when its `meta` sets `show_in_rest => true` (as the canonical abilities do). MCP exposure is separate from REST visibility but is not determined solely by the nested MCP flag: MCP Adapter 0.5.0 uses explicit `meta.mcp.public` when present and otherwise inherits high-level `meta.public`. Set `meta.mcp.public => false` when a public Ability must remain unavailable through the default MCP server. The Experiment is the Settings → AI surface.
+The Ability is what the Abilities API exposes — reachable via REST when its `meta` sets `show_in_rest => true` (as the canonical abilities do). MCP exposure is separate from REST visibility but is not determined solely by the nested MCP flag: MCP Adapter **0.6.0+** uses explicit `meta.mcp.public` when present and otherwise inherits high-level `meta.public` (which WordPress 7.1 added to `WP_Ability` and which also seeds `show_in_rest`). Set `meta.mcp.public => false` when a public Ability must remain unavailable through the default MCP server. The Experiment is the Settings → AI surface.
 
 ## Promotion path
 

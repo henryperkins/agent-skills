@@ -2,7 +2,7 @@
 
 The AI plugin v0.8.0 introduced Guidelines integration (#359). Site editorial standards live in Gutenberg's `wp_guideline` custom post type, and the AI plugin reads them into prompts when an Ability declares interest.
 
-> **Upstream rename in progress — verify names before relying on them.** This reference documents the AI plugin at **v1.2.0**, where the store is still Gutenberg's `wp_guideline` CPT with the `site` / `copy` / `images` / `additional` categories, so everything below is accurate for that release. Gutenberg **23.6** replaces this primitive with **"Knowledge"** (verified against `lib/experimental/knowledge/` at v23.6.0-rc.1 — note it ships as Gutenberg-plugin *experimental* code, not yet staged in `lib/compat/wordpress-7.1/`, so core-merge timing is not settled):
+> **Upstream rename in progress — verify names before relying on them.** This reference documents the AI plugin at **v1.3.0**, where the store is still Gutenberg's `wp_guideline` CPT (`Services\Guidelines::POST_TYPE`) with the `site` / `copy` / `images` / `additional` categories, so everything below is accurate for that release. Gutenberg **23.6** replaces this primitive with **"Knowledge"** (verified against `lib/experimental/knowledge/` at v23.6.0-rc.1 — note it ships as Gutenberg-plugin *experimental* code, not yet staged in `lib/compat/wordpress-7.1/`, so core-merge timing is not settled):
 >
 > - Storage becomes a **`wp_knowledge`** CPT with a `wp_knowledge_type` taxonomy; knowledge *types* are `guideline`, `memory`, and `note` (filterable via `wp_knowledge_types`) — Guidelines become one type of Knowledge.
 > - The post-meta singleton dissolves into **per-scope rows**: each scope is backed by one `guideline`-typed row with slug `guideline-{scope}`; the `blocks` scope instead holds per-block rows slugged `guideline-block-*`.
@@ -47,7 +47,7 @@ When the Ability runs:
 1. `get_system_instruction()` calls `load_system_instruction_from_file()` to load the base instruction from `system-instruction.php` (or `prompt.php`).
 2. If `guideline_categories()` returns non-empty AND `Guidelines::is_available()` is true, `get_system_instruction()` calls `get_guidelines_for_prompt( $block_name )`.
 3. The result is appended after a fixed preamble: *"The following guidelines represent the site's editorial standards. Apply them where relevant. Do not fabricate content to satisfy guidelines. If guidelines conflict with the input, prioritize accuracy."*
-4. The full instruction (base + preamble + `<guidelines>...</guidelines>` block) passes through the global `wpai_system_instruction` filter before reaching the model; that hook ships in v1.2.0. On `develop` after v1.2.0, `get_system_instruction()` also runs the result through the Ability-scoped `wpai_{$ability_slug}_system_instruction` filter.
+4. The full instruction (base + preamble + `<guidelines>...</guidelines>` block) passes through the global `wpai_system_instruction` filter before reaching the model; that hook ships in v1.2.0. Since v1.3.0, `get_system_instruction()` also runs the result through the Ability-scoped `wpai_{$ability_slug}_system_instruction` filter.
 
 Returning an empty array (the default) skips Guidelines entirely.
 
