@@ -3,6 +3,8 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { runSkillQuality, validateSkillBounds } from "./skill-quality.mjs";
 import { runReleaseConformance } from "./release-conformance.mjs";
+import { CORE_AI_UPSTREAMS } from "../../shared/scripts/core-ai-upstreams.mjs";
+import { getBlockingUpstreamFailures } from "../../shared/scripts/upstream-drift-lib.mjs";
 
 function readUtf8(filePath) {
   return fs.readFileSync(filePath, "utf8");
@@ -67,13 +69,19 @@ function validateSkillName(name) {
 }
 
 function validatePortableTriageCommand({ repoRoot, skillPath, expectedName, markdown }) {
-  const localTriageCommand = "`node scripts/detect_wp_project.mjs`";
-  if (expectedName !== "wp-project-triage" && markdown.includes(localTriageCommand)) {
+  // Both forms are checkout-relative. `scripts/…` only resolves inside
+  // wp-project-triage itself; `skills/wp-project-triage/…` only resolves from
+  // this repository root, not from an installed skill directory.
+  const nonPortableCommands = [
+    "`node scripts/detect_wp_project.mjs`",
+    "`node skills/wp-project-triage/scripts/detect_wp_project.mjs`",
+  ];
+  if (
+    expectedName !== "wp-project-triage" &&
+    nonPortableCommands.some((command) => markdown.includes(command))
+  ) {
     throw new Error(
-      [
-        `Invalid local triage command in ${path.relative(repoRoot, skillPath)}.`,
-        `Only wp-project-triage ships scripts/detect_wp_project.mjs; other skills must reference the adjacent wp-project-triage skill path.`,
-      ].join(" ")
+      `Invalid checkout-relative triage command in ${path.relative(repoRoot, skillPath)}. Resolve the installed wp-project-triage skill directory or use manual classification.`
     );
   }
 }
@@ -91,7 +99,10 @@ function runJsonCommand(command, args, cwd) {
   }
 }
 
-function main() {
+function main(args = process.argv.slice(2)) {
+  const unknownArgs = args.filter((argument) => argument !== "--skip-upstream-drift");
+  assert(unknownArgs.length === 0, `Unknown harness argument(s): ${unknownArgs.join(", ")}`);
+  const skipDrift = args.includes("--skip-upstream-drift");
   const repoRoot = process.cwd();
   const upstreamIndexLib = path.join(
     repoRoot,
@@ -160,12 +171,37 @@ function main() {
   // Offline drift check: committed upstream indices vs the canonical release
   // each skill declares. Turns red when the Upstream Sync workflow lands a
   // newer release than a skill documents.
+  //
+  // The drift command always runs, even with --skip-upstream-drift. That flag
+  // narrows which failures block: only the expected "index advanced past a
+  // skill marker" code is suppressed. A broken index, malformed marker,
+  // duplicate declaration, or marker ahead of the committed index still fails,
+  // and the completeness check still proves every declaration was evaluated.
   const driftScript = path.join(repoRoot, "shared", "scripts", "check-upstream-drift.mjs");
   if (fs.existsSync(driftScript)) {
-    const drift = spawnSync("node", [driftScript], { cwd: repoRoot, encoding: "utf8" });
+    const drift = runJsonCommand(
+      "node",
+      [driftScript, "--format", "json", "--allow-drift"],
+      repoRoot
+    );
+    const expectedChecks = CORE_AI_UPSTREAMS.reduce(
+      (total, upstream) => total + upstream.declarations.length,
+      0
+    );
     assert(
-      drift.status === 0,
-      `Upstream drift check failed:\n${(drift.stderr || drift.stdout || "").trim()}`
+      drift.checks?.length === expectedChecks,
+      `Upstream drift report is incomplete (expected ${expectedChecks}, found ${drift.checks?.length ?? 0})`
+    );
+    // Guard before filtering: a malformed report with no `failures` array must
+    // not silently become an empty blocking list.
+    assert(
+      Array.isArray(drift.failures),
+      "Upstream drift report is malformed: missing failures[]"
+    );
+    const blocking = getBlockingUpstreamFailures(drift, { allowUpstreamNewer: skipDrift });
+    assert(
+      blocking.length === 0,
+      `Upstream drift check failed:\n${blocking.map((failure) => failure.message).join("\n")}`
     );
   }
 

@@ -63,6 +63,13 @@ those V1 forms into a V2 Blueprint.
 
 Local directory bundles need `--blueprint-may-read-adjacent-files` through the CLI; ZIP bundles are self-contained. Before handoff, run the Blueprint and confirm expected plugins, options, network policy, and login state.
 
+## Verification
+
+1. Validate the final JSON against `https://playground.wordpress.net/blueprint-schema.json`; unknown fields and V1-only shapes must fail.
+2. Run the Blueprint with the Playground CLI or browser surface the user will use. For local directory resources, include `--blueprint-may-read-adjacent-files`.
+3. Confirm the requested WordPress and PHP versions, active plugins, site options, login behavior, and network policy inside the running site.
+4. If producing a share URL, open the encoded URL in a fresh session and confirm it recreates the same site without relying on local files.
+
 ## Sharing a Blueprint as a URL
 
 Minify the JSON, encode it once with `encodeURIComponent()`, and append it to `https://playground.wordpress.net/#`. Encoding is required: an unencoded Blueprint silently breaks on any reserved character. Very large Blueprints can exceed browser URL length limits — host the JSON and pass its URL, or use the CLI instead. For share-link mechanics, see [wp-playground/references/website.md](../wp-playground/references/website.md).

@@ -1,7 +1,7 @@
 ---
 name: wp-ai-client
-description: "Use when building provider-agnostic AI features in a WordPress plugin or theme with the WP 7.0+ AI Client, or when a task involves standalone `wordpress/php-ai-client` 1.5+ embeddings. Triggers include text/image/speech/video generation, vector embeddings, semantic search, prompt builders, model preferences, feature detection, REST endpoints, and AI Client ability function calling."
-compatibility: "Targets WordPress 7.0+ (PHP 7.4+). Verified against PHP AI Client 1.5.0 (standalone) and WordPress 7.1 (bundles 1.3.1). Filesystem-based agent with bash + node. Some workflows require WP-CLI."
+description: "Use when building provider-agnostic AI features in a WordPress plugin or theme with the WP 7.0+ AI Client, or when a task involves standalone `wordpress/php-ai-client` 1.5.0 embeddings. Triggers include text/image/speech/video generation, vector embeddings, semantic search, prompt builders, model preferences, feature detection, REST endpoints, and AI Client ability function calling."
+compatibility: "Targets WordPress 7.0+ (PHP 7.4+); WordPress Core verified through: 7.1; PHP AI Client verified through: 1.5.0 standalone (Core-bundled: 1.3.1); WP AI Client verified through: 0.4.0 (final, deprecated, archived). Filesystem-based agent with bash + node. Some workflows require WP-CLI."
 license: GPL-2.0-or-later
 ---
 
@@ -12,9 +12,10 @@ license: GPL-2.0-or-later
 Use this skill when the task involves:
 
 - adding an AI-powered feature (text, image, speech, video generation) to a plugin or theme on WP 7.0+,
-- building embeddings for semantic search, clustering, or similarity with standalone `wordpress/php-ai-client` 1.5+ while respecting the Core-bundled version boundary,
+- building embeddings for semantic search, clustering, or similarity with standalone `wordpress/php-ai-client` 1.5.0 while respecting the Core-bundled version boundary,
 - replacing direct calls to OpenAI/Anthropic/Google SDKs with the provider-agnostic in-core API,
-- migrating from the standalone `wordpress/php-ai-client` or `wordpress/wp-ai-client` Composer packages now that 7.0 bundles them,
+- dropping a standalone `wordpress/php-ai-client` dependency now that 7.0 bundles it as `src/wp-includes/php-ai-client/`, reached through `wp_ai_client_prompt()`,
+- deciding what to do about the deprecated, archived `wordpress/wp-ai-client` package — 0.4.0 is its final release; on WordPress 7.0+ only its `/wp-ai/v1/*` routes, JavaScript API, and capability filters remain active,
 - exposing an AI feature to the block editor or custom JS via a REST endpoint,
 - diagnosing "the model isn't responding" / "no provider configured" / "feature shows but never works".
 
@@ -34,18 +35,26 @@ If the task is to write a *provider plugin* (e.g., adding a new AI service), rou
 1. Run project triage if available (`node ../wp-project-triage/scripts/detect_wp_project.mjs` when the `wp-project-triage` skill is installed alongside); otherwise classify the project manually.
 2. Detect AI Client availability: `node scripts/detect_ai_client.mjs`
 
-If the project's `Requires at least` is `< 7.0`, decide: bump the requirement (recommended), or use the conditional autoloader pattern in `references/prompt-builder.md#migration` to keep older versions working.
+If the project's `Requires at least` is `< 7.0`, decide: bump the requirement (recommended), depend on the deprecated WP AI Client plugin for its remaining compatibility surface, or ship a prefixed standalone SDK. Read `references/prompt-builder.md#migration` before choosing.
 
 ### 1) Check feature support before showing UI
 
-Never assume an AI feature will work just because WP 7.0 is installed — site owners may have no provider configured, or their provider may not support every modality. Use `is_supported_for_*()` builder methods, which run synchronously and incur no API cost:
+Never assume an AI feature will work just because WP 7.0 is installed — the site may have AI switched off outright, may have no provider configured, or its provider may not support every modality.
+
+Check the global switch first. `wp_supports_ai()` (**WP 7.0+**, in `wp-includes/ai-client.php`) returns `false` when `WP_AI_SUPPORT` is defined falsy or the `wp_supports_ai` filter says so, and the builder consults it on every support check and every generator call: with it off, `is_supported_for_*()` returns `false` and generators return `WP_Error` code `prompt_prevented` with status 503, without an API call. Then narrow with the `is_supported_for_*()` builder methods:
 
 ```php
+if ( ! function_exists( 'wp_supports_ai' ) || ! wp_supports_ai() ) {
+    return; // WP < 7.0, or AI is disabled for this environment/request.
+}
+
 $builder = wp_ai_client_prompt( 'test' )->using_temperature( 0.7 );
 if ( ! $builder->is_supported_for_text_generation() ) {
     return; // Skip registering UI.
 }
 ```
+
+`is_supported_for_*()` never runs your prompt, but it is not a local lookup either: resolving the model list probes each registered API-based provider over HTTP — for most, a list-models request cached 24h in the `wp_ai_client` object-cache group (filterable since WordPress 7.1 with `wp_ai_client_cache_group`), which is per-request unless the site runs a persistent object cache. Don't call it on every front-end page load or inside a loop; cache the boolean yourself, or gate the check to admin/editor screens.
 
 Conditionally enqueue scripts, hide blocks, or render a notice based on this check. See `references/prompt-builder.md#feature-detection` for all support methods.
 
@@ -65,7 +74,7 @@ Model preferences are *preferences*, not requirements. The Client falls back to 
 
 ### 3) Expose to JS via a per-feature REST endpoint
 
-Do **not** use the client-side JS prompt API in distributed plugins — its REST route is gated behind the `prompt_ai` capability (granted to administrators by default) and lets the caller send any prompt to any configured provider. Instead, register a REST endpoint scoped to your single feature, with a tight permission callback:
+Core registers **no** AI REST route and ships no JS prompt API — `wp_ai_client_prompt()` is PHP-only, so there is nothing for JS to call until you register something. The client-side JS prompt builder belongs to deprecated, archived `wordpress/wp-ai-client` 0.4.0; do not rely on it in distributed plugins, since its route is gated behind that plugin's `prompt_ai` capability (granted to `manage_options` users by default) and lets the caller send any prompt to any configured provider. Register a REST endpoint scoped to your single feature instead, with a tight permission callback:
 
 ```php
 register_rest_route( 'my-plugin/v1', '/summarize', array(
@@ -85,6 +94,16 @@ function my_plugin_rest_summarize( WP_REST_Request $request ) {
 ```
 
 `GenerativeAiResult` and `WP_Error` both serialize cleanly through `rest_ensure_response()`, with the right HTTP status code attached automatically on errors. See `references/rest-patterns.md`.
+
+**Persisting generated media: branch on `$image->isRemote()` first.** `generate_image()` returns a
+PHP AI Client `File` DTO that carries **either** inline base64 **or** a remote URL — never both.
+`getDataUri(): ?string` and `getUrl(): ?string` are each nullable and each return `null` in the
+other's case, so code that reaches straight for `getDataUri()` breaks the moment a provider or an
+`asOutputFileType()` choice yields a URL. Validate `getMimeType()` against an allow-list before
+writing, fetch the remote case with `wp_safe_remote_get()` bounded by `limit_response_size` and a
+timeout after `wp_http_validate_url()`, then re-check `wp_get_image_mime()` on the uploaded file and
+delete it on mismatch before `wp_insert_attachment()`. The complete, copyable handler is in
+`references/rest-patterns.md`.
 
 ### 4) Handle errors
 
@@ -119,29 +138,66 @@ The `wp_ai_client_prevent_prompt` filter lets you block specific prompts before 
 
 Do not handle API keys. The Connectors API (in core) reads keys from env var → PHP constant → database (in that order) and the **Settings → Connectors** screen surfaces them to admins. If you need to hint to site owners that no provider is set up, use feature detection (step 1) plus a link to `Settings → Connectors`.
 
-### 6) Function calling: `using_abilities()` is the bridge to the Abilities API
+### 6) Function calling: `using_abilities()` declares functions — you drive the round trip
 
-If your feature needs the model to *call* something — read a post, update an attachment, classify content — pass registered ability IDs to `using_abilities()`. The AI Client converts them into function declarations the model can invoke; when the model calls one, execution routes back through the Abilities API's permission and execution machinery. This makes the AI Client agentic without writing function-calling boilerplate. Pair this with `wp-abilities-api` to define the abilities themselves.
+If your feature needs the model to *call* something — read site metadata, classify content, update a record — pass registered ability IDs to `using_abilities()`. It converts each into a `FunctionDeclaration` (name, description, input schema) and terminates in `using_function_declarations()`. Pair this with `wp-abilities-api` to define the abilities themselves.
+
+**Core 7.1 registers exactly three abilities out of the box** — `core/get-site-info`, `core/get-environment-info`, and `core/get-user-info`. Nothing else in the `core/` namespace exists — media-oriented IDs of the `core/…-attachment` shape appear in older guidance and are not real. Every other ID in an example is a placeholder you must register yourself with `wp_register_ability()` before passing it here. Otherwise `using_abilities()` skips it with a `_doing_it_wrong()` notice; a resolver asked to execute an unregistered allowed ID returns `ability_not_found`.
+
+**`using_abilities()` does not execute anything.** A `FunctionDeclaration` carries no callable. When the model decides to call one, the result comes back holding a *function-call part*, and nothing has run: no `permission_callback`, no `execute_callback`. Executing it and feeding the answer back is the caller's job, and Core gives you `WP_AI_Client_Ability_Function_Resolver` to do it. Treat the loop below as mandatory, not as a low-level alternative:
 
 ```php
-$result = wp_ai_client_prompt( 'Summarize the latest 5 posts.' )
-    ->using_abilities( 'core/get-posts', 'core/get-post' )
+use WordPress\AiClient\Messages\DTO\MessagePart;
+use WordPress\AiClient\Messages\DTO\UserMessage;
+
+// Real Core 7.1 ability declarations; a configured provider is still required.
+$abilities = array( 'core/get-site-info', 'core/get-environment-info' );
+$prompt    = 'Summarize this site’s WordPress and PHP versions and whether the environment is production-ready.';
+
+// Preserve the original user turn explicitly for the function-response request.
+$user_message = new UserMessage( array( new MessagePart( $prompt ) ) );
+
+$result = wp_ai_client_prompt( $prompt )
+    ->using_abilities( ...$abilities )
     ->generate_text_result();
+
+if ( is_wp_error( $result ) ) {
+    return $result;
+}
+
+// The model may have asked for an ability instead of answering. Nothing has run yet.
+$model_message = $result->toMessage();
+$resolver      = new WP_AI_Client_Ability_Function_Resolver( ...$abilities );
+
+if ( $resolver->has_ability_calls( $model_message ) ) {
+    // This is where permission_callback and execute_callback finally run.
+    $tool_message = $resolver->execute_abilities( $model_message );
+
+    $result = wp_ai_client_prompt( $tool_message )
+        ->using_abilities( ...$abilities )
+        ->with_history( $user_message, $model_message )
+        ->generate_text_result();
+
+    if ( is_wp_error( $result ) ) {
+        return $result;
+    }
+}
+
+$answer = $result->toText();
 ```
 
-Abilities you pass must already be registered server-side via `wp_register_ability()`. Their `permission_callback` runs every time the model attempts to invoke them.
+Two things the resolver enforces that the builder does not. It allow-lists independently — `execute_ability()` returns `ability_not_allowed` for anything absent from *its own* constructor arguments, so pass the same list you gave `using_abilities()`. And a model can emit several calls in one turn: `execute_abilities()` handles all of them and returns one message of responses, which is why the example loops on the message rather than a single call.
 
-### 7) Use the Core resolver and timeout APIs when working below `using_abilities()`
+A production loop should carry the full turn history (the original user message as well as `$model_message`) and should re-check for further calls, since the second response can request more. Abilities you pass must already be registered server-side via `wp_register_ability()`.
 
-`using_abilities()` is the normal high-level path. For low-level function-call handling, Core exposes `WP_AI_Client_Ability_Function_Resolver`. Its static conversion helpers round-trip an Ability ID to the AI-safe function name, and an instance allow-lists the Abilities it may execute:
+The resolver also exposes static helpers that round-trip an Ability ID to the AI-safe function name the model actually sees, which is what you need when inspecting or logging raw function-call parts:
 
 ```php
 $function_name = WP_AI_Client_Ability_Function_Resolver::ability_name_to_function_name( 'my-plugin/lookup' );
 $ability_name  = WP_AI_Client_Ability_Function_Resolver::function_name_to_ability_name( $function_name );
-
-$resolver = new WP_AI_Client_Ability_Function_Resolver( 'my-plugin/lookup' );
-$payload  = $resolver->execute_ability( $function_call )->getResponse();
 ```
+
+### 7) Timeout policy
 
 For builders created after a global timeout policy is installed, use Core's real filter rather than a plugin-specific lookalike:
 
@@ -160,21 +216,22 @@ The filter fires during builder construction. Scope or remove it when the timeou
 
 ## Failure modes / debugging
 
+- **"Feature detection returns `false` everywhere, but a provider is configured"**: check `wp_supports_ai()` before anything else. `define( 'WP_AI_SUPPORT', false )` or a `wp_supports_ai` filter turns the whole surface off for the request; every `is_supported_for_*()` then returns `false` and every generator returns `WP_Error` `prompt_prevented` (503) without an API call ever being attempted.
 - **"AI feature shows but always errors"**: usually no provider configured. Confirm at least one provider plugin is active (`AI Provider for Anthropic|Google|OpenAI` or a community provider) and a key is set in Settings → Connectors.
-- **`call to undefined function wp_ai_client_prompt()`**: site is on WP < 7.0. Either bump the floor or use the conditional autoloader pattern.
-- **"Works for admin, fails for editors"**: the JS code is calling the high-privilege client-side prompt API instead of your scoped REST endpoint. Switch to a per-feature endpoint.
+- **`call to undefined function wp_ai_client_prompt()`**: site is on WordPress < 7.0 without a compatibility plugin. Either bump the floor or follow the prefixed/deprecated-package choices in `references/prompt-builder.md#migration`; never gate the plugin's entire Composer autoloader on this function.
+- **"Works for admin, fails for editors"**: the site has the standalone `wordpress/wp-ai-client` plugin active and the JS is calling its `prompt_ai`-gated prompt route instead of your scoped REST endpoint. On plain 7.0/7.1 neither that route nor the `prompt_ai` capability exists, so the same call 404s for every role — don't go hunting for the capability in Core. Switch to a per-feature endpoint.
 - **`WP_Error` with HTTP 4xx but no useful detail**: log its `get_error_code()`, `get_error_message()`, and `get_error_data()`. Do not call `getProviderMetadata()` or `getModelMetadata()` on a `WP_Error`.
 - **Different model than expected ran**: `using_model_preference()` is a preference. Inspect `getProviderMetadata()` / `getModelMetadata()` on the result to see what actually answered.
 
 ## Bundled versus standalone PHP AI Client
 
-WordPress 7.1 bundles PHP AI Client 1.3.1 (`AiClient::VERSION` in `src/wp-includes/php-ai-client/src/AiClient.php`). Composer's standalone latest is PHP AI Client 1.5.0. Treat the Core-bundled version as the compatibility boundary: an API added only in the standalone package cannot be assumed available through Core until WordPress updates its bundled dependency.
+WordPress 7.0 and 7.1 bundle PHP AI Client 1.3.1 — verified through 7.0.6 and 7.1.2 (`AiClient::VERSION` in `src/wp-includes/php-ai-client/src/AiClient.php`; check it on the site itself). Composer's standalone latest is PHP AI Client 1.5.0. Treat the Core-bundled version as the compatibility boundary: an API added only in the standalone package cannot be assumed available through Core until WordPress updates its bundled dependency.
 
-**What the standalone package added, and therefore what Core does not yet expose:** embedding generation. Core's bundled `src/Builders/` holds only `MessageBuilder` and `PromptBuilder`. Embeddings use a dedicated `EmbeddingBuilder` (`withInput()`, `usingDimensions()`, `generateEmbedding()`, `generateEmbeddings()`, `generateEmbeddingResult()`, `isSupported()`) plus the static `AiClient::generateEmbedding()`, `AiClient::generateEmbeddings()`, and `AiClient::generateEmbeddingResult()` entry points. It returns concrete `Embedding` / `EmbeddingResult` DTOs and dispatches `BeforeGenerateEmbeddingEvent` / `AfterGenerateEmbeddingEvent` when a PSR event dispatcher is configured. `EmbeddingList` is a PHPStan alias for `list<float|int>`, not a value-object class. Inputs are message parts — strings, `File`s, or parts — not conversations, matching how providers treat embeddings as a separate API. Upstream says embedding generation lands in **Core 7.2** ([wordpress-develop#12530](https://github.com/WordPress/wordpress-develop/pull/12530)).
+**What the standalone package added, and therefore what Core does not yet expose:** embedding generation. Core's bundled `src/Builders/` holds only `MessageBuilder` and `PromptBuilder`. Embeddings use a dedicated `EmbeddingBuilder` (`withInput()`, `usingDimensions()`, `generateEmbedding()`, `generateEmbeddings()`, `generateEmbeddingResult()`, `isSupported()`) plus the static `AiClient::generateEmbedding()`, `AiClient::generateEmbeddings()`, and `AiClient::generateEmbeddingResult()` entry points. It returns concrete `Embedding` / `EmbeddingResult` DTOs and dispatches `BeforeGenerateEmbeddingEvent` / `AfterGenerateEmbeddingEvent` when a PSR event dispatcher is configured. `EmbeddingList` is a PHPStan alias for `list<float|int>`, not a value-object class. Inputs are message parts — strings, `File`s, or parts — not conversations, matching how providers treat embeddings as a separate API. Upstream says embedding generation lands in **Core 7.2** ([wordpress-develop#12530](https://github.com/WordPress/wordpress-develop/pull/12530)); that PR is still open and was written against the 1.4 builder API, so expect its surface to change before it merges.
 
 **1.5.0 made the model mandatory.** The `EmbeddingBuilder` no longer resolves a model — vectors are only comparable within one model, so an automatic choice could silently invalidate a stored corpus. Name the model with `usingProviderModel( $provider_id, $model_id )` or `usingModel( $instance )`; omitting it throws, including from `isSupported()`. `usingModelPreference()` and `usingProvider()` were **removed from this builder** (they remain on the prompt builder), and the static entry points now take `$model` as a required second argument ahead of an optional `ModelConfig`.
 
-If a task calls for embeddings (semantic search, clustering, similarity), you cannot reach them through `wp_ai_client_prompt()` on Core 7.1. Do not load an unprefixed standalone package beside Core's 1.3.1 copy; the duplicate namespaces are not a supported override path. Wait for Core to bump, isolate/prefix the newer dependency, or move embedding work to a separate service. The canonical AI plugin is not a shortcut either: `WordPress/ai` 1.3.0 ships `WordPress\AI\generate_embeddings()` but leaves its vendored SDK overlay deliberately unregistered (`ai.php:85`), so the helper returns `WP_Error( 'ai_embeddings_unsupported' )` on a stock install.
+If a task calls for embeddings (semantic search, clustering, similarity), you cannot reach them through `wp_ai_client_prompt()` on any 7.0 or 7.1 release. Do not load an unprefixed standalone package beside Core's 1.3.1 copy; mixing those SDK versions and their scoped/unscoped PSR namespaces is not a supported override path. Wait for Core to bump, isolate/prefix the newer dependency, or move embedding work to a separate service. The canonical AI plugin is not a shortcut either: `WordPress/ai` 1.3.0 ships `WordPress\AI\generate_embeddings()` but leaves its vendored SDK overlay deliberately unregistered (`ai.php:85`), so the helper returns `WP_Error( 'ai_embeddings_unsupported' )` on a stock install.
 
 In a standalone PHP application where Core is not loading the SDK, the entry point is `AiClient::input()`:
 
@@ -201,7 +258,7 @@ For canonical detail before inventing patterns:
 
 - AI Client dev note: https://make.wordpress.org/core/2026/03/24/introducing-the-ai-client-in-wordpress-7-0/
 - PHP AI Client SDK source: https://github.com/WordPress/php-ai-client
-- WP AI Client (REST/JS package): https://github.com/WordPress/wp-ai-client
+- WP AI Client standalone plugin (the REST/JS layer Core does not bundle): https://github.com/WordPress/wp-ai-client
 - Trac ticket: https://core.trac.wordpress.org/ticket/64591
 
 References:

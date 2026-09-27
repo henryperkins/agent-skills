@@ -1,19 +1,23 @@
 # Guidelines integration
 
-The AI plugin v0.8.0 introduced Guidelines integration (#359). Site editorial standards live in Gutenberg's `wp_guideline` custom post type, and the AI plugin reads them into prompts when an Ability declares interest.
+The AI plugin v0.8.0 introduced Guidelines integration (#359). The released AI plugin 1.3.0 still reads Gutenberg's legacy `wp_guideline` custom post type when an Ability declares interest.
 
-> **Upstream rename in progress — verify names before relying on them.** This reference documents the AI plugin at **v1.3.0**, where the store is still Gutenberg's `wp_guideline` CPT (`Services\Guidelines::POST_TYPE`) with the `site` / `copy` / `images` / `additional` categories, so everything below is accurate for that release. Gutenberg **23.6** introduced a replacement primitive, **"Knowledge"**, and as of **Gutenberg 24.0 it is still plugin-only experimental code** (`lib/experimental/knowledge/`) — not staged in `lib/compat/wordpress-7.1/` *or* `lib/compat/wordpress-7.2/`, so it did not make WordPress 7.1 and is not queued for 7.2 either. The API names below were re-verified as stable at 24.0, but core-merge timing remains unsettled:
+The supported window is precise: **Gutenberg 23.0 through 23.5.x** registers that storage. **Gutenberg 23.6.0+** replaced it with the experimental Knowledge model — #79149 renamed the post type to `wp_knowledge` without migrating existing `wp_guideline` rows — while AI plugin 1.3.0 still checks `post_type_exists( 'wp_guideline' )`. In that combination, `Guidelines::is_available()` returns `false`, `get_guidelines()` returns `null`, and `format_for_prompt()` returns `''`. WordPress/ai **PR #988** adapts the service to `wp_knowledge`; it merged to `develop` on 2026-09-01 (milestone 1.4.0) but is in no release yet, so until a release containing it is installed, do not describe Guidelines as active on Gutenberg 23.6.0+.
+
+As of **Gutenberg 24.0**, Knowledge is still plugin-only experimental code, loaded only while the `gutenberg-guidelines` experiment is enabled, and nothing Knowledge-related is staged in `lib/compat/wordpress-7.1/` or `lib/compat/wordpress-7.2/`. It missed WordPress 7.1; a core PR ([wordpress-develop#12201](https://github.com/WordPress/wordpress-develop/pull/12201)) is open against trunk, so core-merge timing remains unsettled. The API names below were re-verified at 24.0.
+
+Gutenberg 23.6.0+ uses the following model under `lib/experimental/knowledge/`:
 >
 > - Storage becomes a **`wp_knowledge`** CPT with a `wp_knowledge_type` taxonomy; knowledge *types* are `guideline`, `memory`, and `note` (filterable via `wp_knowledge_types`) — Guidelines become one type of Knowledge.
 > - The post-meta singleton dissolves into **per-scope rows**: each scope is backed by one `guideline`-typed row with slug `guideline-{scope}`; the `blocks` scope instead holds per-block rows slugged `guideline-block-*`.
 > - The scope registry is `wp_guideline_scopes()` (filterable), shipping `site`, `copy`, `images`, `blocks`, `additional`. Registering a new scope via the filter grows the Settings → Guidelines page automatically.
 > - REST: rows through the standard `/wp/v2/knowledge` collection; the read-only scope registry at `/wp/v2/knowledge/guideline-scopes`. Per-scope length is `wp_guideline_max_length()` (default 5000, filter `wp_guideline_max_length` — parallel to the AI plugin's own `wpai_max_guideline_length`).
 >
-> The AI plugin's `Guidelines` service will need to follow this model eventually. Until Knowledge reaches core, `wp_guideline` is the storage on every stock site; Knowledge only exists where the Gutenberg plugin is active. Confirm which storage the installed AI plugin version actually reads before depending on either set of names.
+> WordPress 7.1 core ships neither `wp_guideline` nor `wp_knowledge`; these are Gutenberg-plugin experiments. Without a Gutenberg release that registers `wp_guideline` (23.0–23.5.x), the AI plugin 1.3.0 `Guidelines` service has no storage to read.
 
 ## Where Guidelines live
 
-Guidelines are stored as a `wp_guideline` custom post type provided by Gutenberg 23.0+. Each post stores guidelines in four post meta fields:
+For Gutenberg 23.0 through 23.5.x, Guidelines are stored as a `wp_guideline` custom post type. Each post stores guidelines in four post meta fields:
 
 - `_guideline_copy` — text/copy guidelines (voice, tone, banned terms)
 - `_guideline_images` — image guidelines (style, accessibility, alt text rules)
@@ -22,7 +26,7 @@ Guidelines are stored as a `wp_guideline` custom post type provided by Gutenberg
 
 Plus per-block guidelines via `_guideline_block_{$sanitized_block_name}` (e.g., `_guideline_block_core_paragraph`).
 
-The `WordPress\AI\Services\Guidelines` service reads from this CPT. Site owners edit Guidelines through Gutenberg's UI, not through the AI plugin's settings.
+The `WordPress\AI\Services\Guidelines` service queries both `publish` and `draft`, newest first. When the `wp_guideline_type` taxonomy exists, it restricts the query to the `content` term so an artifact record cannot shadow the site-wide guideline record. Site owners edit Guidelines through Gutenberg's UI, not through the AI plugin's settings.
 
 ## The integration pattern (most code paths)
 
@@ -44,10 +48,10 @@ class My_Internal_Linker_Ability extends \WordPress\AI\Abstracts\Abstract_Abilit
 
 When the Ability runs:
 
-1. `get_system_instruction()` calls `load_system_instruction_from_file()` to load the base instruction from `system-instruction.php` (or `prompt.php`).
-2. If `guideline_categories()` returns non-empty AND `Guidelines::is_available()` is true, `get_system_instruction()` calls `get_guidelines_for_prompt( $block_name )`.
-3. The result is appended after a fixed preamble: *"The following guidelines represent the site's editorial standards. Apply them where relevant. Do not fabricate content to satisfy guidelines. If guidelines conflict with the input, prioritize accuracy."*
-4. The full instruction (base + preamble + `<guidelines>...</guidelines>` block) passes through the global `wpai_system_instruction` filter before reaching the model; that hook ships in v1.2.0. Since v1.3.0, `get_system_instruction()` also runs the result through the Ability-scoped `wpai_{$ability_slug}_system_instruction` filter.
+1. `get_system_instruction()` calls `load_system_instruction_from_file()`, which auto-detects exactly one filename — `system-instruction.php`, in the Ability class's own directory. Any other name must be passed explicitly as the first argument (`$this->get_system_instruction( 'alt-text-system-instruction.php' )`, as `Alt_Text_Generation` does). `get_system_instruction()`'s own docblock still names `prompt.php`; that is stale — no such file exists in the plugin and no code path looks for one.
+2. If the base instruction is non-empty AND `guideline_categories()` returns non-empty, `get_system_instruction()` calls `get_guidelines_for_prompt( $block_name )`, which yields `''` unless `should_use_guidelines()` passes (CPT registered and `wpai_use_guidelines` still true). The `'' !== $instruction` guard comes first, so an Ability whose instruction file is missing or unreadable silently loses its Guidelines too.
+3. The result is appended after a fixed preamble whose source literal contains `site&#039;s`: *"The following guidelines represent the site's editorial standards. Apply them where relevant. Do not fabricate content to satisfy guidelines. If guidelines conflict with the input, prioritize accuracy."* Image Generation uses a shorter preamble and omits the “Do not fabricate content” sentence.
+4. The full instruction (base + preamble + `<guidelines>...</guidelines>` block) passes through the global `wpai_system_instruction` filter before reaching the model; that hook ships in v0.7.0. In v1.3.0, `get_system_instruction()` then runs the result through the Ability-scoped `wpai_{$ability_slug}_system_instruction` filter.
 
 Returning an empty array (the default) skips Guidelines entirely.
 
@@ -74,7 +78,7 @@ use WordPress\AI\Services\Guidelines;
 $service = Guidelines::get_instance();
 
 if ( ! $service->is_available() ) {
-    // wp_guideline CPT not registered (Gutenberg < 23.0 or experiment off).
+    // Legacy wp_guideline CPT is absent: Gutenberg < 23.0, 23.6.0+, or experiment off.
     $guidelines_xml = '';
 } else {
     $guidelines_xml = $service->format_for_prompt(
@@ -149,7 +153,7 @@ The service caches guidelines on first read for the request. If your code edits 
 ## What not to do
 
 - **Don't bypass the integration with a "raw mode" toggle in your Ability.** If site owners want different behavior in different contexts, that's what Guidelines' own context system is for.
-- **Don't read `wp_guideline` CPT directly with `get_posts()`.** The Service handles status (Gutenberg saves as `'draft'` by default), caching, sanitization, and length limits. Reimplementing means missing all of that.
+- **Don't read `wp_guideline` CPT directly with `get_posts()`.** The service handles `publish` and `draft`, newest-first ordering, the `content` taxonomy term when available, caching, sanitization, and length limits.
 - **Don't pass user-supplied content as guideline text into the prompt.** The XML-wrapping is a structural marker for the model, not a security boundary. User content goes in the `with_text()` payload.
 - **Don't make your Ability worse when Guidelines is on.** If the system instruction stops working when Guidelines append themselves, the prompt was fragile. Test with and without Guidelines.
 

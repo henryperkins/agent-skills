@@ -1,7 +1,7 @@
 ---
 name: wp-abilities-audit
 description: Use when auditing a WordPress plugin's REST API surface for Abilities API candidates, planning registrations, or producing an abilities migration audit before implementation.
-compatibility: "Targets WordPress 6.9+ (PHP 7.2.24+). Filesystem-based agent with bash + node. Requires access to the plugin checkout; some workflows benefit from WP-CLI but don't require it."
+compatibility: "Targets WordPress 6.9+ (PHP 7.2.24+); WordPress Core verified through: 7.1; MCP Adapter verified through: 0.6.1. Filesystem-based agent with bash + node. Requires access to the plugin checkout; some workflows benefit from WP-CLI but don't require it."
 license: GPL-2.0-or-later
 ---
 
@@ -41,16 +41,18 @@ the user's call; the workflow itself is plugin-agnostic.
 ## Prerequisites
 
 - `wp-project-triage` has run successfully and classified the plugin.
-- The plugin has at least one REST controller. If enumeration finds zero
-  controllers, the audit doesn't apply — see "Failure modes" below.
+- The plugin has at least one REST surface. If enumeration finds zero declared
+  controllers *and* zero implicit `show_in_rest` surface, the audit doesn't
+  apply — see "Failure modes" below.
 
 ## Procedure
 
 ### 1. Enumerate REST controllers
 
-Read `references/controller-enumeration.md` now — it covers the two observed
-enumeration paths (glob for standard layouts, grep as the universal fallback)
-and when to use each.
+Read `references/controller-enumeration.md` now — it covers the three
+enumeration paths (glob for standard layouts, grep as the universal fallback,
+and the implicit pass for core-derived `show_in_rest` routes) and when to use
+each. The implicit pass is additive: run it whatever the first two returned.
 
 Record every controller class + file + REST base + routes in a "Controller
 Inventory" table. The inventory is exhaustive even though only a subset
@@ -75,8 +77,8 @@ Trace each controller's `permission_callback` to its `current_user_can()` call
 post-type-backed base).
 
 Read `references/capability-gate-tracing.md` now — it documents the two
-common mechanisms (direct `check_permission()` vs post-type-backed
-`wc_rest_check_post_permissions()`) and how to represent each in the schema.
+common mechanisms (direct `check_permission()` vs post-type-backed core `map_meta_cap()`)
+and how to represent each in the schema.
 Note explicitly whether read and write gates differ: compound gates are
 represented as a `{read, write}` object, not a single string.
 
@@ -105,14 +107,40 @@ For each proposed ability that passes the sanity check, fill in every
 field in the `proposed_abilities` schema: `name`, `intent`, `backing`,
 `permission`, `return_type`, `effort` (S/M/L), `annotations`
 (readonly/destructive/idempotent), `notes`, `risks`, `use_case_fit`,
-`side_effects`, `seed_data_needs`.
+`side_effects`, `seed_data_needs`, `exposure`.
 
-The last three are the implementation-readiness facts the implementer
-and the verify-mode tooling both need: which human/agent workflow this
-ability serves (`use_case_fit`), what the backing path emits on every
-call (`side_effects` — empty array is a fact, not a missing value), and
-what representative data must exist in the test environment for the
-ability to execute through the public boundary (`seed_data_needs`).
+`use_case_fit`, `side_effects`, and `seed_data_needs` are the
+implementation-readiness facts the implementer and the verify-mode
+tooling both need: which human/agent workflow this ability serves
+(`use_case_fit`), what the backing path emits on every call
+(`side_effects` — empty array is a fact, not a missing value), and what
+representative data must exist in the test environment for the ability
+to execute through the public boundary (`seed_data_needs`).
+
+### 4a. Decide exposure explicitly
+
+Fill in `exposure` on every proposed ability. This is a distinct decision
+from `permission`, and the audit is where it gets made — if it is left to
+the implementer it gets made by a metadata default instead.
+
+Set `agent_facing` (should an external agent be able to *discover* this?),
+`mcp` (`allow` / `deny` / `inherit`), and a one-sentence `rationale`
+naming the agent workflow whenever `agent_facing: true` or `mcp: allow`.
+
+Two rules:
+
+- **Every `destructive: true` ability needs `mcp: allow` with a rationale,
+  or `mcp: deny`.** `inherit` on a destructive ability is not a decision.
+  On MCP Adapter 0.6.0+ the default server serves anything resolving to
+  `meta.public`, so `inherit` silently hands agents a destructive
+  operation.
+- **Never soften `permission` because `agent_facing` is `false`.**
+  Exposure decides who can find an ability; `permission_callback` decides
+  who may run it. A non-agent-facing ability is still executable by any
+  caller that knows its name.
+
+`../wp-abilities-api/references/rest-api.md` has the resolution tables if
+the target WP or adapter version is in question.
 
 ### 5. Surface gaps and deferred items
 
@@ -151,6 +179,12 @@ Set `reference_ability: true` on the first ability an implementer should
 land — typically the smallest, safest, highest-leverage read. This gives
 downstream workflows a deterministic starting point.
 
+Pick one that needs no required input: the reference ability must be
+invocable as `execute([])` and must declare an `input_schema` with a root
+`type: object`, a root `'default' => (object) array()`, and no required inputs.
+`wp-abilities-verify` Lint 6 enforces that complete contract.
+A list ability whose filters are all optional qualifies; one that requires an id does not.
+
 ## Verification
 
 - The audit conforms to `references/audit-schema.md` (all required top-level
@@ -159,14 +193,21 @@ downstream workflows a deterministic starting point.
 - `capability_gate` is a string for single-cap plugins or a `{read, write}`
   object for post-type-backed plugins.
 - Every ability with `backing: null` also appears in `surfaced_gaps`.
-- The doc round-trips through the validator in `audit-schema.md` "Known
-  limitations" without errors.
+- Every ability carries an `exposure` object, and every `destructive: true`
+  ability resolves it to `mcp: allow` (with a rationale) or `mcp: deny` —
+  never `inherit`.
+- The doc passes the validation procedure in
+  `../wp-abilities-verify/references/audit-schema-validation.md` (Steps 1-3)
+  with no FAIL entries.
 
 ## Failure modes / debugging
 
-- **Plugin has no REST controllers** — audit doesn't apply. Consider
-  hooks/filters-based abilities (out of scope for this skill's current
-  version) or skip abilities adoption for this plugin.
+- **Plugin has no REST controllers** — not a conclusion on its own. Run the
+  implicit pass first: a CPT-only plugin has a full REST surface with zero
+  `register_rest_route(` call sites. Only when the implicit pass also comes
+  back empty does the audit not apply — then consider hooks/filters-based
+  abilities (out of scope for this skill's current version) or skip abilities
+  adoption for this plugin.
 - **Plugin inherits controllers from another repo** (common for plugins
   extending core post-type-backed controllers like `WP_REST_Posts_Controller`,
   or extension plugins built on a parent's REST classes) — capture with
@@ -191,9 +232,9 @@ downstream workflows a deterministic starting point.
 ## Escalation
 
 - If the plugin uses an enumeration convention not covered by
-  `references/controller-enumeration.md` (neither the standard glob nor the
-  grep fallback produces a complete inventory), update that reference with
-  the new convention and open a PR so future audits cover it deterministically.
+  `references/controller-enumeration.md` (none of the three paths produces a
+  complete inventory), update that reference with the new convention and open
+  a PR so future audits cover it deterministically.
 - If capability tracing hits a mechanism not covered by
   `references/capability-gate-tracing.md`, extend that file rather than
   encoding the new case in the audit's "Notes and Surprises" only.

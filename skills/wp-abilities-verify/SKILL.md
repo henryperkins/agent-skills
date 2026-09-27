@@ -1,7 +1,7 @@
 ---
 name: wp-abilities-verify
-description: Use when verifying a WordPress plugin's Abilities API registrations, callback behavior, permissions, schemas, annotations, or an audit produced by wp-abilities-audit.
-compatibility: "Targets WordPress 6.9+ plugins (PHP 7.2.24+). Requires a runnable environment (wp-env, docker-based dev stack, or equivalent) for runtime mode; static mode runs entirely from the plugin checkout with no env. Filesystem-based agent with bash + node."
+description: Use when verifying a WordPress plugin's Abilities API registrations, callback behavior, permissions, exposure metadata (meta.public / show_in_rest / meta.mcp.public), schemas, annotations, or an audit produced by wp-abilities-audit.
+compatibility: "Targets WordPress 6.9+ plugins (PHP 7.2.24+); WordPress Core verified through: 7.1; MCP Adapter verified through: 0.6.1. Requires a runnable environment (wp-env, docker-based dev stack, or equivalent) for runtime mode; static mode runs entirely from the plugin checkout with no env. Filesystem-based agent with bash + node."
 license: GPL-2.0-or-later
 ---
 
@@ -33,14 +33,16 @@ each ability against a live environment.
   via source inspection, runs the adversarial correctness check, runs
   schema and permission lints, and validates audit docs.
 - **Runtime mode** — requires a running env. Does everything static
-  does PLUS: `wp_get_abilities()` for authoritative enumeration,
+  does PLUS: `wp_get_abilities()` (the ecosystem-filtered view) plus
+  `WP_Abilities_Registry::get_instance()->get_all_registered()` (the raw
+  registry) for authoritative enumeration,
   executes each ability with curated inputs, confirms permission
   roundtrip against real users, and runs a twin-invocation heuristic
   on `idempotent: true` abilities to flag candidates for review
   (return-value equality is a signal, not a verdict — core defines
   idempotent as "no additional effect on the environment").
 
-Both modes produce the same structured report format.
+Both modes share the structured report format; runtime mode adds the `## Runtime harness` section.
 
 A static-mode PASS means "no obvious-shape violations," not "verified
 write-free." For high-stakes plugins, run runtime mode before landing
@@ -88,13 +90,18 @@ and the execute-callback location. Use a multi-line tool (`rg
 across lines. Record each ability's source-file + line + annotations +
 callback byte range.
 
-### 3. (Runtime only) Enumerate via REST + wp-cli
+### 3. (Runtime only) Enumerate via wp-cli
 
 Read `references/runtime-harness.md`. Bring the env up using the
-command from `AGENTS.md`, then enumerate via `wp_get_abilities()` over
-wp-cli and cross-check against the static inventory. Source-only →
-FAIL (registration not firing). Runtime-only → WARN (dynamic
-registration path).
+command from `AGENTS.md`, then enumerate over wp-cli and cross-check
+against the static inventory. Enumerate **both** surfaces:
+`wp_get_abilities()` is the ecosystem-filtered view and
+`WP_Abilities_Registry::get_instance()->get_all_registered()` is the raw
+registry. Source-only *and* absent from the raw registry → FAIL
+(registration not firing). Present in the raw registry but filtered out
+→ WARN naming the `wp_get_abilities_item_include` /
+`wp_get_abilities_result` path to investigate — never call this a
+registration failure. Runtime-only → WARN (dynamic registration path).
 
 ### 4. Annotation correctness (the adversarial core)
 
@@ -104,8 +111,11 @@ and verify it matches the annotation claim:
 - `readonly: true` → callback must not write to the database, the
   options table, post / user / term / comment data, the filesystem,
   cron, or via non-GET HTTP / REST delegates.
-- `destructive: false` → callback must not delete, refund, void,
-  cancel, or trash.
+- `destructive: false` → callback must perform only additive updates.
+  Removal or reversal of existing state (delete, trash, refund, void,
+  cancel) FAILs; in-place overwrite of existing state (`update_option`,
+  `wp_update_post` on an existing row) is non-additive and at least
+  WARNs.
 - `idempotent: true` → repeated calls with the same input have no
   additional effect on the environment (per the `idempotent`
   annotation's docblock in `class-wp-ability.php`). Static catches
@@ -122,27 +132,66 @@ False positives get suppressed via an inline `// verify-ignore:
 ### 5. Permission roundtrip
 
 Read `references/permission-roundtrip.md`. Static: classify each
-`permission_callback` against the six shapes (preferred Shape A
+`permission_callback` against shapes A–F (seven classifications, because B has
+a B-bad variant; preferred Shape A
 `current_user_can(...)`; FAIL on Shape B-bad `WP_REST_Request`
 patterns or Shape E literal `true`). Runtime: anon and subscriber
-denied; admin allowed (unless deliberately public). When an audit was
-provided, cross-check the registered cap against the audit's declared
-gate.
+denied; admin allowed (unless deliberately public). On WP 7.1+ also
+grep for `wp_pre_execute_ability` listeners — one that returns a value
+bypasses the permission callback outright, and probing
+`check_permissions()` cannot see it. When an audit was provided,
+cross-check the registered cap against the audit's declared gate.
 
-### 6. Schema lints
+### 6. Exposure
 
-Read `references/schema-lints.md`. Six small principles applied to
-each ability's `input_schema`: object schemas declare
+Read `references/exposure-checks.md`. Record each ability's raw exposure keys
+(`meta.public`, `meta.show_in_rest`, `meta.mcp.public`) plus `meta.mcp.type` as
+present/absent — not just their resolved value — then judge:
+
+- an exposed ability with a weak permission callback → FAIL (an
+  unexposed one is only a WARN),
+- `meta.public: true` with no `meta.mcp.public` key → WARN, because MCP
+  exposure is being inherited rather than declared,
+- `meta.mcp.type` present with a value outside `tool|resource|prompt` →
+  FAIL, because the adapter silently promotes the ability to a tool
+  instead of hiding it — a misspelled `resources` is exposed, not
+  dropped,
+- `destructive: true` and effectively MCP-public → FAIL when the audit
+  records `exposure.mcp: allow` for a *different* set of abilities or
+  contradicts the registration; WARN when no audit was supplied or the
+  audit predates the `exposure` field.
+
+The audit-versus-registration rules key off the `exposure` object
+(`agent_facing`, `mcp`, `rationale`) in the audit's `proposed_abilities`
+entries. That field was added to the canonical schema on 2026-08-15 and is
+optional for backwards compatibility, so an audit without it is a WARN
+about the audit — never a FAIL against the plugin, and never evidence
+that an ability is not agent-facing. Skip the subsection entirely when no
+audit was supplied, and say so in the report rather than passing silently.
+
+Resolution depends on versions: core applies
+`show_in_rest ?? public ?? false` from WP 7.1, and the MCP Adapter
+applies `mcp.public ?? public ?? false` from 0.6.0 (earlier adapters
+read `mcp.public` alone). Establish both versions before computing an
+effective verdict, and state them in the report section — a verdict
+computed against the wrong adapter version reads as false confirmation.
+
+### 7. Schema lints
+
+Read `references/schema-lints.md`. Seven small principles applied to
+each ability's schemas: object schemas declare
 `additionalProperties`; required fields have descriptions; enums
 non-empty; no `$ref`; defaults are statically constant (including
-`(object) array()`); reference abilities have no required inputs.
+`(object) array()`); reference abilities have no required inputs;
+`format` values are ones the JS client can compile.
 
 Cross-reference `../wp-abilities-api/references/input-schema-gotchas.md`
-for the four runtime gotchas (defaults not injected on the
+for the five runtime gotchas (defaults not injected on the
 property-level path, pagination key drift, `empty()` on string IDs,
-direct vs indirect invocation strictness).
+direct vs indirect invocation strictness, server/client `format` list
+mismatch).
 
-### 7. Error-code vocabulary
+### 8. Error-code vocabulary
 
 Cross-reference `../wp-abilities-api/references/error-code-vocabulary.md`.
 Inspect each callback's `WP_Error` returns; non-vocabulary codes →
@@ -172,6 +221,15 @@ Last updated: <YYYY-MM-DD HH:MM>
 
 ## Permission gates
 
+## Exposure (WP <version>, MCP Adapter <version>)
+| Ability | public | show_in_rest | mcp.public | mcp.type | Effective REST | Effective MCP | Audit | Result |
+|---|---|---|---|---|---|---|---|---|
+
+## Runtime harness (runtime mode only)
+
+Omit this section in static mode. In runtime mode, include environment, raw and
+filtered enumeration, execution, permission roundtrip, and idempotency evidence.
+
 ## Schema lints
 
 ## Error-code vocabulary
@@ -190,8 +248,9 @@ WARNs without FAILs → WARN; otherwise PASS.
 - **Audit schema mismatch** — point at
   `references/audit-schema-validation.md`; don't auto-fix the audit.
 - **False positive on readonly-writes** — see the `// verify-ignore`
-  mechanism in `references/annotation-correctness.md`. Document why
-  each suppression is legitimate.
+  mechanism in `references/annotation-correctness.md`. Document evidence that
+  the flagged call does not modify the environment; cache, timestamp, and log
+  writes are not suppressible.
 - **Runtime enumeration smaller than static** — registration hook
   isn't firing. Check init hook timing, activation state, autoloader
   order.

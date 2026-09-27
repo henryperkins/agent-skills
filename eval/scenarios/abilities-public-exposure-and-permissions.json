@@ -1,0 +1,34 @@
+{
+  "name": "Expose an ability to external clients on WordPress 7.1",
+  "skills": ["wordpress-router", "wp-project-triage", "wp-abilities-api"],
+  "query": "We're on WordPress 7.1. I have an ability my-plugin/list-orders that's currently internal, and I want external clients and AI agents to be able to discover and call it. I heard 7.1 added a 'public' flag — can I just set that and drop the permission callback, since public means it's meant to be reachable anyway?",
+  "expected_behavior": [
+    "Step 1: Run wordpress-router to classify repo kind",
+    "Step 2: Run wp-project-triage to detect plugin structure and the WordPress version",
+    "Step 3: Route to wp-abilities-api skill and read references/rest-api.md for the exposure resolution",
+    "Step 4: Answer the embedded false premise directly — refuse to drop permission_callback, because meta.public controls discoverability and client exposure, not authorization",
+    "Step 5: Set meta.public to true as the general exposure declaration for WordPress 7.1, rather than reaching first for meta.show_in_rest",
+    "Step 6: Keep or add a capability-based permission_callback (for example current_user_can( 'edit_shop_orders' )) that would be correct even if the ability were fully public",
+    "Step 7: State the resolution rule: show_in_rest = meta.show_in_rest ?? meta.public ?? false, and that both default to false, with only null treated as unset",
+    "Step 8: Explain that an explicit show_in_rest false overrides public true, so it is the per-channel override rather than a second switch",
+    "Step 9: Establish the installed MCP Adapter version before answering the agent-exposure half of the question, because the rule reversed in adapter 0.6.0",
+    "Step 10: State the adapter resolution — 0.6.0+ resolves meta.mcp.public ?? meta.public ?? false, so on a current adapter meta.public true also publishes the ability to the default MCP server, while 0.5.0 and earlier read meta.mcp.public alone and ignore meta.public",
+    "Step 11: Recommend writing meta.mcp.public explicitly (true to expose, false to opt out) because that key means the same thing on every adapter version",
+    "Step 12: Note the version skew — core applies meta.public to REST only from 7.1, but the adapter honors it for MCP on 6.9 and 7.0 too, so on older cores agent exposure can precede REST exposure",
+    "Step 13: Verify by confirming the ability appears under wp-json/wp-abilities/v1/abilities, that the MCP-served set matches what was intended, and that an unauthorized user still receives ability_invalid_permissions on run"
+  ],
+  "success_criteria": [
+    "Routes to wp-abilities-api with the references/rest-api.md exposure guidance",
+    "Explicitly rejects dropping permission_callback and does not treat meta.public as an authorization boundary",
+    "Uses meta.public as the WordPress 7.1 exposure default instead of defaulting to meta.show_in_rest",
+    "Retains a real capability check in permission_callback rather than a __return_true placeholder",
+    "States the show_in_rest ?? public ?? false resolution order and the false default for both keys",
+    "Explains that an explicit show_in_rest false suppresses REST exposure even when public is true",
+    "Ties MCP exposure to the adapter version rather than stating one version-independent rule",
+    "States that MCP Adapter 0.6.0+ inherits meta.public unless meta.mcp.public opts out",
+    "Does not claim that setting meta.public leaves MCP exposure unchanged on a current adapter",
+    "Recommends declaring meta.mcp.public explicitly rather than relying on inheritance",
+    "Provides a verification step that separately confirms discoverability and permission enforcement",
+    "Does not describe exposure metadata as making an ability safe to call"
+  ]
+}

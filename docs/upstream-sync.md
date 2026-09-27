@@ -1,77 +1,136 @@
-# Upstream sync (automation plan)
+# Core AI upstream synchronization
 
-Goal: when upstream changes (WordPress core releases, Gutenberg releases, docs updates), the repo should **regenerate indexes** and (eventually) **open PRs** that update affected skills/references.
+Core AI maintenance has two deliberately separate paths:
 
-## What to automate first (low risk)
+- The **deterministic** path discovers releases, normalizes indices, reports drift, and opens an index-only pull request. It is authoritative and never needs an AI provider.
+- The **advisory** path may propose skill edits only when tagged-source evidence is supplied. Failure, missing configuration, a review-only result, or zero edits can never discard deterministic index changes.
 
-1. **Indexes and matrices**
-   - WordPress core version list (latest stable + recent).
-   - Gutenberg releases list (latest stable + recent).
-   - WordPress ↔ Gutenberg mapping table (derived from canonical docs where available).
-2. **Routing metadata refresh**
-   - Update `shared/references/*.json` files only.
+## Source registry
 
-This keeps automation deterministic and reviewable before it starts rewriting skill prose.
+`shared/scripts/core-ai-upstreams.mjs` exports `CORE_AI_UPSTREAMS`, the only release-source inventory. It contains nine release sources plus the official WordPress↔Gutenberg version map:
 
-## Later automation (higher risk)
+1. WordPress Core version-check API
+2. Gutenberg releases
+3. WordPress/ai releases
+4. MCP Adapter releases
+5. `wordpress/php-ai-client` on Packagist
+6. standalone WP AI Client releases (archived and deprecated; 0.4.0 is final, so this index is retained as a fixed compatibility record)
+7. Anthropic provider releases
+8. Google provider releases
+9. OpenAI provider releases
+10. the WordPress↔Gutenberg mapping document
 
-- “Reference chunk regeneration” from upstream docs into `skills/*/references/*.md`.
-- Task-shaped deltas (e.g. a new Gutenberg package, new block APIs, changes in theme.json schema).
-- Semi-automated PRs that include:
-  - regenerated references
-  - updated checklists
-  - updated eval scenarios
+Each registry entry owns an index file, source type, affected skills, and zero or more exact `verified through` declarations. Do not add a private source list to a workflow or consumer. Generate a reviewable inventory with:
 
-## Scripts
+```bash
+node shared/scripts/core-ai-upstreams.mjs --format markdown
+```
 
-- `shared/scripts/update-upstream-indices.mjs`
-  - Fetches upstream sources and rewrites JSON indexes in `shared/references/`.
-  - Covers WordPress core versions, Gutenberg releases, WordPress/ai (canonical AI plugin) releases, WordPress/mcp-adapter releases, WordPress/php-ai-client releases, and the WP↔Gutenberg mapping.
-  - Drafts and prereleases are dropped. That filter is load-bearing: mcp-adapter publishes a rolling `ci-artifacts` prerelease that would otherwise sort to the front and pin every skill to a tag that is not a release.
-- `shared/scripts/check-upstream-drift.mjs`
-  - Offline check (run by `eval/harness/run.mjs` and therefore CI): compares the committed release indexes against the version each skill declares in its `compatibility:` frontmatter line.
-  - When the Upstream Sync workflow's refresh PR lands a newer release, CI turns red until the affected skill is re-synced against the tagged source and its marker is bumped. This converts "someone notices the skill is stale" into a forced, reviewable follow-up.
+The registry carries one declaration outside the Core AI set: `wp-block-themes` declares `WordPress Core verified through` at minor granularity, because its theme.json reference grows a "WordPress X.Y additions" section most core minors (6.9 form elements, 7.0 `dimensionSizes`, 7.1 responsive states and `blockVisibility`). The Gutenberg plugin is deliberately **not** tracked for the block skills: it releases fortnightly, so that marker would be red most of the time and would get switched off rather than acted on. Claims about Gutenberg running ahead of core are labelled in prose instead — re-read them whenever you touch the surrounding section.
 
-### Tracked pairs
+**Adding a declaration:** add the skill to the registry entry's `affectedSkills` and `declarations`, add the exact `<Name> verified through: X.Y.Z` marker to the skill's frontmatter `compatibility:` line, then confirm the gate fires by lowering the marker and re-running `node shared/scripts/check-upstream-drift.mjs`. A drift check that cannot fail is worse than none, because it reads as coverage.
 
-| Upstream | Index | Skill marker |
-| --- | --- | --- |
-| `WordPress/ai` | `ai-plugin-releases.json` | `current canonical release: vX.Y.Z` in `skills/wp-ai-plugin/SKILL.md` |
-| `WordPress/mcp-adapter` | `mcp-adapter-releases.json` | `Verified against MCP Adapter X.Y.Z` in `skills/wp-abilities-api/SKILL.md` |
-| `WordPress/php-ai-client` | `php-ai-client-releases.json` | `Verified against PHP AI Client X.Y.Z` in `skills/wp-ai-client/SKILL.md` |
-| WordPress core | `wordpress-core-versions.json` | `and WordPress X.Y (bundles ...)` in `skills/wp-ai-client/SKILL.md`, compared at major.minor |
-| WordPress core | `wordpress-core-versions.json` | `Verified against WordPress X.Y` in `skills/wp-block-themes/SKILL.md`, compared at major.minor |
+## Deterministic refresh
 
-A pair earns a check when the skill makes version-specific claims a release can falsify. All five qualify: the AI plugin moves Experiments and Abilities every release, the adapter reversed both its packaging advice and its exposure rule in 0.6.0, the SDK made the embedding model mandatory in 1.5.0, `theme.json` grows a "WordPress X.Y additions" section most core minors, and the remaining Core claim is about which SDK version Core bundles.
+Run:
 
-**The Gutenberg plugin is deliberately not tracked.** It releases fortnightly; a marker pinned to it would be red most of the time and would get switched off rather than acted on. The block skills document what is in core, so the two core-version checks fire on the two or three minor releases a year that actually move that line. Claims about Gutenberg running ahead of core are labelled in prose instead — re-read them whenever you touch the surrounding section.
+```bash
+node shared/scripts/update-upstream-indices.mjs
+node eval/harness/run.mjs --skip-upstream-drift
+node shared/scripts/check-upstream-drift.mjs --format markdown --allow-drift
+```
 
-The core check compares only major.minor, because Core ships patch releases that never change the bundled SDK; a minor bump is the event worth re-checking.
+The updater fetches every source concurrently and normalizes every payload before writing any index. When `GITHUB_TOKEN` is present, requests to `api.github.com` receive `Authorization: Bearer <token>`; the token is never attached to WordPress.org, Packagist, or handbook requests and is never logged. Tokenless local runs remain supported. GitHub error objects, empty stable-release arrays, missing Packagist packages, and an unparseable mapping all fail before the first write. Drafts and prereleases are excluded, versions sort numerically, and output is bounded and deterministic.
 
-**Adding a pair:** add the source to `update-upstream-indices.mjs`, run it to write the index, add a `Verified against <Name> X.Y.Z` marker to the skill's `compatibility:` line, and add a `CHECKS` entry. Then confirm the gate actually fires by lowering the marker and re-running — a drift check that cannot fail is worse than none, because it reads as coverage.
+`--skip-upstream-drift` skips only the expected “index advanced before skill marker” failure. Frontmatter, scenario, parser, registry, release-conformance, and quality checks still run. The default harness remains strict.
 
-## CI / PR bot design (recommended)
+### Reading a red drift report
 
-- Schedule a workflow (daily/weekly).
-- Run `shared/scripts/update-upstream-indices.mjs`.
-- If `git diff` is non-empty, open a PR with:
-  - a summary of changes
-  - links to upstream release notes
-  - a checklist for human review (“does this impact blocks/themes/plugin workflows?”)
+A red drift row is a review requirement, not an updater failure. It names one upstream and one independently versioned skill whose marker is behind. Patch releases are checked for package/plugin sources; WordPress Core is checked at minor granularity.
 
-## Validation
+On the refresh branch:
 
-- Always run `node eval/harness/run.mjs`.
-- Optional: use Agent Skills reference validator:
-  - `skills-ref validate skills/<skill-name>`
+1. Open the release tag named in the report.
+2. Resolve behavior in this order: tagged executable source, tagged tests, release notes/changelog, then handbook prose.
+3. Update only the affected skill and one-hop references; keep historical claims explicitly versioned.
+4. Update that skill's exact frontmatter marker.
+5. Run the strict harness and any live smoke test named by the skill.
+6. Commit the release metadata with shipped skill changes so marketplace consumers receive them.
 
-The updater is transactional with respect to parsing: it fetches and normalizes all three sources before writing any index. If the canonical WordPress/Gutenberg mapping cannot be parsed into at least one row, the command exits non-zero and preserves the checked-in indexes. Never accept `table-not-found` or an empty `rows` array as a successful refresh.
+Do not make the drift green by editing a marker without source review.
 
-## Canonical sources
+## Upstream Sync workflow
 
-The automation should prefer canonical sources and avoid scraping where possible.
+`.github/workflows/upstream-sync.yml` runs weekly and supports manual dispatch. A no-change rerun creates no pull request. When indices change it:
 
-- WordPress core releases and API endpoints (official WordPress APIs)
-- Gutenberg releases (GitHub releases)
-- WordPress developer docs (used for the WP↔Gutenberg mapping when no API exists)
+1. runs complete non-drift validation;
+2. generates the source inventory and `upstream-drift.md` from the registry;
+3. uploads both as workflow evidence;
+4. embeds both in the pull request body; and
+5. limits the automated commit to `shared/references/**`.
 
+This makes the refresh pull request self-validating even when GitHub declines to start another workflow recursively.
+
+### Pull request token setup
+
+Prefer a fine-grained PAT or GitHub App installation token stored as the Actions secret `UPSTREAM_SYNC_TOKEN`. Grant only the target repository's:
+
+- Contents: read and write
+- Pull requests: read and write
+
+Set an owner and expiry, rotate the token on the repository's normal secret-rotation schedule, and revoke it immediately if ownership changes. Never put the token in repository variables, logs, or workflow artifacts.
+
+If `UPSTREAM_SYNC_TOKEN` is absent, the workflow falls back to `GITHUB_TOKEN`. Pull requests created with that token may not trigger normal `pull_request` workflows recursively, so the workflow discloses fallback mode and performs validation/reporting before PR creation.
+
+## Schedule ownership
+
+`.github/workflows/upstream-sync.yml` is the sole weekly scheduled index owner. No other workflow in this repository may declare a `schedule:` trigger for upstream maintenance; two schedulers would race for the same refresh branch and produce conflicting index pull requests.
+
+`.github/workflows/ai-skill-maintenance.yml` is therefore **manual or release-dispatch only**: it runs on `workflow_dispatch` or on a `repository_dispatch` of type `upstream-release`, never on a cron. Its fallback branch is `chore/ai-maintenance-upstream-indices`, deliberately distinct from Upstream Sync's `chore/core-ai-upstream-indices`, so the two paths can never overwrite each other's branch.
+
+## AI maintenance configuration
+
+Index refresh and state-hash verification need **no AI provider credentials**. `node shared/scripts/update-upstream-indices.mjs` and `node shared/scripts/ai-generate-updates.mjs --print-state-hash` are deterministic and provider-independent. The updater optionally reads `GITHUB_TOKEN` only to authenticate GitHub API requests; the state-hash command reads no environment secret:
+
+```bash
+node shared/scripts/update-upstream-indices.mjs
+node shared/scripts/ai-generate-updates.mjs --print-state-hash
+```
+
+`ANTHROPIC_API_KEY` (Actions secret) and `ANTHROPIC_MODEL` (Actions variable) are required **only for advisory analysis**:
+
+- Actions secret `ANTHROPIC_API_KEY`
+- Actions variable `ANTHROPIC_MODEL`
+
+Inspect configuration without a network call or exposing the key:
+
+```bash
+node shared/scripts/ai-generate-updates.mjs --check-config
+```
+
+Missing configuration produces a **redacted skip, not a failed index refresh**. The workflow inspects `--check-config` before installing the SDK; when `configured` is false it records outcome `skipped` with a category such as `missing-api-key` or `missing-model` and still opens the deterministic index pull request.
+
+The generator canonicalizes the complete normalized content of every registry-owned index (sorting object keys while preserving array order), hashes each source with SHA-256, and hashes the resulting schema-3 state again. Versions and the version-map row count remain human-readable metadata; per-source fingerprints decide whether content changed. A same-count mapping replacement or a maintenance release below the latest version therefore changes both the source fingerprint and the overall state. Each detected source uses the registry's affected-skill list. Without supplied tagged-file evidence, the generator records a review recommendation instead of rewriting a skill. Its error artifact contains only a redacted category such as `missing-api-key`, `rate-limit`, or `model-access`.
+
+**Advisory sync state does not persist.** Because no job hands a workspace to another, the `.github/state/last-sync.json` the generator would write in `generate-updates` never reaches the pull request `create-index-pr` opens from its own fresh checkout. The `add-paths` entry for it is therefore inert while generated edits are disabled, and each advisory run re-triages the same deltas from the committed state. That is acceptable for an advisory path — the deterministic index refresh does not depend on it — but do not read a repeated advisory recommendation as a new one, and expect this to need a deliberate design decision if generated edits are ever re-enabled.
+
+**Generated skill edits and autonomous release bumps are disabled** until tagged upstream files can be supplied to the generator. Detected changes always carry `taggedFiles: []`, so the evidence gate can never be satisfied and no generated-skill pull request job exists. Version bumps stay manual and coordinated with the shipped skill content.
+
+If generation fails, is skipped, or produces no edits, the workflow validates and opens the index-only path with the drift report. It must never describe that PR as skill alignment.
+
+### No workspace artifact: each job reverifies the snapshot
+
+Jobs do not hand a mutated workspace to each other. `refresh-indices` publishes only the canonical state hash as a job output. **Each consuming job reruns the deterministic updater and rejects a hash mismatch** — it recomputes `--print-state-hash` from complete per-source index fingerprints and fails closed with `Upstream state changed during this run` when the recomputed hash differs from the refresh job's. Any normalized index-content change landing mid-run therefore aborts the run instead of shipping a mixed snapshot, and no job downloads an index artifact.
+
+## Safe reruns
+
+- Re-running either workflow is safe: deterministic JSON makes an unchanged run a no-op.
+- Do not delete a refresh branch to hide red drift; update the named skill on that branch or close the PR with a recorded reason.
+- If one source endpoint is temporarily unavailable, rerun later. Never hand-author an empty index.
+- A successful advisory dry run is still not approval to merge generated prose; tagged citations and live verification remain required.
+
+## Abilities source priority
+
+The Abilities API is in Core from WordPress 6.9. Use `wordpress-develop` release branches (`7.1`, `7.0`, `6.9`) rather than `trunk` to answer release-specific questions. The archived `WordPress/abilities-api` feature plugin is not a current behavior source or pre-6.9 shim.
+
+For external exposure, MCP Adapter is independently versioned and security-sensitive. Its 0.6.0 release changed fallback exposure to `meta.mcp.public ?? meta.public ?? false`, so Core and MCP markers must remain independent. Gutenberg's `packages/abilities` and `packages/core-abilities` remain the canonical client-side source.

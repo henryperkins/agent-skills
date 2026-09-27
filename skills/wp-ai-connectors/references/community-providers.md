@@ -11,20 +11,19 @@ OpenRouter is itself a router across many upstream providers (Anthropic, OpenAI,
 - A single provider declaration lists hundreds of models, drawn from OpenRouter's `/models` endpoint.
 - The models list shouldn't be hardcoded — fetch and cache (transient with a 24-hour expiry is a reasonable default).
 - Capabilities for each model are also exposed via OpenRouter's API, so the declarations can be data-driven rather than maintained by hand.
-- Model IDs follow OpenRouter's `provider/model` convention (e.g., `anthropic/claude-sonnet-4.6`) which is distinct from the flagship plugins. Site owners using both an aggregator and a direct provider will see overlapping models with different IDs.
+- Model IDs follow OpenRouter's `provider/model` convention (e.g., `anthropic/claude-sonnet-5`) which is distinct from the flagship plugins. Site owners using both an aggregator and a direct provider will see overlapping models with different IDs. Treat the model slug as illustrative — resolve the exact string from the aggregator's own catalog endpoint rather than hardcoding it, since vendor lineups turn over faster than this reference does.
 
 When to choose this pattern: aggregator services, multi-model gateways, internal LLM routers. Fetch-and-cache the catalog rather than enumerating it in PHP.
 
 ## Ollama — the local provider pattern
 
-Ollama runs models on the user's own machine. Authentication method is `none`. Distinctives:
+Ollama usually runs models on the user's own machine. The shipped plugin the Call for Testing post links (`Fueled/ai-provider-for-ollama`) nonetheless declares `RequestAuthenticationMethod::apiKey()`, not `none` — an empty key is fine against a local daemon, and a real one is needed for Ollama Cloud. That is the right call for any local provider: core assigns a Settings → Connectors render component only for `api_key` (and `application_password` from 7.1), so `none` buys you no card at all. Distinctives:
 
-- No API key. The connector card should show a "no authentication required" state, not "missing key."
-- The base URL (default `http://localhost:11434`) is the actual configuration that matters. Ollama users on non-default ports or remote installs need a way to set this.
-- The model list is whatever the user has pulled locally (`ollama list`). The provider plugin must query Ollama at runtime to know what's available — there's no cloud catalog.
+- The base URL (default `http://localhost:11434`) is the configuration that actually matters, and it is *not* on the connector card. The plugin resolves it in order — `OLLAMA_HOST` from the environment, then its own Settings → Ollama option, then the default — and `putenv()`s the winner so the SDK's `baseUrl()` picks it up. Users on non-default ports, remote installs, or Ollama Cloud need that screen.
+- The model list is whatever the user has pulled locally. The provider plugin must query Ollama at runtime (`GET /api/tags`, then `/api/show` per model for capabilities) to know what's available — there's no cloud catalog.
 - Connection failures (Ollama not running, port wrong) need clear surfaced errors. Site owners may not realize they need to start the daemon.
 
-When to choose this pattern: any local-first or self-hosted backend (Ollama, llama.cpp servers, vLLM, LocalAI). Treat `none` auth as a UX prompt to configure the *endpoint* instead.
+When to choose this pattern: any local-first or self-hosted backend (Ollama, llama.cpp servers, vLLM, LocalAI). Declare `api_key` so the card exists at all, and put the *endpoint* on your own settings screen.
 
 ## Mistral — the direct API pattern
 
@@ -68,7 +67,7 @@ The connector card itself doesn't show this in WP 7.0, but `getProviderMetadata(
 
 ### Don't reimplement Settings → Connectors
 
-If your authentication needs are met by `api_key` or `none`, let the core screen handle the UX. Adding a duplicate settings screen inside your provider plugin fragments the admin experience. If you genuinely need a custom UI (OAuth, multi-tenant, model selection per role), build it as a *complement* to the connector card rather than a replacement.
+If your authentication needs are met by `api_key`, let the core screen handle the UX — declaring `none` opts you out of it entirely, since core renders no card for that method. Adding a duplicate settings screen inside your provider plugin fragments the admin experience. If you genuinely need a custom UI (OAuth, multi-tenant, model selection per role), build it as a *complement* to the connector card rather than a replacement.
 
 ## What to avoid
 

@@ -7,6 +7,46 @@ WordPress 6.9 introduced the server-side Abilities API. WordPress 7.0 added the 
 - **`@wordpress/abilities`** — pure state management, no server dependencies. Provides the store, registration, querying, and execution. Use when you only need the store; works in non-WordPress contexts too.
 - **`@wordpress/core-abilities`** — the WordPress integration layer. When loaded, it auto-fetches all server-registered abilities and categories via `/wp-abilities/v1/` and registers them in the `@wordpress/abilities` store with execution callbacks. Use this for the common case.
 
+### Registration is asynchronous — await `ready`
+
+`@wordpress/core-abilities` starts fetching on import and exports a single thing: a `ready` promise that
+resolves once both round trips (categories, then abilities) have **settled**.
+
+```ts
+// packages/core-abilities/src/index.ts — the package's only export.
+export const ready: Promise< void > = initialize();
+```
+
+**`ready` proves the attempts settled, not succeeded.** Verified in Gutenberg 23.9.0,
+`initializeCategories()` and `initializeAbilities()` each wrap their `apiFetch` call in
+`try { … } catch ( error ) { console.error( … ); }`, so neither can reject and `initialize()` always
+fulfills. A 401/403 from the REST namespace, an offline browser, and a clean empty registry are
+indistinguishable at the await: after `await ready`, an empty store can still mean an authentication
+or network failure, with only a `console.error` as evidence. The catch also swallows throws
+from inside the registration loop. If the categories request fails, the first ability that references
+a missing category throws and aborts the loop, leaving **zero** server abilities. A failure partway
+through a valid list (for example, a duplicate name) can leave a partial set. Do not read a resolved `ready` as "the server has no abilities"; check the
+browser console and the `/wp-abilities/v1/abilities` response before concluding that.
+
+Until `ready` settles, the store holds no server abilities. `getAbilities()` returns an empty array and
+`executeAbility( 'some/server-ability' )` throws `Error: Ability not found: some/server-ability` — **an error
+that names the ability but not the race**, which is why it gets misread as "the plugin never registered it".
+Every imperative call against server-registered abilities must await it first:
+
+```js
+const { ready } = await import( '@wordpress/core-abilities' );
+await ready;
+// Server abilities are now in the store.
+```
+
+Declare `@wordpress/core-abilities` as a dependency of the importing module. A static dependency is
+evaluated before the importer; without a declared dependency, its bare specifier is absent from the
+import map and linking fails. Use a dynamic dependency for the `await import()` form below; it defers
+the REST requests until the feature actually needs abilities.
+
+`useSelect` consumers do not need this — they re-render when the store fills. Only imperative reads and
+executions race it.
+
 ## Enqueuing
 
 ### Server abilities + client UI (most common)
@@ -16,7 +56,12 @@ add_action( 'init', function () {
     wp_register_script_module(
         'my-plugin-admin',
         plugins_url( 'build/admin.js', __FILE__ ),
-        array( '@wordpress/abilities' ),
+        array(
+            array(
+                'id'     => '@wordpress/core-abilities',
+                'import' => 'dynamic',
+            ),
+        ),
         '1.0.0'
     );
 } );
@@ -26,12 +71,16 @@ add_action( 'admin_enqueue_scripts', function ( $hook_suffix ) {
         return;
     }
 
-    wp_enqueue_script_module( '@wordpress/core-abilities' );
+    // The built script modules dereference these classic wp globals at evaluation.
+    wp_enqueue_script( 'wp-data' );
+    wp_enqueue_script( 'wp-i18n' );
+    wp_enqueue_script( 'wp-api-fetch' );
+    wp_enqueue_script( 'wp-url' );
     wp_enqueue_script_module( 'my-plugin-admin' );
 } );
 ```
 
-`wp_register_script_module()` makes the plugin's compiled script module available; it does not load it. `wp_enqueue_script_module()` loads it on the matching screen. Keep this page-scoped enqueue pattern, and explicitly enqueue `@wordpress/core-abilities`: it loads its `@wordpress/abilities` dependency and registers server abilities in the store automatically.
+`wp_register_script_module()` makes the plugin module available and records the dynamic dependency so WordPress includes `@wordpress/core-abilities` and its transitive `@wordpress/abilities` dependency in the import map. It does not load the plugin module; the page-scoped enqueue does. WordPress's script-module registry does not enqueue the classic dependencies recorded in the build manifest, so load the `wp.data`, `wp.i18n`, `wp.apiFetch`, and `wp.url` globals explicitly as shown. Await `ready` before any imperative read or execution.
 
 ### Client-only abilities on a specific page
 
@@ -40,6 +89,8 @@ add_action( 'admin_enqueue_scripts', function ( $hook_suffix ) {
     if ( 'my-plugin-page' !== $hook_suffix ) {
         return;
     }
+    wp_enqueue_script( 'wp-data' );
+    wp_enqueue_script( 'wp-i18n' );
     wp_enqueue_script_module( '@wordpress/abilities' );
 } );
 ```
@@ -102,6 +153,10 @@ registerAbility( {
 } );
 ```
 
+The client registry accepts names with two through four slash-separated segments. Server abilities
+in WordPress 7.1 accept exactly `namespace/ability`, so use that two-segment shape for anything that
+mirrors or may later move to PHP. Longer names are client-only.
+
 ### Input/output schemas (recommended)
 
 JSON Schema (draft-04). Inputs are validated before `callback` runs; outputs are validated after. Validation failures throw `ability_invalid_input` or `ability_invalid_output`.
@@ -162,7 +217,7 @@ registerAbility( {
 } );
 ```
 
-This client check controls discoverability and execution in the UI; server-backed work still needs a server-side `permission_callback`. Returning false throws `ability_permission_denied`.
+`permissionCallback` gates execution and nothing else: `executeAbility()` awaits it and throws `ability_permission_denied` on a falsy result. The store selectors ignore it — `getAbilities()`, `getAbility()`, and the `core/abilities` store still hand back the ability, label and description included, to a user who cannot run it. A UI that lists abilities has to filter by permission itself, or skip the `registerAbility()` call entirely when the user lacks the capability. Server-backed work still needs a server-side `permission_callback`.
 
 ## Annotations
 
@@ -197,6 +252,8 @@ When `executeAbility` calls a server-registered ability through the REST API, th
 
 This matters for caching, logging, and CSRF posture. A read-only ability should always be marked `readonly` so it gets `GET` and benefits from any HTTP caching layer.
 
+The package is not choosing a convention here — it is matching one the server enforces. The run controller derives the same single legal method from the same annotations and returns `rest_ability_invalid_method` (HTTP 405) for anything else, so a hand-rolled client must apply this mapping too. See "The `/run` method is enforced, not conventional" in `rest-api.md`.
+
 ## Querying
 
 ```js
@@ -206,6 +263,10 @@ const {
     getAbilityCategories,
     getAbilityCategory,
 } = await import( '@wordpress/abilities' );
+
+// Required before reading server-registered abilities; without it these return empty.
+const { ready } = await import( '@wordpress/core-abilities' );
+await ready;
 
 const all      = getAbilities();
 const filtered = getAbilities( { category: 'data-retrieval' } );
@@ -235,12 +296,16 @@ function AbilitiesList() {
 }
 ```
 
-Use the imported `store` constant rather than referencing the store by string name. The string key differs by environment: the standalone `WordPress/abilities-api` plugin registers it as `'abilities-api/abilities'`; the WP 7.0 dev note documents it as `'core/abilities'`. Importing `store` sidesteps the discrepancy.
+Use the imported `store` constant rather than referencing the store by string name. The canonical key is `'core/abilities'` — that is what the WP 7.0 dev note documents and what `@wordpress/abilities` registers. You may still meet `'abilities-api/abilities'` in older code: that was the key used by the standalone, now-archived `WordPress/abilities-api` feature plugin. Importing `store` keeps that history from mattering.
 
 ## Executing
 
 ```js
 import { executeAbility } from '@wordpress/abilities';
+
+// Server-registered target, so wait for registration before executing.
+const { ready } = await import( '@wordpress/core-abilities' );
+await ready;
 
 try {
     const result = await executeAbility( 'my-plugin/create-item', {
@@ -250,9 +315,16 @@ try {
     } );
 } catch ( error ) {
     switch ( error.code ) {
+        // Raised by executeAbility itself.
         case 'ability_permission_denied':
         case 'ability_invalid_input':
         case 'ability_invalid_output':
+            // Handle each appropriately.
+            break;
+        // Raised by apiFetch for server-registered targets.
+        case 'rest_ability_cannot_execute':  // 401/403 — server permission_callback said no.
+        case 'rest_ability_not_found':       // 404 — unregistered, or show_in_rest: false.
+        case 'rest_ability_invalid_method':  // 405 — annotations disagree with the method sent.
             // Handle each appropriately.
             break;
         default:
@@ -261,7 +333,9 @@ try {
 }
 ```
 
-`executeAbility` works for both client- and server-registered abilities. For server abilities loaded via `@wordpress/core-abilities`, execution is dispatched over REST automatically using the method derived from annotations.
+The two families are not interchangeable. `ability_permission_denied` only ever fires for a client-registered ability, because the REST payload carries no `permissionCallback` — a server ability's permission failure arrives as `rest_ability_cannot_execute`. `ability_invalid_input` and `ability_invalid_output` fire for both: the client validates against the `input_schema`/`output_schema` it fetched over REST before and after the round trip, so a server ability can fail validation client-side and never reach the server at all.
+
+`executeAbility` works for both client- and server-registered abilities. For server abilities loaded via `@wordpress/core-abilities`, execution is dispatched over REST automatically using the method derived from annotations — but only once `ready` has resolved. Client-registered abilities are available synchronously and need no wait.
 
 ## Unregistering
 
@@ -272,7 +346,11 @@ unregisterAbility( 'my-plugin/navigate-to-settings' );
 unregisterAbilityCategory( 'my-plugin-actions' );
 ```
 
-Only client-registered abilities and categories can be unregistered from the client. Server-registered ones are removed by unregistering on the server side.
+Both functions remove any entry from the store by name or slug, including the ones `@wordpress/core-abilities` registered from the server.
+
+The `meta.annotations.serverRegistered` flag that `@wordpress/core-abilities` stamps *is* read — but only on the way in. `registerAbility()` filters the annotation allow-list and then sets `annotations.clientRegistered = true` **only when `annotations.serverRegistered` is falsy**, so a server-fetched ability is never mislabelled as client-registered. **Unregistration does not check it.** `unregisterAbility()` is a bare action object and the reducer deletes the entry unconditionally, so there is no "this one came from the server, refuse" guard anywhere — despite an `@throws {Error} If the ability is server-side and cannot be unregistered` line in the `api.ts` JSDoc that the implementation does not honour (verified in Gutenberg 23.9.0).
+
+Unregistering a server ability client-side only hides it from this page's store; the `/run` route still executes it, and the next page load fetches it back. To actually retire a server ability, unregister it in PHP.
 
 ## Sources
 

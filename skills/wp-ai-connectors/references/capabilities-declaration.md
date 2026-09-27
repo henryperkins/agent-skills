@@ -42,7 +42,7 @@ Names such as `json_response`, `system_instruction`, `function_calling`, and `st
 
 `FunctionDeclaration` takes an optional fourth constructor argument, `array $annotations`, exposed via `getAnnotations()` and serialized under an `annotations` key. The values are open-ended and JSON-serializable; the SDK does not interpret them, so a provider may read them to drive provider-native behaviour. Treat them as advisory hints, not contract — a declaration with no annotations is valid and yields `[]`.
 
-Deferred tool loading is still in flux upstream: the 1.5.0 development line briefly added an `OptionEnum::toolSearch()` option and a `PROVIDER_DATA` message-part type, then walked both back before the tag ("Keep tool search policy in providers and limit core to conversation data"). Neither exists in 1.5.0. Do not declare or consume them.
+Deferred tool loading is still in flux upstream: the pull request that added annotations (#282) briefly carried an `OptionEnum::toolSearch()` option and a `PROVIDER_DATA` message-part type, then dropped both before it merged ("Keep tool search policy in providers and limit core to conversation data"). Neither ever reached trunk, and neither exists in 1.5.0. Do not declare or consume them.
 
 ## SupportedOption and modalities
 
@@ -55,7 +55,15 @@ new SupportedOption( OptionEnum::dimensions(), array( 256, 512, 1024 ) );
 
 Declare input modalities with `OptionEnum::inputModalities()` and output modalities with `OptionEnum::outputModalities()`. Supported input values are lists of exact modality combinations. A model supporting text-only, image-only, and mixed text/image input must list all three combinations; the mixed combination does not imply either single-modality combination. Use unrestricted support only when the provider genuinely accepts every combination.
 
+## Model-aware options and empty tool calls
+
+Provider metadata must be model-aware. Anthropic 1.0.4 stopped advertising `temperature`, `topP`, and `topK` for Claude Opus 4.7 and later Opus 4.x models, and for every Claude 5 model, because those models reject non-default sampling values. Unknown major-version-5-or-newer model IDs are treated conservatively. Apply the same rule in a custom provider: advertise an option only for models that accept it, so automatic selection cannot choose a model that will reject the resolved config.
+
+Function-call conversion also needs an explicit empty-value contract. Anthropic 1.0.4 converts null or empty tool-call arguments to an empty JSON object (`{}`) on outbound `tool_use.input`, because the API rejects an empty JSON array (`[]`), then normalizes an empty object/array response back to null SDK arguments. When implementing function calling, test both directions and preserve the provider's required JSON object shape; “no arguments” must not become the wrong container type.
+
 ## Embedding provider contract (PHP AI Client 1.4+)
+
+> **Core does not bundle this.** WP 7.0 and 7.1 vendor a pre-1.4 SDK: `src/wp-includes/php-ai-client/` has no `src/Providers/Models/EmbeddingGeneration/`, no `EmbeddingResult`/`EmbeddingBuilder`, and no `ModelConfig::KEY_DIMENSIONS` (so `OptionEnum::dimensions()` does not resolve). `CapabilityEnum::EMBEDDING_GENERATION` *is* in the bundled enum, which makes the surface look present. Keep `wordpress/php-ai-client: ^1.4` in `require-dev` and gate everything below on `interface_exists( EmbeddingGenerationModelInterface::class )` — the pattern `WordPress/ai-provider-for-openai` 1.1.0 ships — rather than bundling a second SDK copy that would collide with the one `wp-settings.php` already autoloads.
 
 An automatically discoverable text embedding model with configurable dimensions needs metadata shaped like:
 
@@ -87,7 +95,7 @@ Read `$this->getConfig()->getDimensions()`, forward it when present, preserve in
 
 There is no implemented `EmbeddingOperation` or `EmbeddingGenerationOperationModelInterface` as of 1.5.0; use the synchronous interface above.
 
-The provider-side contract is unchanged between 1.4.0 and 1.5.0. What changed in 1.5.0 is the *consumer* side: `EmbeddingBuilder` no longer resolves a model, so callers must name one with `usingProviderModel()` or `usingModel()`. Your metadata is what they match against when they look one up, which makes accurate `dimensions()` and input-modality declarations more load-bearing than before, not less.
+The provider-facing interfaces, enums, and DTOs are byte-identical between 1.4.0 and 1.5.0, but 1.5.0 changes how your metadata is used. On the consumer side, `EmbeddingBuilder` no longer resolves a model, so callers must name one with `usingProviderModel()` or `usingModel()`. And the SDK now validates an explicitly named embedding model against its declared metadata — the capability, `inputModalities`, and supported options such as `dimensions()` must match the request, and the provider must report itself configured — where 1.4.0 used an explicitly named model unchecked. Metadata that omitted a modality or option, which 1.4 tolerated, is now rejected, so accurate declarations are more load-bearing than before, not less. 1.5.0 also adds an optional protected hook, `AbstractApiBasedModelMetadataDirectory::createModelMetadataForExplicitModelIds()` (#231), for building metadata for explicitly requested model IDs without a list-models request.
 
 ## Logo and brand assets
 
@@ -95,7 +103,7 @@ Connector cards display a logo (`logo_url` in the connector array). Conventions 
 
 - **SVG preferred.** The card scales the logo; SVG stays sharp.
 - **Square or near-square aspect.** Wide horizontal logos crop awkwardly.
-- **Hosted on your provider's CDN, not WordPress.org.** The card just needs a URL; bundling the asset in the plugin is fine but `logo_url` should point to wherever the screen actually fetches from. Plugin-bundled assets work via `plugins_url()`.
+- **Bundled in the plugin, never remote.** An auto-discovered AI provider supplies its logo as the 7th `ProviderMetadata` constructor argument — an absolute *filesystem* path, gated on `version_compare( AiClient::VERSION, '1.3.0', '>=' )` since that parameter arrived in SDK 1.3.0 — and core resolves it to a URL itself via `plugins_url()`. Only paths inside `WP_PLUGIN_DIR` / `WPMU_PLUGIN_DIR` survive: anything else either fails `file_exists()` (a CDN URL always does) or trips `_doing_it_wrong()`, and the card renders with no logo. `logo_url` is settable directly only through a manual `WP_Connector_Registry::register()` or a `wp_connectors_init` override.
 - **Match the provider's official brand.** Don't invent a logo; use the upstream's asset.
 
 ## Versioning model declarations

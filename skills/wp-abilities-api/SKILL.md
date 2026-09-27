@@ -1,7 +1,7 @@
 ---
 name: wp-abilities-api
-description: "Use when working with the WordPress Abilities API (wp_register_ability, wp_register_ability_category, /wp-json/wp-abilities/v1/*, @wordpress/abilities, @wordpress/core-abilities) including defining abilities, categories, meta, REST exposure, permissions checks for clients, the WP 7.0+ client-side JS API (registerAbility, executeAbility, the core/abilities store), and exposing abilities to external AI agents via the MCP Adapter (Claude Desktop, Cursor, ChatGPT)."
-compatibility: "Targets WordPress 6.9+ (PHP 7.2.24+). Optional MCP exposure: Verified against MCP Adapter 0.6.1 (requires WordPress 6.9+ and PHP 7.4+). Filesystem-based agent with bash + node. Some workflows require WP-CLI."
+description: "Use when working with the WordPress Abilities API (wp_register_ability, wp_register_ability_category, wp_get_abilities, /wp-json/wp-abilities/v1/*, @wordpress/abilities, @wordpress/core-abilities) including defining abilities, categories, meta, the meta.public and show_in_rest exposure flags, filtered ability discovery, permissions checks for clients, the seven execution lifecycle hooks new in WP 7.1 (wp_ability_invoked, wp_pre_execute_ability, wp_ability_normalize_input, wp_ability_validate_input, wp_ability_permission_result, wp_ability_execute_result, wp_ability_validate_output) and the two 6.9 actions wp_before_execute_ability and wp_after_execute_ability that only gained a trailing ability argument in 7.1, the WP 7.0+ client-side JS API (registerAbility, executeAbility, the core/abilities store), and exposing abilities to external AI agents via the MCP Adapter (Claude Desktop, Cursor, ChatGPT)."
+compatibility: "Targets WordPress 6.9+ (PHP 7.2.24+ on 6.9; PHP 7.4+ on 7.0/7.1); sections marked WP 7.1+ do not exist on 6.9/7.0. WordPress Core verified through: 7.1; Gutenberg verified through: 24.0.0 (`packages/abilities` and `packages/core-abilities`); MCP Adapter verified through: 0.6.1 (requires WordPress 6.9+ and PHP 7.4+). Filesystem-based agent with bash + node. Some workflows require WP-CLI."
 license: GPL-2.0-or-later
 ---
 
@@ -29,7 +29,17 @@ Before deciding what to register, read `references/domain-vs-projection.md` — 
 ### 1) Confirm availability and version constraints
 
 - If this is WP core work, check `signals.isWpCoreCheckout` and `versions.wordpress.core`.
-- If the project targets WP < 6.9, you may need the Abilities API plugin/package rather than relying on core.
+- The Abilities API is in core from **6.9** onward. The `WordPress/abilities-api` feature plugin
+  is archived and read-only — do not install it, and do not treat it as a
+  shim for older sites. A project targeting WP < 6.9 should feature-detect
+  (`function_exists( 'wp_register_ability' )`) and degrade.
+- **Establish the target version before writing 7.1 features.** WP 7.1 adds the `meta.public`
+  exposure flag, seven execution lifecycle hooks, `wp_get_abilities()` filtering args, and REST
+  input type coercion — and changes the arity of the two lifecycle actions that already existed.
+  Ask for the target version if triage does not settle it. Most of the 7.1 surface degrades
+  *silently* on 7.0 (`wp_get_abilities()` returns the full registry, new hooks never fire), so
+  guessing produces bugs that pass a smoke test — while the arity change fails *loudly*, with a
+  fatal. See `references/execution-lifecycle.md` and `references/rest-api.md`.
 
 ### 2) Find existing Abilities usage
 
@@ -37,16 +47,21 @@ Search for these in the repo:
 
 - `wp_register_ability(`
 - `wp_register_ability_category(`
+- `wp_get_abilities(`
 - `wp_abilities_api_init`
 - `wp_abilities_api_categories_init`
+- `wp_register_ability_args` (the filter that rewrites registration args before validation)
 - `wp-abilities/v1`
 - `@wordpress/abilities`
+- `wp_ability_` / `wp_pre_execute_ability` / `wp_before_execute_ability` / `wp_after_execute_ability` (lifecycle hooks)
 
 If none exist, decide whether you’re introducing Abilities API fresh (new registrations + client consumption) or only consuming.
 
 ### 3) Register categories (optional)
 
-If you need a logical grouping, register an ability category early (see `references/php-registration.md`).
+If you need a logical grouping, register an ability category early with
+`wp_register_ability_category()` on `wp_abilities_api_categories_init` — before the abilities that
+name it, or those registrations are rejected (see `references/php-registration.md`).
 
 ### 4) Register abilities (PHP)
 
@@ -58,6 +73,14 @@ For shared helper patterns when multiple execute callbacks delegate to existing 
 
 For standardized `WP_Error` codes that let agents reason about retry vs. escalation, see `references/error-code-vocabulary.md`.
 
+**Name it so Core accepts it.** `WP_Abilities_Registry::register()` enforces
+`/^[a-z0-9-]+\/[a-z0-9-]+$/` — exactly one slash, lowercase alphanumerics and hyphens on both
+sides. `my-plugin/get-info` is valid; `my_plugin/get-info` is not, because **underscores are
+rejected**, and so are uppercase and a third segment. A rejected name is `_doing_it_wrong()` plus
+`return null` *before* `wp_register_ability_args` fires, so the only symptom is that the ability
+is not there. Ability *category* slugs use a different pattern (`/^[a-z0-9]+(?:-[a-z0-9]+)*$/`, no
+slash) — see `references/php-registration.md`.
+
 Implement the ability in PHP registration with:
 
 - stable `id` (namespaced),
@@ -65,31 +88,164 @@ Implement the ability in PHP registration with:
 - `category`,
 - `meta`:
   - add `readonly: true` when the ability is informational,
-  - set `show_in_rest: true` for abilities you want visible to clients,
-  - decide `public` and `mcp.public` deliberately. On WP 7.1+, `meta.public` seeds `show_in_rest`, and MCP Adapter 0.6+ inherits MCP exposure from it — one flag opens two surfaces. Write `mcp.public` explicitly, including `false` to keep a REST-public ability off MCP.
+  - on **WP 7.1+**, set `public: true` for abilities you intend clients to see, and use
+    `show_in_rest` only to override that for one channel;
+  - on **WP 6.9/7.0**, set `show_in_rest: true` — core ignores `public` there;
+  - decide `mcp.public` in the same edit: MCP Adapter 0.6.0+ inherits MCP exposure from
+    `meta.public`, so one flag opens two surfaces. Write `mcp.public` explicitly, including
+    `false` to keep a REST-public ability off MCP.
+
+Always write `permission_callback` as though the ability were fully exposed. Exposure metadata
+decides who can *find* an ability, never who may *run* it (see step 5).
 
 Use the documented init hooks for Abilities API registration so they load at the right time (see `references/php-registration.md`).
 
-For worked examples of read-only, permission-gated abilities (single-item *and* collection modes, field-level access gated on `current_user_can`), study the AI plugin's `core/read-content`, `core/read-users`, and `core/read-settings` abilities (WordPress/ai 1.3.0, `includes/Abilities/Gated/`). They mirror the WordPress core ability classes closely and use the `show_in_abilities` registration flag to decide which post types/settings to expose. As of AI plugin 1.3.0 they only register when the **Custom Abilities** experiment is enabled.
+For worked examples of read-only, permission-gated abilities (single-item *and* collection modes,
+field-level access gated on `current_user_can`), study the AI plugin's `core/read-content`,
+`core/read-users`, and `core/read-settings` abilities. In WordPress/ai 1.3.0 they are gated by the
+Custom Abilities experiment: thin wrappers live under `includes/Abilities/Gated/`, and the real
+schemas and permission callbacks live in the domain directories — `includes/Abilities/Content/Content.php`,
+`includes/Abilities/Users/Users.php`, and `includes/Abilities/Settings/Settings.php`.
+They use the `show_in_abilities` registration flag to decide which post types/settings to expose.
+Note their status: these were **proposed for core in 7.1 and deferred** — the merge proposal was
+punted, so they ship only in the AI plugin for now, with 7.2 the earliest target. The abilities
+actually registered by core today are the 6.9 `core/get-*` family (`core/get-site-info`,
+`core/get-user-info`, `core/get-environment-info`), which 7.1 migrated onto `meta.public`. Do not
+tell a user that `core/read-*` is available from core, and do not assume the two families share a
+shape — contributors have discussed making `core/get-*` compatibility aliases, but that has not
+happened.
 
-### 5) Confirm REST exposure
+**That migration was not behavior-preserving, and it is the cleanest worked example of the
+exposure trap in step 5.** On 7.0, `core/get-user-info` was registered with
+`'show_in_rest' => false`; on 7.1 it is registered with `'public' => true` and no override, which
+resolves to `show_in_rest: true`. An ability that was deliberately hidden from REST is now listed
+there, gated only by its `permission_callback` of `is_user_logged_in()` — and on MCP Adapter
+0.6.0+ it inherits MCP exposure as well, alongside `core/get-site-info` and
+`core/get-environment-info`. Cite this when someone treats `public` as a cosmetic refactor of
+`show_in_rest`: core made exactly that assumption in its own registrations and changed the
+exposure of one of the three. See `references/rest-api.md`.
 
-- Verify the REST endpoints exist and return expected results (see `references/rest-api.md`).
-- If the client still can’t see the ability, confirm `meta.show_in_rest` is enabled and you’re querying the right endpoint.
+### 5) Set exposure, and keep it separate from authorization
+
+Read `references/rest-api.md` for the resolution table and worked examples.
+
+- On 7.1+, core resolves `show_in_rest = meta.show_in_rest ?? meta.public ?? false`, and `public`
+  itself defaults to `false`. An explicit `show_in_rest` always wins; `public` supplies the value
+  otherwise. Only `null` counts as unset, so an explicit `false` is preserved.
+- `public` is an **exposure default, not an authorization decision**. Every invocation still runs
+  `permission_callback` — through REST, direct PHP, WP-CLI, and MCP. Never generate an ability
+  that relies on `public => false` as a security control, and never weaken a permission callback
+  because an ability is not public.
+- **`public` is not REST-only.** MCP Adapter 0.6.0+ resolves
+  `meta.mcp.public ?? meta.public ?? false`, so `public => true` also publishes the ability to
+  the adapter's default MCP server unless you set `meta.mcp.public => false`. The adapter honors
+  `meta.public` on 6.9 and 7.0 as well, where core still ignores it for REST — so agent exposure
+  can precede REST exposure. Decide both channels in the same edit.
+- Verify the REST endpoints exist and return expected results.
+- If the client still can't see the ability, check the *resolved* `show_in_rest` value — on 7.1+
+  it can be suppressed by an explicit `show_in_rest: false` even when `public` is `true`.
+
+### 5a) Discover abilities with `wp_get_abilities()` (args are WP 7.1+)
+
+When code needs a subset of the registry, pass `$args` rather than looping over everything: filter
+by `category`, `namespace`, or nested `meta`, and reshape with `item_include_callback` or
+`result_callback`. On 6.9/7.0 the extra argument is **silently ignored and the full registry is
+returned** — PHP does not error on extra args to a userland function — so gate on the core version
+before trusting a filtered list. See `references/rest-api.md`.
+
+### 5b) Hook the execution lifecycle (WP 7.1+)
+
+If the task involves auditing, telemetry, caching, policy enforcement, or custom validation, read
+`references/execution-lifecycle.md` before writing hooks. The ordered chain and the four hooks
+agents most often misuse are documented there.
+
+**Seven hooks are genuinely new in 7.1**, in execution order: `wp_ability_invoked`,
+`wp_pre_execute_ability`, `wp_ability_normalize_input`, `wp_ability_validate_input`,
+`wp_ability_permission_result`, `wp_ability_execute_result`, and `wp_ability_validate_output`.
+
+**Two are not new.** wp_before_execute_ability and wp_after_execute_ability predate 7.1 — they
+shipped in 6.9 and only gained a trailing `$ability` argument in 7.1. Treating them as 7.1
+additions is the mistake that produces a site-wide fatal rather than missing behavior, because a
+callback written to the 7.1 arity raises `ArgumentCountError` on 6.9/7.0.
+
+The load-bearing distinctions:
+
+- `wp_ability_invoked` fires **first**, before normalization, validation, and permission checks.
+  It records an **attempt** — invalid input and denied callers fire it too. It is not a success
+  signal; `wp_after_execute_ability` is.
+- `wp_pre_execute_ability` short-circuits **past normalization, validation, and the permission
+  callback**. It compares by object identity against a `WP_Filter_Sentinel`, so any other return
+  value — including `null` — ends the call. Guard on the ability name and do your own capability
+  check.
+- `wp_ability_validate_input` / `wp_ability_validate_output` run **after** built-in schema
+  validation, and what they return **replaces** its verdict — they do not merely extend it. A
+  callback that returns `true` without first guarding on `is_wp_error( $is_valid )` overturns the
+  schema rejection and the ability executes on invalid input, site-wide. Return `WP_Error`, not
+  `false`, or the caller loses the reason. `wp_ability_validate_input` does not fire at all when
+  the ability declares no `input_schema`.
+- A single REST `/run` request fires `wp_ability_normalize_input` and
+  `wp_ability_permission_result` **twice** — once in the route's permission callback, once inside
+  `execute()` — and `wp_ability_validate_input` **three** times, because the `input`
+  `sanitize_callback` runs before the permission callback and asks `validate_input()` before
+  deciding whether to type-coerce (2 when the request carries no input, 0 when the ability
+  declares no `input_schema`). Keep callbacks on those three pure; meter on `wp_ability_invoked`
+  or `wp_after_execute_ability` instead. Because coercion is gated on that verdict, a
+  `wp_ability_validate_input` filter rejecting input the schema accepts also silently suppresses
+  type coercion for the request.
+- `wp_ability_permission_result` fires wherever `check_permissions()` runs, not only during
+  execution. Tighten with it; never widen. Through `execute()` a `WP_Error` is logged via
+  `_doing_it_wrong()` and replaced by a generic denial, so the message never reaches an executing
+  caller.
+- The arity warning applies to `wp_before_execute_ability` and `wp_after_execute_ability`, and to
+  **those two only**. Default their trailing `$ability` parameter when supporting both 6.9/7.0 and
+  7.1. Do not extend the warning to `wp_ability_invoked` just because telemetry usually pairs it
+  with `wp_after_execute_ability`: `wp_ability_invoked` is new in 7.1, so on 6.9/7.0 it does not
+  fire at all — a compliance trail hung on it is silently empty there rather than fatal. Those are
+  two different version stories and they need two different mitigations.
+
+### 5c) Typed REST inputs (WP 7.1+)
+
+The routes are `GET /wp-json/wp-abilities/v1/abilities` (list),
+`/wp-abilities/v1/abilities/{name}` (one ability), and
+**`/wp-abilities/v1/abilities/{name}/run`** (execute). `{name}` keeps its slash, so a run URL reads
+`/wp-json/wp-abilities/v1/abilities/my-plugin/list-orders/run`. See `references/rest-api.md`.
+
+**Schema defaults behave oppositely on the two transports, so normalize in the callback.** PHP
+applies only a *root* `default`, and only when input is `null`; it never injects property-level
+defaults. The JS client compiles the same schema with AJV `useDefaults: true`, which mutates
+missing *property* defaults into the caller's input object before the callback (and never applies
+the root default). A callback that treats a missing key as meaningful therefore behaves
+differently depending on who called it. Details and the defensive pattern:
+`references/input-schema-gotchas.md`.
+
+Run-request input is coerced to the types declared in `input_schema` before the callback runs, so
+`"10"` arrives as `10` and `"true"` as `true`. It is registered as the `input` argument's
+`sanitize_callback`, so it applies on every transport, not only the query-string methods where the
+difference shows. Declare accurate schema types to benefit. Coercion does not widen what validation
+accepts, so do not lean on it to sanitize untrusted input. Callbacks that must also run on 6.9/7.0
+should still cast defensively.
 
 ### 6) Consume from JS (if needed)
 
 - For the WP 7.0+ client-side surface (registering abilities in JS, the `core/abilities` store, `executeAbility`, and how annotations affect the HTTP method used to dispatch server abilities), see `references/client-side.md`.
-- Two packages: `@wordpress/abilities` (pure store, registration, execution) and `@wordpress/core-abilities` (auto-loads server-registered abilities into the client store). Register your script module during `init`, then explicitly enqueue both your page-scoped module and `@wordpress/core-abilities` with `wp_enqueue_script_module()` on the screen that needs them.
+- Two packages: `@wordpress/abilities` (pure store, registration, execution) and `@wordpress/core-abilities` (auto-loads server-registered abilities into the client store). Register `@wordpress/core-abilities` as a static or dynamic dependency of your page module, enqueue the page module, and explicitly enqueue the classic `wp-data`, `wp-i18n`, `wp-api-fetch`, and `wp-url` scripts that the built modules read from `window.wp`.
 - For older clients or non-WP 7.0 contexts, prefer `@wordpress/abilities` APIs for client-side access and checks; ensure the build pipeline bundles the dependency.
+- **Await `@wordpress/core-abilities`'s `ready` before any imperative read or execution — but read it as settled, not succeeded.** Both initialization fetches are wrapped in a `try/catch` that only logs, so `ready` always resolves. After awaiting it, an empty store can still mean an authentication or network failure, not an empty registry; check the console and the `/wp-abilities/v1/abilities` response before concluding anything. `useSelect` consumers do not need the await.
 
 ### 7) Expose via MCP for external AI agents (optional)
 
-If external agents (Claude Desktop, Cursor, ChatGPT) should be able to discover and invoke your abilities, first check the runtime. This base skill supports PHP 7.2.24+, but MCP Adapter 0.6.x requires **WordPress 6.9+ and PHP 7.4+**; on PHP 7.2 or 7.3, upgrade the site runtime or stop before installing the adapter. Read `references/mcp-exposure.md` before giving installation, bootstrap, or server code.
+If external agents (Claude Desktop, Cursor, ChatGPT) should be able to discover and invoke your abilities, first check the site's PHP and WordPress versions. WordPress 6.9 supports PHP 7.2.24+, while WordPress 7.0 and 7.1 require PHP 7.4+. MCP Adapter 0.6.x requires **WordPress 6.9+ and PHP 7.4+** (`^7.4 || ^8.0`), so only a 6.9 site can meet Core's floor while missing the adapter's; on PHP 7.2 or 7.3, upgrade the site runtime or stop before installing the adapter. Read `references/mcp-exposure.md` before giving installation, bootstrap, or server code.
 
-**Install the canonical MCP Adapter plugin — do not bundle it.** 0.6.x deprecated Composer bundling and emits `_deprecated_function()` when the adapter loads as a library rather than the plugin. `Requires Plugins: mcp-adapter` is the intended dependency declaration, but the adapter is not on WordPress.org yet ([#178](https://github.com/WordPress/mcp-adapter/issues/178)), so pair it with a `class_exists()` guard and an admin notice.
+**Install the canonical MCP Adapter plugin** and activate it, add `Requires Plugins: mcp-adapter` to the dependent plugin header, and guard integration code with `class_exists( 'WP\MCP\Core\McpAdapter' )`. The adapter is not on WordPress.org yet ([#178](https://github.com/WordPress/mcp-adapter/issues/178)), so that header cannot install it for site owners — pair the guard with an admin notice. Composer bundling remains supported by 0.6.1 but is a legacy path: upstream trunk (the unreleased 0.7.0) deprecates bundled loading with a `_deprecated_function()` notice, so do not start a new deployment on it.
 
-**Exposure now inherits.** The default server (`mcp-adapter-default-server`) surfaces every ability that `McpAbilityExposure::is_public()` resolves true: an explicit `meta.mcp.public` wins, and an absent one falls back to `meta.public`. WordPress 7.1 added `meta.public` and marks every core ability public, so on 7.1 + adapter 0.6+ the core abilities are MCP-reachable without anyone opting in. Set `meta.mcp.public` explicitly on anything you care about, in both directions. Every execution still runs the ability's `permission_callback`. A custom server can explicitly allow-list selected ability IDs, but it also does not bypass their permission callbacks. The adapter maps `meta.annotations` (`readonly`, `destructive`, `idempotent`) to the corresponding MCP tool annotations.
+**Confirm the adapter version before writing exposure metadata — the rule reversed in 0.6.0.** The default server (`mcp-adapter-default-server`) surfaces its discover/get/execute flow for abilities that resolve to MCP-public, and `McpAbilityExposure::is_public()` resolves `meta.mcp.public ?? meta.public ?? false`. On 0.6.0+, an ability marked `meta.public => true` for REST is therefore exposed to agents unless you add `meta.mcp.public => false`; on 0.5.0 and earlier only an explicit `meta.mcp.public => true` did anything. WordPress 7.1 marks every core ability public, so on 7.1 with adapter 0.6.0+ the core abilities are MCP-reachable without anyone opting in. Write `meta.mcp.public` explicitly whenever MCP status matters — it means the same thing on every version. Every execution still runs the ability's `permission_callback`, so this governs discovery rather than authorization; but the default server's own built-in abilities gate on `read`, which every role holds. A custom server can explicitly allow-list selected ability IDs, and is the cleanest way to stay insulated from the 0.6.0 default; it also does not bypass permission callbacks. The adapter maps `meta.annotations` (`readonly`, `destructive`, `idempotent`) to the corresponding MCP tool annotations.
+
+Two adapter details that bite when you wire the client up:
+
+- **`mcp_adapter_validation_enabled` has variable arity.** Seven DTO call sites pass one argument and only `McpServer::__construct()` passes three. WordPress does not pad missing filter arguments, so a callback registered `10, 3` with three *required* parameters is a fatal `ArgumentCountError` at those seven. Declare them optional: `function ( $enabled, $server_id = null, $server = null )`.
+- **`wp mcp-adapter serve` without `--server` selects the first registered server, not the default server.** Registration order is hook order, so pass `--server=<server-id>` explicitly anywhere identity matters, and use WP-CLI's global `--user=<id|login|email>` option or the session is unauthenticated.
+
+For agent access over HTTP, set up an **Application Password** for the client's WordPress user, and check that **Settings → Permalinks is not set to Plain** — the REST routes the transport relies on need pretty permalinks.
 
 ## Verification
 
@@ -101,9 +257,17 @@ If external agents (Claude Desktop, Cursor, ChatGPT) should be able to discover 
 
 ## Failure modes / debugging
 
-- Ability never appears:
+- Ability never appears — **turn on `WP_DEBUG` first.** `wp_register_ability()` never throws and
+  never returns `WP_Error`; every rejection ends in `_doing_it_wrong()` + `null`, which is
+  invisible in production. A registration that failed and an ability hidden by exposure metadata
+  look identical from REST, and only the first leaves a notice. Then check, in order:
+  - registration rejected (missing `permission_callback`, non-boolean `meta.public`, malformed or
+    duplicate ID, unregistered `category`) — see `references/php-registration.md`,
   - registration code not running (wrong hook / file not loaded),
-  - missing `meta.show_in_rest` (on WP 7.1+ it also resolves from `meta.public`),
+  - another plugin's `wp_register_ability_args` filter rewriting the args into something that
+    fails validation — it runs before every check except the name and duplicate tests,
+  - neither `meta.public` (7.1+) nor `meta.show_in_rest` set, or an explicit `show_in_rest: false`
+    overriding `public: true`,
   - incorrect category/ID mismatch.
 - Ability appears to an MCP client you never exposed it to: `meta.public` is set and `meta.mcp.public` is not, so adapter 0.6+ inherited it. Set `meta.mcp.public => false`.
 - REST shows ability but JS doesn’t:
@@ -112,12 +276,39 @@ If external agents (Claude Desktop, Cursor, ChatGPT) should be able to discover 
   - caching (object/page caches) masking changes.
 - Execute callback returns unexpected errors or silently ignores input:
   - `input_schema` defaults aren't being applied, pagination key drift between the ability and the backing, or `empty()`-based ID validation — see `references/input-schema-gotchas.md`.
+- An ability shows up in an MCP client that was never marked `meta.mcp.public`:
+  - adapter 0.6.0+ inherited `meta.public`. Add an explicit `meta.mcp.public => false`, or move to
+    a custom server with an allow-list — see `references/mcp-exposure.md`.
+- `wp_get_abilities()` filters appear to do nothing and the full registry comes back:
+  - the site is on 6.9/7.0, where the `$args` parameter does not exist and PHP discards the extra
+    argument without error. Gate on the core version.
+- Telemetry counts more invocations than the ability actually served:
+  - `wp_ability_invoked` counts attempts, including validation failures and permission denials.
+    Move success metering to `wp_after_execute_ability`.
+- Permission callback appears to be bypassed, or an ability returns `null`:
+  - a `wp_pre_execute_ability` filter short-circuited the call, or a `wp_ability_permission_result`
+    filter overrode the verdict — see `references/execution-lifecycle.md`.
+- `ArgumentCountError` on every ability call after deploying to an older site:
+  - a `wp_before_execute_ability` / `wp_after_execute_ability` callback declares the 7.1 arity on
+    6.9/7.0. Default the trailing `$ability` parameter.
 
 ## Escalation
 
-- If you’re uncertain about version support, confirm target WP core versions and whether Abilities API is expected from core or as a plugin.
+- If you're uncertain about version support, confirm the target WP core version before using any
+  7.1 API. The 7.1 surface degrades silently on 6.9/7.0 rather than erroring, so this is worth
+  asking about rather than inferring.
+- Confirm the installed MCP Adapter version before writing exposure metadata; the exposure rule
+  changed in 0.6.0 and the two behaviors are opposites.
+- Planning a whole plugin's migration, or checking one that already shipped, is a different
+  workflow: `wp-abilities-audit` produces the migration audit doc from the plugin's REST surface,
+  and `wp-abilities-verify` checks annotation correctness, permission gates, and exposure metadata
+  against the registrations before a PR lands.
 - For canonical details, consult:
-  - `references/rest-api.md`
+  - `references/rest-api.md` (endpoints, `public`/`show_in_rest` resolution, typed inputs, discovery)
+  - `references/execution-lifecycle.md` (WP 7.1+ hook chain)
   - `references/php-registration.md`
   - `references/client-side.md` (WP 7.0+ JavaScript API)
   - `references/mcp-exposure.md` (MCP Adapter integration)
+- Upstream truth, in priority order: core source (`src/wp-includes/abilities-api/`, `@since` tags),
+  the Make/Core dev notes, then `developer.wordpress.org/apis/abilities-api/`. The archived
+  `WordPress/abilities-api` repo is not a source for current behavior.

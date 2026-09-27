@@ -15,7 +15,7 @@
     "Step 6: Return a model implementing EmbeddingGenerationModelInterface::generateEmbeddingResult(array $inputs): EmbeddingResult",
     "Step 7: Preserve one output embedding per input and input order, because EmbeddingBuilder validates the count",
     "Step 8: Smoke-test model metadata resolution through AiClient::input(...)->usingProviderModel( $provider_id, $model_id )->usingDimensions(...)->isSupported() and generation",
-    "Step 9: Note that the provider-side contract is unchanged from 1.4.0, but 1.5.0 removed automatic model resolution on the consumer side, so an isSupported() call with no model throws"
+    "Step 9: Note that the provider-facing interfaces are unchanged from 1.4.0, but 1.5.0 removed automatic model resolution on the consumer side — so an isSupported() call with no model throws — and now validates an explicitly named model against its declared capability, input modalities, and supported options such as dimensions, so incomplete metadata that 1.4 tolerated is rejected"
   ],
   "success_criteria": [
     "Names the exact ProviderInterface static methods or the matching AbstractProvider create methods",
@@ -25,6 +25,7 @@
     "Explains the positional output-count invariant",
     "Does not invent SDK enum cases or treat input/output modalities as generation capabilities",
     "Version-gates embedding provider guidance to PHP AI Client 1.4+ standalone or a Core version that bundles it, and does not claim WordPress 7.1 bundles it",
-    "Names a model in every consumer-side embedding example rather than relying on resolution"
+    "Names a model in every consumer-side embedding example rather than relying on resolution",
+    "Explains that 1.5.0 checks an explicitly named model's declared metadata, so an incomplete capability, modality, or option declaration fails"
   ]
 }

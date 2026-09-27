@@ -45,6 +45,32 @@ Read each ability's `permission_callback` body and classify:
 Record per ability: `(shape, resolved_cap)`. Any Shape B-bad or
 Shape E → static FAIL. Shapes C and F → WARN. Shapes A, B, D → OK.
 
+## Static check — hooks that decide the gate without the callback
+
+**WP 7.1+.** Two core hooks settle the outcome with no input from the
+registered `permission_callback`, so classifying the callback is not
+the whole check:
+
+- `wp_pre_execute_ability` short-circuits `execute()` *before*
+  normalization, input validation, and `check_permissions()`. A
+  listener that returns anything other than the sentinel it was handed
+  has that value returned to the caller as-is; the permission callback
+  never runs.
+- `wp_ability_permission_result` filters the callback's return value
+  from inside `check_permissions()`, so it can turn a `false` into a
+  `true`.
+
+```bash
+rg -n --type=php "wp_pre_execute_ability|wp_ability_permission_result" <plugin-root>/
+```
+
+A `wp_pre_execute_ability` listener with no name guard → FAIL: it
+fires for every ability on the site, including ones the plugin doesn't
+own. A name-guarded one still has to run its own `current_user_can()`
+before it returns a value, because when it returns, the short-circuit
+*is* the gate. Record the finding against the abilities whose gate it
+bypasses, not only against the file the listener lives in.
+
 ## Runtime check
 
 Exercise the gate against three user contexts using
@@ -145,6 +171,36 @@ admin=true
 Any deviation → FAIL. Common causes: cap reference an admin doesn't
 hold, callback bug, or permission too permissive (Shape E or F when it
 should have been Shape A).
+
+### Confirm the denial on the real entry point (WP 7.1+)
+
+`check_permissions()` fires `wp_ability_permission_result` internally,
+so the roundtrip above already reflects that filter. It never reaches
+`wp_pre_execute_ability`, which runs earlier in `execute()` — a
+short-circuit there yields a clean `anon=false / subscriber=false /
+admin=true` table while every real invocation hands data to everyone.
+When the static grep found a `wp_pre_execute_ability` listener, probe
+`execute()` itself as an unauthenticated user:
+
+```bash
+<env-cli> wp eval '
+wp_set_current_user( 0 );
+$input = array(); // the same representative input the roundtrip used.
+$r = wp_get_ability( "<plugin>/<ability-name>" )->execute( $input );
+echo ( is_wp_error( $r ) ? "WP_Error(" . $r->get_error_code() . ")" : "RETURNED DATA" ) . PHP_EOL;
+'
+```
+
+Expected: `WP_Error(ability_invalid_permissions)`. A payload, or an
+error code that came from the listener rather than from core, means the
+short-circuit answered before the gate did → FAIL.
+`WP_Error(ability_invalid_input)` is not a pass — `execute()` validates
+input before it checks permissions, so that result only says the input
+form was wrong. Fix the input and re-run.
+
+Run this against a disposable env: if a `wp_ability_permission_result`
+listener overrides the verdict, `execute()` proceeds into the execute
+callback as an unprivileged user and any writes it performs are real.
 
 ## Audit cross-check
 

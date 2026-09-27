@@ -1,6 +1,6 @@
 ---
 name: wordpress-router
-description: "Use when the user asks about WordPress codebases (plugins, themes, block themes, Gutenberg blocks, WP core checkouts) and you need to quickly classify the repo and route to the correct workflow/skill (blocks, theme.json, REST API, WP-CLI, performance, security, testing, release packaging)."
+description: "Use when the user asks about WordPress codebases and you need to classify the repo and route to the correct workflow, including blocks, themes, plugins, REST, WP-CLI, performance, Abilities API implementation, ability audit or verification, AI Client, AI Connectors, the canonical AI plugin, and MCP exposure."
 compatibility: "Targets WordPress 6.9+ (PHP 7.2.24+). Filesystem-based agent with bash + node. Some workflows require WP-CLI."
 license: GPL-2.0-or-later
 ---

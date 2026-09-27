@@ -7,11 +7,11 @@
  *
  * Outputs JSON to stdout:
  *   {
- *     "wp_floor":              "<earliest 'Requires at least' across plugin/theme headers, or null>",
+ *     "wp_floor":              "<earliest 'Requires at least' across plugin PHP and theme style.css headers, or null>",
  *     "supports_ai_client":    <bool — true iff every detected floor is >= 7.0>,
- *     "uses_ai_client":        <bool — true iff `wp_ai_client_prompt(` appears in PHP>,
- *     "uses_legacy_packages":  <bool — true iff composer.json depends on wordpress/php-ai-client or wordpress/wp-ai-client>,
- *     "feature_endpoints":     [<paths where wp_ai_client_prompt is used>],
+ *     "uses_ai_client":        <bool — true iff a Core wrapper or SDK entry point is called in PHP>,
+ *     "uses_legacy_packages":  <bool — true iff composer.json requires a standalone AI package at runtime>,
+ *     "feature_endpoints":     [<paths where an AI Client entry point is called>],
  *     "notes":                 [<advisory strings>]
  *   }
  *
@@ -82,7 +82,19 @@ function extractHeaderField(contents, field) {
   // Plugin/theme headers: " * Requires at least: 7.0" or "Requires at least: 7.0"
   const re = new RegExp(`^[\\s*#]*${field}\\s*:\\s*([^\\r\\n]+)`, "im");
   const match = contents.match(re);
-  return match ? match[1].trim() : null;
+  const value = match ? match[1].trim() : null;
+  return value && /^\d+(?:\.\d+){1,2}(?:[-+][0-9A-Za-z.-]+)?$/.test(value) ? value : null;
+}
+
+function callsAiClient(contents) {
+  const withoutWrapperDefinitions = contents.replace(
+    /\bfunction\s+wp_ai_client_prompt\s*\(/g,
+    "function __wp_ai_client_prompt_definition("
+  );
+  return (
+    /\bwp_ai_client_prompt\s*\(/.test(withoutWrapperDefinitions) ||
+    /\bAiClient\s*::\s*(?:prompt|generate[A-Z][A-Za-z0-9_]*)\s*\(/.test(contents)
+  );
 }
 
 function usage() {
@@ -112,6 +124,10 @@ async function main() {
     return;
   }
   const { root } = parseArgs(process.argv);
+  const rootStat = await fs.stat(root);
+  if (!rootStat.isDirectory()) {
+    throw new Error(`Scan root is not a directory: ${root}`);
+  }
   const result = {
     wp_floor: null,
     supports_ai_client: false,
@@ -128,44 +144,56 @@ async function main() {
   const composerPath = path.join(root, "composer.json");
   try {
     const composer = JSON.parse(await fs.readFile(composerPath, "utf8"));
-    const deps = { ...(composer.require || {}), ...(composer["require-dev"] || {}) };
+    const deps = composer.require || {};
     if (deps["wordpress/php-ai-client"] || deps["wordpress/wp-ai-client"]) {
       result.uses_legacy_packages = true;
       result.notes.push(
-        "Detected legacy Composer dep on wordpress/php-ai-client or wordpress/wp-ai-client. On WP 7.0+, php-ai-client is in core; conditional autoloading is required to avoid duplicate-class errors. See references/prompt-builder.md#migration."
+        "Detected a runtime Composer dependency on wordpress/php-ai-client or wordpress/wp-ai-client. On WordPress 7.0+, Core supplies the SDK; use Core or a prefixed standalone copy rather than mixing unprefixed SDK versions and namespaces. See references/prompt-builder.md#migration."
       );
     }
   } catch {
     // No composer.json; fine.
   }
 
-  // 2) Walk PHP files, gather signals.
+  // 2) Walk plugin PHP and theme stylesheets, gather signals.
+  //
+  // A block theme declares its WordPress floor in style.css, not in PHP, so a
+  // PHP-only walk reports wp_floor: null for an otherwise 7.1-ready theme and
+  // wrongly says the Core AI Client path is unsupported. Read style.css for
+  // headers; scan AI usage only in PHP.
   for await (const file of walk(root)) {
-    if (!file.endsWith(".php")) continue;
+    const isPhp = file.endsWith(".php");
+    const isStylesheet = path.basename(file) === "style.css";
+    if (!isPhp && !isStylesheet) continue;
+
     let contents;
+    let headerContents;
     try {
-      contents = await fs.readFile(file, "utf8");
+      const bytes = await fs.readFile(file);
+      contents = bytes.toString("utf8");
+      headerContents = bytes.subarray(0, 8192).toString("utf8");
     } catch {
       continue;
     }
 
-    // Plugin/theme header detection (Requires at least, plus a sanity check for header format).
-    if (
-      contents.includes("Plugin Name:") ||
-      contents.includes("Theme Name:") ||
-      contents.includes("Requires at least:")
-    ) {
-      const floor = extractHeaderField(contents, "Requires at least");
-      if (floor) {
-        floors.push({ file: path.relative(root, file), floor });
-        if (lowestFloor === null || compareVersions(floor, lowestFloor) < 0) {
-          lowestFloor = floor;
-        }
+    // Only a *theme* stylesheet declares a WordPress floor. WordPress itself
+    // identifies one by its `Theme Name:` header, so require that before
+    // trusting a style.css — otherwise a plugin's admin CSS or a vendored
+    // stylesheet that happens to carry the header line could set a bogus floor.
+    if (isStylesheet && !/^[\s*#]*Theme Name\s*:/im.test(headerContents)) continue;
+
+    const floor = extractHeaderField(headerContents, "Requires at least");
+    if (floor) {
+      floors.push({ file: path.relative(root, file), floor });
+      if (lowestFloor === null || compareVersions(floor, lowestFloor) < 0) {
+        lowestFloor = floor;
       }
     }
 
+    if (!isPhp) continue;
+
     // AI Client usage.
-    if (contents.includes("wp_ai_client_prompt(")) {
+    if (callsAiClient(contents)) {
       result.uses_ai_client = true;
       result.feature_endpoints.push(path.relative(root, file));
     }
@@ -180,19 +208,33 @@ async function main() {
   result.supports_ai_client =
     lowestFloor !== null && compareVersions(lowestFloor, "7.0") >= 0;
 
+  // `wp_floor` is the minimum across the whole tree, so a nested theme — a test
+  // fixture, a bundled starter theme — can decide it. Name the file when the
+  // deciding header is not at the scan root, so the number is auditable rather
+  // than mysterious.
+  const decidingFloors = floors.filter((entry) => entry.floor === lowestFloor);
+  const nestedDeciders = decidingFloors.filter((entry) => entry.file.includes(path.sep));
+  if (lowestFloor !== null && nestedDeciders.length === decidingFloors.length && nestedDeciders.length > 0) {
+    result.notes.push(
+      `Lowest 'Requires at least' (${lowestFloor}) comes only from nested file(s): ${nestedDeciders
+        .map((entry) => entry.file)
+        .join(", ")}. If that is a test fixture or a bundled theme rather than the project's own floor, re-run with --root pointed at the real project directory.`
+    );
+  }
+
   if (lowestFloor === null) {
     result.notes.push(
-      "No 'Requires at least' header found in any PHP file. Cannot determine WP version floor; assume the project may run on < 7.0 unless confirmed otherwise."
+      "No 'Requires at least' header found in any plugin PHP file or theme style.css. Cannot determine WP version floor; assume the project may run on < 7.0 unless confirmed otherwise."
     );
   } else if (!result.supports_ai_client) {
     result.notes.push(
-      `Lowest 'Requires at least' is ${lowestFloor} (< 7.0). Either bump to 7.0 or use the conditional autoloader pattern.`
+      `Lowest 'Requires at least' is ${lowestFloor} (< 7.0). Either bump to 7.0, depend on the deprecated compatibility plugin, or ship a prefixed standalone SDK.`
     );
   }
 
   if (result.uses_ai_client && result.uses_legacy_packages) {
     result.notes.push(
-      "Both wp_ai_client_prompt() and AI_Client::prompt() / legacy Composer deps were detected. Pick one path; mixing them on WP 7.0+ causes duplicate-class errors."
+      "Both an AI Client call and an unprefixed standalone runtime dependency were detected. Pick Core or a prefixed standalone copy; mixing SDK versions and PSR namespaces on WordPress 7.0+ is unsupported."
     );
   }
 

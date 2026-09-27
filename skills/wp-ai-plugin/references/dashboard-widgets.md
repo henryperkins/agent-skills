@@ -1,6 +1,6 @@
 # Dashboard widgets
 
-The AI plugin ships two dashboard widgets (since v0.8.0; still two as of v1.3.0) and uses standard WordPress for registration. **There is no public, third-party widget-registration API in the v1.3.0 source.** Note: the v0.8.0 changelog (#311) mentions a "framework for registering new dashboard widgets," but `Dashboard_Widgets.php` only hard-codes the plugin's own two `wp_add_dashboard_widget()` calls — there is no reusable hook for your widget. Earlier drafts of this skill implied one existed to hook into; there isn't.
+The AI plugin ships two dashboard widgets (since v0.8.0; still two as of v1.3.0) and uses standard WordPress for registration. **There is no public, third-party widget-registration API in the v1.3.0 source.** The v0.8.0 changelog mentions a framework, but `Dashboard_Widgets.php` hard-codes the plugin's own two `wp_add_dashboard_widget()` calls; there is no reusable registration hook.
 
 ## What ships in v0.8.0
 
@@ -87,12 +87,12 @@ add_action( 'wp_dashboard_setup', function () {
 
 The widget IDs (`wpai_status`, `wpai_capabilities`) remain the two built-in dashboard widgets in v1.3.0.
 
-## What might land later
+## Request logging is a separate surface
 
-The AI plugin's "AI Request Logging & Observability" surface has since shipped — as the `AI_Request_Logging` experiment (`includes/Experiments/AI_Request_Logging/`, with an admin log page under `includes/Logging/`). It does **not** add a registration framework for third-party dashboard widgets — as of v1.3.0, no such framework exists in source, confirmed by reading `includes/Admin/Dashboard/Dashboard_Widgets.php` end to end (two hard-coded `wp_add_dashboard_widget()` calls). v1.3.0 does add a public `WordPress\AI\log_ai_request()` helper for writing to the request log, but that is a logging API, not a widget API.
+The `AI_Request_Logging` experiment (`includes/Experiments/AI_Request_Logging/`, with an admin log page under `includes/Logging/`) does **not** add a dashboard-widget registration framework. v1.3.0 adds the public `WordPress\AI\log_ai_request()` helper for ability/MCP consumers, but custom dashboards still use standard WordPress APIs.
 
 ## Source
 
-- `includes/Admin/Dashboard/Dashboard_Widgets.php` — the orchestrator (~80 lines)
+- `includes/Admin/Dashboard/Dashboard_Widgets.php` — the orchestrator (~90 lines)
 - `includes/Admin/Dashboard/AI_Status_Widget.php` — Status widget renderer
 - `includes/Admin/Dashboard/AI_Capabilities_Widget.php` — Capabilities widget renderer

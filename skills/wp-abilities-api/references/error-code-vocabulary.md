@@ -20,16 +20,18 @@ Substitute `<plugin>` with the plugin's slug in lowercase, underscores only. Thi
 | Code | When to use | Agent behavior |
 |---|---|---|
 | `<plugin>_not_initialized` | Plugin class missing, shared service accessor returns null, required dependency isn't resolvable. | Not retriable from the agent side. Usually a config or bootstrap-ordering problem. Escalate. |
-| `<plugin>_missing_<field>` | A required input field is missing or empty (your execute callback's own check, not the schema-validator's). | Agent should add the field and retry. |
+| `<plugin>_missing_<field>` | A needed input field is missing or empty and the schema didn't reject it first — the field isn't declared `required`, or the constraint is semantic rather than structural. Your execute callback's own check. | Agent should add the field and retry. |
 | `<plugin>_invalid_<field>` | Field is present but semantically wrong (bad enum value, malformed date, wrong type). | Agent should correct the value and retry. |
 | `<plugin>_<resource>_data_unavailable` | Backing service returned a transient error (cache miss + remote failure, upstream 5xx, stale-while-revalidate failed). | Agent can retry, probably with backoff. |
 | `ability_invalid_input` | The Abilities API's own schema-validator rejected the input before the execute callback ran. | Equivalent to `<plugin>_missing_<field>` or `<plugin>_invalid_<field>`, just thrown earlier in the pipeline. Agent should fix input. |
 
 ### `ability_invalid_input` — the earlier path
 
-When an ability is invoked via the Abilities API REST bridge, the registered `input_schema` runs first. Missing required fields or type mismatches produce `WP_Error( 'ability_invalid_input' )` BEFORE the execute callback fires. Direct invocation (unit tests, non-REST wrappers) bypasses schema validation and hits your execute callback's own checks instead, producing `<plugin>_missing_<field>` / `<plugin>_invalid_<field>`.
+`WP_Ability::execute()` normalizes input, validates it against the registered `input_schema`, checks permissions, then invokes the callback — on EVERY transport. REST, MCP, WP-CLI, the JS client and plain PHP all funnel through that same method. The REST bridge adds passes on top of it, never instead of it. So missing required fields or type mismatches produce `WP_Error( 'ability_invalid_input' )` BEFORE the execute callback fires, no matter how the ability was reached. Unit tests that call `->execute()` are validated like everything else.
 
-Both paths are acceptable — end-agent-facing behavior is equivalent (deterministic validation error, no side effects). Document the observation in the ability's PR description or "notes for reviewers" so reviewers know both codes are expected in different harness runs.
+`<plugin>_missing_<field>` / `<plugin>_invalid_<field>` are reachable only when the field is not schema-`required` (or the constraint is semantic rather than structural, so JSON Schema can't express it), or when the raw static callback is invoked directly rather than through the ability.
+
+An ability that declares no `input_schema` at all fails differently again: `validate_input()` returns `true` if the input is `null`, otherwise an `ability_missing_input_schema` error — not `ability_invalid_input`.
 
 ## Worked examples
 
@@ -40,7 +42,7 @@ return new \WP_Error(
     __( '<Plugin> is not initialized.', '<text-domain>' )
 );
 
-// Required field missing (execute-callback check, schema was bypassed).
+// Required field missing (execute-callback check for a field the schema does not mark required).
 return new \WP_Error(
     '<plugin>_missing_<field>',
     __( 'A <field> is required to <do the thing>.', '<text-domain>' )

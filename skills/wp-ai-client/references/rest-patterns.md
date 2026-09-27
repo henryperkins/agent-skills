@@ -4,7 +4,9 @@ Why per-feature endpoints, what they should look like, and what to avoid.
 
 ## Why not the client-side prompt API
 
-WordPress 7.0 ships a client-side JavaScript prompt builder in the `wordpress/wp-ai-client` package. It works, but its REST route is gated behind a dedicated capability — `prompt_ai` (defined by `Capabilities_Manager`), which is granted to administrators by default via a removable `user_has_cap` filter and is meant to be customized. The reason for the gate: the JS API lets the caller send *any* prompt to *any* configured provider. That's fine for Core's own admin tooling. It is not safe for distributed plugins, where you can't predict what user role will hit the UI or what prompts will be constructed client-side.
+Core 7.0/7.1 ships no AI REST route and no client-side JavaScript prompt builder. `src/wp-includes/ai-client/` holds `WP_AI_Client_Prompt_Builder`, `WP_AI_Client_Ability_Function_Resolver`, and an `adapters/` directory of cache / HTTP / event-dispatcher / discovery glue — no controller. There is no AI controller in `rest-api/endpoints/`, no AI handle in `script-loader.php`, and no AI package in the root `package.json`. So on plain Core there is nothing to call from JS — you build the route yourself.
+
+The JS prompt builder and its route come from the deprecated, archived `wordpress/wp-ai-client` 0.4.0 plugin, not Core. On WordPress 7.0+ its `/wp-ai/v1/generate` and `/wp-ai/v1/is-supported` routes, `wp-ai-client` script, and capability filters remain active even though its SDK wiring is superseded by Core. The prompt route is gated behind `prompt_ai` (defined by that plugin's `Capabilities_Manager`), which is granted to `manage_options` users by default through a removable `user_has_cap` filter. The JS API lets the caller send *any* prompt to *any* configured provider, so do not rely on it in distributed plugins where the user role, prompt, and installed compatibility plugin are outside your control.
 
 The recommended pattern: a separate REST endpoint per AI feature, scoped to that feature's permissions and inputs. The actual prompt construction stays server-side. The JS just calls your endpoint with structured input.
 
@@ -46,8 +48,8 @@ function my_plugin_summarize_post( WP_REST_Request $request ) {
     }
 
     // GenerativeAiResult has NO top-level `text` key — its serialized shape is
-    // id / candidates / tokenUsage / providerMetadata / modelMetadata. Project
-    // the success response down to just what your JS needs.
+    // id / candidates / tokenUsage / providerMetadata / modelMetadata /
+    // additionalData. Project the success response down to just what your JS needs.
     return rest_ensure_response( array(
         'text'       => $result->toText(),        // SDK DTO method (camelCase).
         'tokenUsage' => $result->getTokenUsage(),
@@ -60,7 +62,7 @@ What this gives you:
 - **Per-feature capability.** `edit_post` on the specific post, not `manage_options`. Editors and authors can use the feature without being admins.
 - **Validated input.** `sanitize_callback` runs before your callback, so you never see a non-int post_id.
 - **Server-side prompt construction.** The user can't inject system instructions or change the model preference — those are baked into your endpoint.
-- **Free error handling.** A `WP_Error` serializes through `rest_ensure_response()` with its HTTP status intact. `GenerativeAiResult` is `JsonSerializable` too, but its top-level keys are `id` / `candidates` / `tokenUsage` / `providerMetadata` / `modelMetadata` (no `text`) — so project the success shape your client needs, as above.
+- **Free error handling.** A `WP_Error` serializes through `rest_ensure_response()` with its HTTP status intact. `GenerativeAiResult` is `JsonSerializable` too, but its top-level keys are `id` / `candidates` / `tokenUsage` / `providerMetadata` / `modelMetadata` / `additionalData` (no `text`) — so project the success shape your client needs, as above. `additionalData` is absent from the DTO's JSON Schema `required` list but `toArray()` always emits it, so it is always in the response.
 
 ## Calling from JS
 
@@ -95,24 +97,60 @@ function my_plugin_generate_featured_image( WP_REST_Request $request ) {
         return $image;
     }
 
-    // Parse the data URI returned by the AI Client. Bound the size before decoding,
-    // restrict to known image subtypes, and re-validate MIME after upload.
-    $data_uri        = $image->getDataUri();
+    // A generated File carries EITHER inline base64 OR a remote URL — never both.
+    // getDataUri() and getUrl() are each `?string` and each return null in the
+    // other's case, so branch on isRemote() before touching either. Validate the
+    // declared MIME first, bound the payload, and re-validate MIME after upload.
     $max_image_bytes = (int) apply_filters( 'my_plugin_ai_image_max_bytes', 10 * MB_IN_BYTES );
-    if ( strlen( $data_uri ) > 2 * $max_image_bytes ) {
-        return new WP_Error( 'image_too_large', 'AI image response is too large to store.', array( 'status' => 500 ) );
-    }
-    if ( ! preg_match( '#^data:image/(?<subtype>png|jpeg|webp);base64,(?<payload>[A-Za-z0-9+/=]+)$#', $data_uri, $matches ) ) {
-        return new WP_Error( 'invalid_image', 'AI image response is not a supported data URI.', array( 'status' => 500 ) );
-    }
-    $data = base64_decode( $matches['payload'], true );
-    if ( false === $data || strlen( $data ) > $max_image_bytes ) {
-        return new WP_Error( 'invalid_image', 'AI image response could not be decoded or is too large.', array( 'status' => 500 ) );
-    }
+    $allowed_mimes   = array(
+        'image/png'  => 'png',
+        'image/jpeg' => 'jpg',
+        'image/webp' => 'webp',
+    );
+    $mime_type       = $image->getMimeType();
 
-    $subtype   = strtolower( $matches['subtype'] );
-    $extension = ( 'jpeg' === $subtype ) ? 'jpg' : $subtype;
-    $mime_type = 'image/' . $subtype;
+    if ( ! isset( $allowed_mimes[ $mime_type ] ) ) {
+        return new WP_Error( 'invalid_image', 'AI image response has an unsupported MIME type.', array( 'status' => 500 ) );
+    }
+    $extension = $allowed_mimes[ $mime_type ];
+
+    if ( $image->isRemote() ) {
+        $url = $image->getUrl();
+        if ( ! is_string( $url ) || ! wp_http_validate_url( $url ) ) {
+            return new WP_Error( 'invalid_image_url', 'AI image URL is not safe to download.', array( 'status' => 500 ) );
+        }
+        $response = wp_safe_remote_get( $url, array(
+            'timeout'             => 30,
+            'redirection'         => 3,
+            'limit_response_size' => $max_image_bytes + 1,
+        ) );
+        if ( is_wp_error( $response ) ) {
+            return $response;
+        }
+        $status = wp_remote_retrieve_response_code( $response );
+        if ( $status < 200 || $status >= 300 ) {
+            return new WP_Error( 'image_download_failed', 'AI image URL returned a non-success response.', array( 'status' => 500 ) );
+        }
+        $data = wp_remote_retrieve_body( $response );
+        if ( strlen( $data ) > $max_image_bytes ) {
+            return new WP_Error( 'image_too_large', 'AI image response is too large to store.', array( 'status' => 500 ) );
+        }
+    } else {
+        $data_uri = $image->getDataUri();
+        if ( ! is_string( $data_uri ) ) {
+            return new WP_Error( 'invalid_image', 'AI image response has no usable file data.', array( 'status' => 500 ) );
+        }
+        if ( strlen( $data_uri ) > 2 * $max_image_bytes ) {
+            return new WP_Error( 'image_too_large', 'AI image response is too large to store.', array( 'status' => 500 ) );
+        }
+        if ( ! preg_match( '#^data:image/(?:png|jpeg|webp);base64,(?<payload>[A-Za-z0-9+/=]+)$#', $data_uri, $matches ) ) {
+            return new WP_Error( 'invalid_image', 'AI image response is not a supported data URI.', array( 'status' => 500 ) );
+        }
+        $data = base64_decode( $matches['payload'], true );
+        if ( false === $data || strlen( $data ) > $max_image_bytes ) {
+            return new WP_Error( 'invalid_image', 'AI image response could not be decoded or is too large.', array( 'status' => 500 ) );
+        }
+    }
 
     $upload = wp_upload_bits( 'ai-' . wp_generate_uuid4() . '.' . $extension, null, $data );
     if ( ! empty( $upload['error'] ) ) {
@@ -165,5 +203,5 @@ Validate the parsed JSON against your own schema afterward — model output is b
 
 - **Building prompts on the client.** Even with a tight permission_callback, a server-built prompt is auditable, version-controlled, and can be filtered via `wp_ai_client_prevent_prompt`. A client-built prompt is none of those.
 - **Stuffing user input into the system instruction.** Treat user-supplied content as data, not instructions. Use `with_text()` for the user payload and `using_system_instruction()` only for the role/format guidance you author.
-- **Returning the full `GenerativeAiResult` to anonymous callers.** It includes provider/model metadata that may leak operational details. For public-facing endpoints, project to a smaller response shape.
+- **Returning the full `GenerativeAiResult` to anonymous callers.** It includes provider/model metadata that may leak operational details, plus `additionalData` — on OpenAI-compatible providers that is the provider's raw response minus the fields the SDK mapped (`id`, `choices`/`data`, `usage`, depending on text or image generation), i.e. whatever else that provider chose to send back. For public-facing endpoints, project to a smaller response shape.
 - **Per-request capability checks inside the callback only.** Use `permission_callback` — REST runs it before the callback, and it's the documented place for authorization. The callback is for logic, not auth.

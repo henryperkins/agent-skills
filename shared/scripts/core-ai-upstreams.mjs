@@ -1,0 +1,162 @@
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+
+/**
+ * Canonical metadata for every upstream that can change the Core AI skills.
+ *
+ * This registry deliberately contains no network or parsing logic. Consumers
+ * decide how to fetch each sourceType, while declarations provide the exact
+ * skill-local version marker that deterministic drift checks must resolve.
+ */
+export const CORE_AI_UPSTREAMS = Object.freeze([
+  {
+    id: "wordpress-core",
+    indexFile: "shared/references/wordpress-core-versions.json",
+    source: "https://api.wordpress.org/core/version-check/1.7/",
+    sourceType: "wordpress-version-check",
+    // wp-block-themes is not a Core AI skill, but its theme.json reference grows a
+    // "WordPress X.Y additions" section most core minors, so a new minor is exactly
+    // when it needs re-reading. The Gutenberg plugin is deliberately not tracked for
+    // it: fortnightly releases would keep that marker red and get it ignored.
+    affectedSkills: [
+      "wp-abilities-api",
+      "wp-abilities-audit",
+      "wp-abilities-verify",
+      "wp-ai-client",
+      "wp-ai-connectors",
+      "wp-ai-plugin",
+      "wp-block-themes",
+    ],
+    declarations: [
+      "wp-abilities-api",
+      "wp-abilities-audit",
+      "wp-abilities-verify",
+      "wp-ai-client",
+      "wp-ai-connectors",
+      "wp-ai-plugin",
+      "wp-block-themes",
+    ].map((skill) => ({ skill, label: "WordPress Core verified through", granularity: "minor" })),
+  },
+  {
+    id: "gutenberg",
+    indexFile: "shared/references/gutenberg-releases.json",
+    source: "https://api.github.com/repos/WordPress/gutenberg/releases?per_page=50",
+    sourceType: "github-releases",
+    affectedSkills: ["wp-abilities-api", "wp-ai-plugin", "wp-ai-connectors"],
+    declarations: [
+      { skill: "wp-abilities-api", label: "Gutenberg verified through", granularity: "patch" },
+      { skill: "wp-ai-plugin", label: "Gutenberg verified through", granularity: "patch" },
+      { skill: "wp-ai-connectors", label: "Gutenberg verified through", granularity: "patch" },
+    ],
+  },
+  {
+    id: "wordpress-ai-plugin",
+    indexFile: "shared/references/ai-plugin-releases.json",
+    source: "https://api.github.com/repos/WordPress/ai/releases?per_page=30",
+    sourceType: "github-releases",
+    affectedSkills: ["wp-ai-plugin"],
+    declarations: [
+      { skill: "wp-ai-plugin", label: "AI plugin verified through", granularity: "patch" },
+    ],
+  },
+  {
+    id: "mcp-adapter",
+    indexFile: "shared/references/mcp-adapter-releases.json",
+    source: "https://api.github.com/repos/WordPress/mcp-adapter/releases?per_page=30",
+    sourceType: "github-releases",
+    affectedSkills: ["wp-abilities-api", "wp-abilities-audit", "wp-abilities-verify", "wp-ai-plugin"],
+    declarations: [
+      { skill: "wp-abilities-api", label: "MCP Adapter verified through", granularity: "patch" },
+      { skill: "wp-abilities-audit", label: "MCP Adapter verified through", granularity: "patch" },
+      { skill: "wp-abilities-verify", label: "MCP Adapter verified through", granularity: "patch" },
+      { skill: "wp-ai-plugin", label: "MCP Adapter verified through", granularity: "patch" },
+    ],
+  },
+  {
+    id: "php-ai-client",
+    indexFile: "shared/references/php-ai-client-releases.json",
+    source: "https://repo.packagist.org/p2/wordpress/php-ai-client.json",
+    sourceType: "packagist",
+    packageName: "wordpress/php-ai-client",
+    releaseUrlBase: "https://github.com/WordPress/php-ai-client/releases/tag",
+    affectedSkills: ["wp-ai-client", "wp-ai-connectors", "wp-ai-plugin"],
+    declarations: [
+      { skill: "wp-ai-client", label: "PHP AI Client verified through", granularity: "patch" },
+      { skill: "wp-ai-connectors", label: "PHP AI Client verified through", granularity: "patch" },
+      { skill: "wp-ai-plugin", label: "PHP AI Client verified through", granularity: "patch" },
+    ],
+  },
+  {
+    id: "wp-ai-client",
+    indexFile: "shared/references/wp-ai-client-releases.json",
+    source: "https://api.github.com/repos/WordPress/wp-ai-client/releases?per_page=30",
+    sourceType: "github-releases",
+    affectedSkills: ["wp-ai-client"],
+    declarations: [
+      { skill: "wp-ai-client", label: "WP AI Client verified through", granularity: "patch" },
+    ],
+  },
+  {
+    id: "anthropic-provider",
+    indexFile: "shared/references/ai-provider-anthropic-releases.json",
+    source: "https://api.github.com/repos/WordPress/ai-provider-for-anthropic/releases?per_page=30",
+    sourceType: "github-releases",
+    affectedSkills: ["wp-ai-connectors"],
+    declarations: [
+      { skill: "wp-ai-connectors", label: "Anthropic provider verified through", granularity: "patch" },
+    ],
+  },
+  {
+    id: "google-provider",
+    indexFile: "shared/references/ai-provider-google-releases.json",
+    source: "https://api.github.com/repos/WordPress/ai-provider-for-google/releases?per_page=30",
+    sourceType: "github-releases",
+    affectedSkills: ["wp-ai-connectors"],
+    declarations: [
+      { skill: "wp-ai-connectors", label: "Google provider verified through", granularity: "patch" },
+    ],
+  },
+  {
+    id: "openai-provider",
+    indexFile: "shared/references/ai-provider-openai-releases.json",
+    source: "https://api.github.com/repos/WordPress/ai-provider-for-openai/releases?per_page=30",
+    sourceType: "github-releases",
+    affectedSkills: ["wp-ai-connectors"],
+    declarations: [
+      { skill: "wp-ai-connectors", label: "OpenAI provider verified through", granularity: "patch" },
+    ],
+  },
+  {
+    id: "wp-gutenberg-version-map",
+    indexFile: "shared/references/wp-gutenberg-version-map.json",
+    source: "https://developer.wordpress.org/block-editor/contributors/versions-in-wordpress/",
+    sourceType: "html-version-map",
+    affectedSkills: ["wp-abilities-api", "wp-ai-connectors", "wordpress-router"],
+    declarations: [],
+  },
+]);
+
+export function formatCoreAiSourceList(registry = CORE_AI_UPSTREAMS) {
+  return `${registry
+    .map(
+      (upstream) =>
+        `- **${upstream.id}** (${upstream.sourceType}): ${upstream.source}`
+    )
+    .join("\n")}\n`;
+}
+
+function runCli(args = process.argv.slice(2)) {
+  if (args.length === 1 && args[0] === "--help") {
+    process.stdout.write("Usage: node shared/scripts/core-ai-upstreams.mjs --format markdown\n");
+    return 0;
+  }
+  if (args.length === 2 && args[0] === "--format" && args[1] === "markdown") {
+    process.stdout.write(formatCoreAiSourceList());
+    return 0;
+  }
+  process.stderr.write("ERROR: expected --format markdown (or --help)\n");
+  return 2;
+}
+
+const invokedUrl = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : null;
+if (invokedUrl === import.meta.url) process.exitCode = runCli();

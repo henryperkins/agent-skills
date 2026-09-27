@@ -55,16 +55,25 @@ capability_gate:
   read: read_private_pages
   write: edit_others_pages
   confirmed: true
-  verified_at: "custom_post_type capability_type='page' → core post-type cap map (wp-includes/post.php map_meta_cap)"
+  verified_at: "custom_post_type capability_type='page' → get_post_type_capabilities (wp-includes/post.php) → map_meta_cap (wp-includes/capabilities.php) → primitive page caps"
 ```
 
 Plugin-specific capabilities (e.g. WooCommerce's `manage_woocommerce`,
 `edit_shop_orders`) are equally valid — substitute your plugin's caps. The
 shape is the contract; the literal cap names are project-specific.
 
-A legacy compound-string form exists in the wild (`"<read_cap> / <write_cap>"`)
-and is accepted for backwards compatibility, but the structured form above is
-the preferred representation for new audits.
+Three forms exist, and validators grade them differently. Be unambiguous about
+which is which:
+
+| Form | Example | Verdict |
+|---|---|---|
+| Single capability string | `capability_gate: manage_options` | **Canonical.** No warning. |
+| Structured object | `{read, write, confirmed, verified_at}` | **Canonical** for compound gates. No warning. |
+| Legacy slash-separated compound string | `"read_private_pages / edit_others_pages"` | Accepted, **WARN**. |
+
+A single-capability string is canonical and does not emit WARN — a one-capability plugin should use it, and adding a `{read, write}` object whose two values are the same capability is noise, not rigor.
+
+Only the legacy slash-separated compound string emits WARN, because a downstream consumer has to heuristically split it. Use the object form when — and only when — read and write genuinely resolve to different capabilities.
 
 ## `proposed_abilities` — array
 
@@ -77,6 +86,7 @@ Each entry:
 | `backing` | object or `null` | See below. `null` marks an ability with no backing endpoint (a known gap). |
 | `permission` | object or `null` | See below. `null` when `backing` is null. |
 | `return_type` | string | Short description (e.g. `WP_REST_Response (wrapping array)`). Hint-only; not machine-parsed. |
+| `input_schema` | object (optional) | The JSON Schema the ability should register. Required when `reference_ability: true`: use an object root with `default: {}` and no required inputs so `execute([])` succeeds. Optional filter properties may be present. In PHP registration, express the empty-object default as `(object) array()`. |
 | `effort` | enum | `S`, `M`, or `L`. |
 | `annotations` | object | `{ readonly: bool, destructive: bool, idempotent: bool }`. All three required. |
 | `notes` | array of strings | Implementer-facing detail (filter params, edge cases, alternative backings). |
@@ -84,7 +94,38 @@ Each entry:
 | `use_case_fit` | string | One sentence naming the human or agent workflow this ability serves. The use-case-contract check (see `wp-abilities-api/references/domain-vs-projection.md`): if no human would intentionally do this through a supported UI or workflow, the entry probably belongs in `excluded_from_mvp` instead. |
 | `side_effects` | array of strings | Side effects the backing path emits on every call: telemetry hooks, audit-log rows, notifications, cache writes. One short line per effect. Empty array (`[]`) when the backing is a pure data-fetch — that is *itself* a load-bearing fact: it is what unlocks the conditional delegation shortcut in `wp-abilities-api/references/shared-core-service.md`. A non-empty array tells the implementer (and downstream verify-mode tooling) that this ability needs the shared-service shape, not the delegate-through-REST shortcut. |
 | `seed_data_needs` | string OR `null` | One line describing what representative data must exist in the test environment for the ability to execute through the public boundary and return something meaningful (e.g. `"at least one entity in the plugin's primary table"`, `"no seed required"`). `null` when the auditor has not yet identified the seed shape; downstream verify-mode tooling treats `null` as "ask the implementer" rather than guessing. |
-| `reference_ability` | bool (optional) | If `true`, marks this ability as the reference implementation — the first one an implementer should land (smallest, safest, highest-leverage read). Exactly zero or one ability per audit may set this. |
+| `exposure` | object (optional) | The deliberate decision about who may *discover* this ability, kept separate from who may *run* it. See below. Optional for backwards compatibility; new audits MUST populate it. |
+| `reference_ability` | bool (optional) | If `true`, marks this ability as the reference implementation — the first one an implementer should land (smallest, safest, highest-leverage read). Exactly zero or one ability per audit may set this. Only an ability invocable as `execute([])` qualifies: it must declare an object-root `input_schema` with root `'default' => (object) array()` and no required inputs. `wp-abilities-verify` Lint 6 enforces that complete contract. |
+
+### `exposure` object
+
+Exposure is a decision, not a default. Core resolves
+`show_in_rest = meta.show_in_rest ?? meta.public ?? false` from WP 7.1, and MCP Adapter 0.6.0+
+resolves `meta.mcp.public ?? meta.public ?? false` — so an implementer who sets `meta.public`
+for REST also publishes to agents unless someone decided otherwise. This object records that
+someone decided, and what they decided, at audit time rather than at registration time.
+
+| Field | Type | Description |
+|---|---|---|
+| `agent_facing` | bool | Whether an external agent (MCP client, command palette, headless caller) should be able to *discover* this ability. Drives the implementer's `meta.public`. `false` is a real answer, not a placeholder — plenty of useful abilities are for first-party UI only. |
+| `mcp` | enum | The explicit MCP decision: `allow` (allow-list it for agents), `deny` (register `meta.mcp.public => false`), or `inherit` (accept whatever `meta.public` resolves to on the target adapter version). Use `inherit` only when the audit has confirmed the target adapter version. |
+| `rationale` | string | One sentence. **Required when `agent_facing: true` or `mcp: allow`** — name the agent workflow that needs it. Optional otherwise. |
+
+```yaml
+exposure:
+  agent_facing: true
+  mcp: allow
+  rationale: "A triage agent answering 'which items need attention?' needs to enumerate before it can act."
+```
+
+Two rules downstream tooling depends on:
+
+- **A `destructive: true` ability reaching MCP requires `mcp: allow` plus a `rationale`.** That
+  pairing is the "explicit allow-list decision" `wp-abilities-verify` looks for. `mcp: inherit`
+  on a destructive ability is not a decision — it is a default nobody read.
+- **`agent_facing` and `permission` are independent.** Never soften a `permission` entry because
+  `agent_facing` is `false`; obscurity is not a capability check. A non-agent-facing ability is
+  still executable by anything that knows its name.
 
 ### `backing: null` semantics
 
@@ -117,7 +158,7 @@ as a warning, not an error:
 |---|---|---|
 | `source` | enum (optional, default `rest_controller`) | Where the canonical permission for this behavior lives — not always the REST controller's `permission_callback`. One of `rest_controller`, `admin_action`, `service`, `domain_policy`, `post_type_map`, `none`. When omitted, defaults to `rest_controller` for backwards compatibility. `admin_action` for behaviors gated by `check_admin_referer` / `current_user_can` on an admin handler; `service` when a shared method enforces the cap; `domain_policy` for plugins with a policy / authorization layer; `post_type_map` for capabilities resolved through `map_meta_cap` on a post-type cap shadow; `none` for genuinely public behavior. Tells the implementer whether the ability's `permission_callback` can mirror the REST callback or must consult a different source of truth. |
 | `callback` | string | The method or function name that enforces the cap at the recorded `source`. For `source: rest_controller`, this is the `permission_callback` value. For `source: admin_action`, the admin handler function or method. For `source: service`, the service method that performs the cap check. |
-| `resolves_to` | string | The `current_user_can()` call(s) it ultimately resolves to. For compound gates, include both (e.g. `"current_user_can('read_private_pages')` for read; `current_user_can('edit_others_pages')` for write"). |
+| `resolves_to` | string | The `current_user_can()` call(s) the **ability** must enforce — the canonical gate for the behavior, not necessarily the value the REST layer happens to carry. `wp-abilities-verify` diffs this field against the registered `permission_callback` and FAILs on disagreement, so a route registered `permission_callback => '__return_true'` records `__return_true` in `callback` and the intended cap here (see `capability-gate-tracing.md`, "Common pitfall"). For compound gates, include both (e.g. `"current_user_can('read_private_pages')` for read; `current_user_can('edit_others_pages')` for write"). |
 | `confirmed` | bool | `true` if verified against source; `false` if inferred. |
 
 ## `excluded_from_mvp` — array
@@ -162,7 +203,7 @@ Copy-pasteable starting point for a new audit:
 
 ````markdown
 ---
-Last updated: 2026-04-20 14:30
+Last updated: 2026-09-06 14:30
 ---
 
 # Example Plugin Abilities — Phase 1 Audit
@@ -171,7 +212,7 @@ Last updated: 2026-04-20 14:30
 plugin: example-plugin
 repo: Owner/example-plugin
 branch_audited: feat/abilities-example-plugin
-audited_at: 2026-04-20
+audited_at: 2026-09-06
 auditor: Your Name (Your Team)
 baseline_abilities: 0
 capability_gate: manage_options  # confirmed at includes/rest-api/class-example-rest-controller.php line 32
@@ -195,6 +236,10 @@ proposed_abilities:
       resolves_to: "current_user_can('manage_options')"
       confirmed: true
     return_type: "WP_REST_Response (wrapping array)"
+    input_schema:
+      type: object
+      properties: {}
+      default: {}
     effort: S
     annotations: { readonly: true, destructive: false, idempotent: true }
     notes:
@@ -203,6 +248,10 @@ proposed_abilities:
     use_case_fit: "Agent answers 'which items need attention right now?' in a single call without paging through a UI."
     side_effects: []
     seed_data_needs: "at least one item exists in any non-trashed status"
+    exposure:
+      agent_facing: true
+      mcp: allow
+      rationale: "A triage agent answering 'which items need attention right now?' must enumerate before it can act."
     reference_ability: true
 
   - name: example-plugin/close-item
@@ -230,6 +279,10 @@ proposed_abilities:
       - "fires action `example_plugin/item_closed` (downstream listeners may dispatch email)"
       - "writes audit-log row to `example_plugin_audit_log`"
     seed_data_needs: "one open item to close; the test must capture the item id before invocation"
+    exposure:
+      agent_facing: false
+      mcp: deny
+      rationale: "Close is terminal and has no reopen endpoint; keep it to the admin UI until a soft-delete design exists."
 
 excluded_from_mvp:
   - name: example-plugin/delete-item
@@ -258,14 +311,17 @@ overrides. Safe to treat `manage_options` as the single gate.
 
 Documented so downstream skills have an explicit contract:
 
-- **`capability_gate` string-with-inline-comment form** loses data when parsed
-  by strict YAML parsers (comments are dropped). The structured object form is
-  preferred; string form is accepted for backwards compatibility.
+- **`capability_gate` string-with-inline-comment form** loses provenance when
+  parsed by strict YAML parsers (comments are dropped). The capability itself
+  survives, so this is a provenance limitation, not a grading one — a single
+  capability string remains canonical and unwarned. Move the provenance into
+  the object form's `verified_at` when it must be machine-readable.
 - **Legacy compound-string `capability_gate`** — the `"<read_cap> / <write_cap>"`
-  form predates the structured `{read, write}` object and is still accepted
-  for backwards compatibility. Validators (e.g. `wp-abilities-verify`)
-  emit WARN on this form to nudge migration to the structured shape;
-  they do NOT FAIL. New audits should use the object form.
+  form predates the structured `{read, write}` object. It is still accepted
+  for backwards compatibility, and it is the **only** `capability_gate` form
+  validators (e.g. `wp-abilities-verify`) warn on; they do NOT FAIL. A single
+  capability string is not this form and must not be warned on. New compound
+  audits should use the object form.
 - **`return_type` is hint-only.** Prose for the human auditor; not
   machine-parseable. Downstream skills use runtime `is_wp_error(...)` and
   `instanceof WP_REST_Response` checks regardless of what this field says.
@@ -287,6 +343,15 @@ Documented so downstream skills have an explicit contract:
   fields to nudge backfill the next time the audit is touched; they do
   NOT FAIL, mirroring the legacy `capability_gate` posture above. New
   audits MUST populate all three.
+- **`exposure` added 2026-08-15.** Optional so audits authored earlier validate
+  as-is; new audits MUST populate it on every entry in `proposed_abilities`.
+  Validators emit WARN on a missing `exposure` object, mirroring the
+  implementation-readiness posture above, and MUST NOT FAIL on its absence.
+  Note what a missing object means downstream: `wp-abilities-verify`'s exposure
+  checks cannot conclude anything about intent, so its audit-versus-registration
+  rules degrade from FAIL to WARN and the report says the audit predates the
+  field rather than that the registration is wrong. An absent `exposure` is not
+  evidence that an ability is not agent-facing.
 - **`backing.kind` and `permission.source` added 2026-05-21.** Both
   are optional with default `rest_controller` so older audits validate
   as-is. New audits SHOULD populate both explicitly — `backing.kind`
