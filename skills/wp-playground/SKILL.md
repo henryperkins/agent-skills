@@ -1,6 +1,6 @@
 ---
 name: wp-playground
-description: Use when routing ambiguous WordPress Playground work, running local CLI sessions with @wp-playground/cli, creating playground.wordpress.net share links or browser previews, or working with snapshots, mounts, version switching, and Xdebug. For Blueprint JSON authoring or review, use the blueprint skill directly.
+description: Use when routing ambiguous WordPress Playground work, running local CLI sessions with @wp-playground/cli, creating playground.wordpress.net share links or browser previews, operating an open Playground site through WebMCP site tools, or working with snapshots, mounts, version switching, and Xdebug. For Blueprint JSON authoring or review, use the blueprint skill directly.
 compatibility: "Targets WordPress 6.9+ (PHP 7.2.24+). Playground CLI requires Node.js 20.18+; runs WP in WebAssembly with SQLite."
 license: GPL-2.0-or-later
 ---
@@ -18,7 +18,7 @@ This is a thin routing wrapper. Use it to pick the right Playground workflow, th
 - **Blueprint JSON, schema, steps, resources, bundles, or Blueprint review**: use the `blueprint` skill directly. Do not duplicate Blueprint schema details here.
 - **Local CLI execution**: read [references/cli.md](references/cli.md) for `@wp-playground/cli` `start`, `server`, `run-blueprint`, `build-snapshot`, mounts, version switching, and local validation.
 - **Xdebug or stuck CLI runs**: read [references/debugging.md](references/debugging.md) for Xdebug, runtime logs, worker flags, and stuck CLI runs.
-- **Browser-only Playground website workflows**: read [references/website.md](references/website.md) for `playground.wordpress.net`, share URLs, Blueprint Editor, hosted bundles, and browser limitations.
+- **Browser-only Playground website workflows**: read [references/website.md](references/website.md) for Query API and Blueprint URL setup, share links, and browser limitations. It routes existing-site operations to separate WebMCP, Playground MCP, and Sites API references; load only the selected method. Unless the user requests a specific connection method, prefer available WebMCP tools for supported browser operations.
 
 ## Inputs required
 
