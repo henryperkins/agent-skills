@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "wordpress-skills",
-  "description": "Agent Skills for WordPress — a curated collection of Claude Code skills for Gutenberg block/theme development, plugin architecture, REST API, Abilities API, AI Client/Connectors, WP-CLI, performance, PHPStan, and Playground.",
+  "description": "Agent Skills for WordPress — a curated collection of Claude Code skills for Gutenberg block/theme development, plugin architecture, REST API, Abilities API, AI Client/Connectors, WP-CLI, performance, PHPStan, Playground, and wp-env.",
   "owner": {
     "name": "WordPress Contributors",
     "url": "https://github.com/henryperkins/agent-skills"
@@ -10,9 +10,9 @@
     {
       "name": "wordpress-skills",
       "source": "./",
-      "description": "All WordPress agent skills in one plugin: block/theme development, plugin architecture, REST API, Abilities API, AI Client/Connectors, WP-CLI, performance, PHPStan, and Playground.",
+      "description": "All WordPress agent skills in one plugin: block/theme development, plugin architecture, REST API, Abilities API, AI Client/Connectors, WP-CLI, performance, PHPStan, Playground, and wp-env.",
       "license": "GPL-2.0-or-later",
-      "version": "1.11.0"
+      "version": "1.12.0"
     }
   ]
 }
