@@ -43,8 +43,10 @@ Route by intent even if repo kind is broad (like `wp-site`):
   - Route → `blueprint`.
 - **@wp-playground/cli / server / run-blueprint / build-snapshot / auto-mount / Xdebug**
   - Route → `wp-playground`, then read `references/cli.md` or `references/debugging.md`.
-- **playground.wordpress.net / Blueprint Editor / share links / browser-only Playground**
+- **playground.wordpress.net / Blueprint Editor / share links / browser-only Playground / WebMCP site tools / Playground MCP / `window.playgroundSites`**
   - Route → `wp-playground`, then read `references/website.md`.
+- **wp-env / @wordpress/env / .wp-env.json / Docker-based local WordPress / `wp-env run`**
+  - Route → `wp-env`. For a quick, disposable local site without Docker, route → `wp-playground` instead.
 - **Blocks / block.json / registerBlockType / attributes / save serialization**
   - Route → `wp-block-development`.
 - **Block patterns / patterns/*.php / register_block_pattern / starter page or template patterns**
@@ -59,8 +61,8 @@ Route by intent even if repo kind is broad (like `wp-site`):
   - Route → `wp-wpcli-and-ops`.
 - **Build tooling / @wordpress/scripts / webpack / Vite / npm scripts**
   - Route → `wp-build-tooling` (planned).
-- **Testing / PHPUnit / wp-env / Playwright**
-  - Route → `wp-testing` (planned).
+- **Testing / PHPUnit / Playwright**
+  - Route → `wp-testing` (planned). To run PHPUnit inside a wp-env environment, route → `wp-env`.
 - **PHPStan / static analysis / phpstan.neon / phpstan-baseline.neon**
   - Route → `wp-phpstan`.
 - **Performance / caching / query profiling / editor slowness**

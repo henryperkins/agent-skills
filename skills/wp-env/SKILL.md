@@ -1,12 +1,15 @@
 ---
 name: wp-env
-description: "Use when setting up, configuring, or troubleshooting local WordPress development environments with @wordpress/env (wp-env). Triggers on mentions of wp-env, local WordPress development, Docker-based WordPress, or requests to start/stop/configure a local WordPress instance."
-compatibility: "Targets WordPress 7.0+ (PHP 7.4.0+). Requires Docker and Node.js 18.12+."
+description: "Use when setting up, configuring, or troubleshooting local WordPress development environments with @wordpress/env (wp-env). Triggers on mentions of wp-env, local WordPress development, Docker-based WordPress, or requests to start/stop/configure a local WordPress instance. For a quick, disposable local site without Docker, use wp-playground instead."
+compatibility: "Targets WordPress 6.9+ (PHP 7.2.24+). Requires Docker (default runtime) and Node.js 18.12+; verified against @wordpress/env 11.16.0."
+license: GPL-2.0-or-later
 ---
 
 # @wordpress/env (wp-env)
 
 Zero-config, Docker-based local WordPress development environment for plugins, themes, and core.
+
+Verified against `@wordpress/env` 11.16.0. When exact flags matter, check `wp-env --version` and `wp-env <command> --help`.
 
 ## When to use
 
@@ -43,8 +46,10 @@ npm -g install @wordpress/env
 
 # Or project-local
 npm i @wordpress/env --save-dev
-# Then use: npx wp-env start
+# Then use: npm exec --no -- wp-env start
 ```
+
+Run a project-local install with `npm exec --no -- wp-env` (or a `package.json` script), not `npx wp-env`. If the local install is missing, `npx wp-env` fetches the unscoped `wp-env` package from the registry, which is not `@wordpress/env`, and a non-interactive shell installs it without asking. `--no` makes npm fail instead.
 
 ### 2. Start the environment
 
@@ -61,7 +66,9 @@ Common start options:
 - `wp-env start --update` -- pull latest sources and reconfigure
 - `wp-env start --xdebug` -- enable Xdebug (debug mode)
 - `wp-env start --xdebug=profile,trace` -- multiple Xdebug modes
-- `wp-env start --auto-port` -- find available ports when defaults are busy
+- `wp-env start --auto-port` -- find available ports when defaults are busy (ignored when `CI` is set)
+
+By default `start` also creates a separate tests environment (port 8889, `tests-*` containers) and prints a deprecation warning. Add `"testsEnvironment": false` to `.wp-env.json` to start only the development environment; for an isolated test site, run a second environment from its own config file with `wp-env start --config=<file>`.
 
 ### 3. Auto-detection (no config file)
 
@@ -112,11 +119,11 @@ Place at the project root. All fields are optional.
 | ZIP URL | `"https://downloads.wordpress.org/plugin/akismet.zip"` |
 | Git SSH | `"ssh://user@host/repo.git#ref"` |
 
-**GOTCHA:** WordPress.org plugin/theme slugs (bare names like `"akismet"`) do NOT work. Use the full ZIP URL.
+**GOTCHA:** WordPress.org plugin/theme slugs (bare names like `"akismet"`) do NOT work. Use the full ZIP URL. Relative local paths must start with `.` (`"."`, `"./path"`, `"../path"`): `"plugins/my-plugin"` is parsed as the GitHub repository `plugins/my-plugin`.
 
 #### Local overrides with `.wp-env.override.json`
 
-Create `.wp-env.override.json` next to `.wp-env.json` for personal settings (gitignored). Only `config` and `mappings` are **merged** -- all other fields (including `plugins` and `themes` arrays) **fully replace** the base.
+Create `.wp-env.override.json` next to `.wp-env.json` for personal settings (gitignored). `config`, `mappings`, and `lifecycleScripts` are **merged** key by key -- all other fields (including `plugins` and `themes` arrays) **fully replace** the base.
 
 ### 5. Run commands in containers
 
@@ -125,7 +132,7 @@ Create `.wp-env.override.json` next to `.wp-env.json` for personal settings (git
 wp-env run cli wp user list
 wp-env run cli wp plugin list
 wp-env run cli wp option update blogname "My Site"
-wp-env run cli "wp rewrite structure /%postname%/"
+wp-env run cli wp rewrite structure /%postname%/
 
 # Run commands in a specific directory
 wp-env run cli --env-cwd=wp-content/plugins/my-plugin composer install
@@ -137,10 +144,12 @@ wp-env run cli --env-cwd=wp-content/plugins/my-plugin vendor/bin/phpunit
 wp-env run cli php -- --version
 
 # MySQL access
-wp-env run mysql mysql -- --user=root --password=password wordpress
+wp-env run mysql mariadb -- --user=root --password=password wordpress
 ```
 
-Available containers: `mysql`, `wordpress`, `cli`, `composer`, `phpmyadmin`.
+`wp-env run` hands each argument straight to `docker compose exec` without a shell. Never wrap the whole command in one quoted string: `wp-env run cli "wp user list"` fails with `executable file not found in $PATH`. Quote only individual arguments that contain spaces. The database image is `mariadb:lts`, which ships a `mariadb` client but no `mysql` binary.
+
+Available containers: `mysql`, `wordpress`, `cli`, and `phpmyadmin` (only when enabled), plus `tests-mysql`, `tests-wordpress`, and `tests-cli` while the tests environment is on. The `composer` and `phpunit` containers were removed; run those tools in `cli`.
 
 ### 6. Manage the environment
 
@@ -152,9 +161,11 @@ wp-env logs                    # Stream PHP/Docker logs
 wp-env logs --no-watch         # Print logs and exit
 wp-env status                  # Show URLs, ports, config
 wp-env status --json           # Machine-readable status
-wp-env cleanup                 # Remove containers/volumes (keep images)
-wp-env destroy                 # Remove everything including images
+wp-env cleanup --force         # Remove containers/volumes (keep images)
+wp-env destroy --force         # Remove everything including images
 ```
+
+`cleanup` and `destroy` delete the site's database and content. Without `--force` they wait for an interactive confirmation that a non-interactive agent shell cannot answer, so get the user's go-ahead first and then pass `--force`.
 
 ### 7. Xdebug setup
 
@@ -200,13 +211,13 @@ IDE listens on port **9003**. VS Code `launch.json` needs:
 | "Cannot connect to Docker daemon" | Docker not running | Start Docker Desktop |
 | "Port 8888 already in use" | Port conflict | Use `--auto-port` or set custom `port` in `.wp-env.json` |
 | Plugin not appearing | Missing `Plugin Name:` header in main PHP file | Add standard plugin header comment |
-| "Could not find a valid source" | Invalid source string in config | Use full ZIP URL for wp.org plugins, not bare slugs |
-| Stale environment after source changes | Cached Docker volumes | `wp-env start --update` or `wp-env destroy && wp-env start` |
-| White screen / PHP errors | Corrupted database | `wp-env reset all && wp-env start` |
-| Override not taking effect | Wrong merge behavior | `plugins`/`themes` in override **replace** base arrays; only `config`/`mappings` merge |
-| Tests environment not accessible | Wrong port | Test environment runs on port 8889 by default |
+| `Invalid or unrecognized source: "<value>"` | Bare wp.org slug, or a relative path without a leading `.` | Use the full ZIP URL for wp.org plugins; prefix local paths with `./` |
+| Stale environment after source changes | Cached Docker volumes | `wp-env start --update`; if that fails and the user accepts losing local data, `wp-env destroy --force` then `wp-env start` |
+| White screen / PHP errors | PHP fatal in the code under development, or a corrupted database | Check `wp-env logs --no-watch` first; if the database is the cause, `wp-env reset all && wp-env start` (deletes all site content) |
+| Override not taking effect | Wrong merge behavior | `plugins`/`themes` in override **replace** base arrays; only `config`/`mappings`/`lifecycleScripts` merge |
+| Tests environment not accessible | Wrong port, or `"testsEnvironment": false` | It runs on port 8889 unless disabled; the separate tests environment is deprecated, so prefer a second config started with `--config` |
 | Xdebug not connecting | IDE not listening or wrong port | Ensure IDE listens on port 9003 with correct `pathMappings` |
-| npm global install permission error | Node installed to a system path | Use `nvm`, or install locally: `npm i -D @wordpress/env` and run via `npx wp-env` |
+| npm global install permission error | Node installed to a system path | Use `nvm`, or install locally: `npm i -D @wordpress/env` and run via `npm exec --no -- wp-env` |
 
 ## Escalation
 

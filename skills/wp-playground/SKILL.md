@@ -50,4 +50,4 @@ This is a thin routing wrapper. Use it to pick the right Playground workflow, th
 
 ## Escalation
 
-- If the task needs native PHP extensions, external database access, persistence, or production-like infrastructure that Playground cannot provide, use a full WordPress stack such as wp-env, Docker, or the project-provided environment.
+- If the task needs native PHP extensions, external database access, persistence, or production-like infrastructure that Playground cannot provide, use a full WordPress stack such as wp-env (see the `wp-env` skill), Docker, or the project-provided environment.

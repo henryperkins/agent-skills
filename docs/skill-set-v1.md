@@ -1,6 +1,6 @@
 # WordPress skill set (v1)
 
-This repository ships 21 skills. The list below is the complete inventory of
+This repository ships 22 skills. The list below is the complete inventory of
 `skills/*` and is enforced against the filesystem by
 `assertRemediationRelease191()` in `eval/harness/release-conformance.mjs`, so it
 cannot drift from what is actually installed.
@@ -15,6 +15,7 @@ cannot drift from what is actually installed.
 - `wp-ai-plugin`
 - `wp-block-development`
 - `wp-block-themes`
+- `wp-env`
 - `wp-interactivity-api`
 - `wp-patterns`
 - `wp-performance`

@@ -1246,6 +1246,43 @@ export function assertAbilitiesApiMcpPrecision(repoRoot) {
 }
 
 /**
+ * wp-env guidance verified against @wordpress/env 11.16.0.
+ *
+ * Upstream's skill (#38) followed the package README, which lags the code.
+ * Each exclusion below is a command 11.16.0 rejects: the `composer` container
+ * was removed, `wp-env run` hands argv to `docker compose exec` without a
+ * shell (so one quoted command string is looked up as a single executable
+ * name), the `mariadb:lts` image has no `mysql` binary, and `npx wp-env`
+ * resolves the unrelated unscoped `wp-env` npm package when the local install
+ * is missing. The router entry is fork-only, so a later upstream merge must
+ * not drop it silently.
+ */
+export function assertWpEnvPrecision(repoRoot) {
+  requireIncludes(repoRoot, "skills/wp-env/SKILL.md", [
+    "verified against @wordpress/env 11.16.0",
+    "npm exec --no -- wp-env",
+    "wp-env run cli wp rewrite structure /%postname%/",
+    "wp-env run mysql mariadb --",
+    "`tests-cli`",
+    '"testsEnvironment": false',
+    "wp-env destroy --force",
+    "`lifecycleScripts` are **merged**",
+    "Invalid or unrecognized source",
+  ]);
+  requireExcludes(repoRoot, "skills/wp-env/SKILL.md", [
+    "`cli`, `composer`",
+    'wp-env run cli "wp rewrite structure',
+    "wp-env run mysql mysql",
+    "# Then use: npx wp-env",
+    "run via `npx wp-env`",
+    "Could not find a valid source",
+  ]);
+  requireIncludes(repoRoot, "skills/wordpress-router/references/decision-tree.md", [
+    "Route → `wp-env`",
+  ]);
+}
+
+/**
  * The 1.9.1 remediation record.
  *
  * A release that corrects guidance has to say what it corrected, and the audit
@@ -1297,6 +1334,7 @@ export function runReleaseConformance(repoRoot) {
   assertAiClientConnectorPrecision(repoRoot);
   assertAiPluginPrecision(repoRoot);
   assertAbilitiesApiMcpPrecision(repoRoot);
+  assertWpEnvPrecision(repoRoot);
   assertRemediationRelease191(repoRoot);
   assert(
     IMMEDIATE_UNWATCH_PATTERN.test("const unwatch = watch( () => { return cleanup; } );\n// Dispose later.\nunwatch();"),
