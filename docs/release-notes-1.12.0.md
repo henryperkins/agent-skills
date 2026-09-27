@@ -66,8 +66,10 @@ against the `@wordpress/env` 11.16.0 source before shipping it.
   reports as current; upstream's #92 refresh stopped at 7.1.1. The Gutenberg
   index is unchanged at **v24.0.0**, since v24.1.0 is still a release
   candidate.
-- `.github/CODEOWNERS` arrives from upstream (#108). Its team,
-  `@WordPress/agent-skills-maintainers`, does not resolve in this fork.
+- Removed WordPress-org automation that does nothing in this fork: the
+  `.github/CODEOWNERS` file upstream added in #108 (its team,
+  `@WordPress/agent-skills-maintainers`, does not resolve here) and the Props
+  Bot workflow.
 - New `assertWpEnvPrecision` gate: it pins the wp-env corrections and the
   fork-only router entry, and fails on upstream's original `SKILL.md`.
 
