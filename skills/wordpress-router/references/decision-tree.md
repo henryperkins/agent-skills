@@ -27,7 +27,7 @@ Route by intent even if repo kind is broad (like `wp-site`):
   - Route → `wp-ai-client`.
 - **AI provider plugin / Connectors API / Settings → Connectors / CapabilityEnum / SupportedOption / EmbeddingGenerationModelInterface / wp_connectors_init / WP_Connector_Registry / wp_get_connector / connectors_ai_*_api_key / `_ai_` prefix**
   - Route → `wp-ai-connectors`.
-- **AI plugin (canonical) / WordPress/ai / Abstract_Feature / Experiments framework / WPAI_* / wp_supports_ai / Editorial Updates / Content Translation / dashboard AI widgets / Guidelines integration / ai-wp-admin**
+- **AI plugin (canonical) / WordPress/ai / Abstract_Feature / Experiments framework / WPAI_* / `wpai_*` hooks / wp_supports_ai / Editorial Updates / Content Translation / Custom Abilities / core/read-content / core/content-query / dashboard AI widgets / Guidelines integration / ai-wp-admin**
   - Route → `wp-ai-plugin`.
 - **Abilities API / wp_register_ability / wp-abilities/v1 / @wordpress/abilities / @wordpress/core-abilities / executeAbility / core/abilities store**
   - Route → `wp-abilities-api`.

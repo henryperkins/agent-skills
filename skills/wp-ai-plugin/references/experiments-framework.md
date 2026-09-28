@@ -98,7 +98,7 @@ The v1.3.0 plugin gates five non-Experiment utility/read Abilities behind the `C
 - `core/read-users` (`Gated\Read_Users`)
 - `ai/get-post-details` and `ai/get-post-terms` (both `Gated\Post_Utilities`)
 
-This is a breaking change for anything that resolved those IDs on 1.2.0. Check the Experiment before assuming the Ability, and tell site owners to enable **Custom Abilities** on Settings → AI.
+This is a breaking change for anything that resolved those IDs on 1.2.0. Probe with `wp_has_ability()` before assuming the Ability — a bare `wp_get_ability()` on a missing ID fires core's `_doing_it_wrong()` "not found" notice — and tell site owners to enable **Custom Abilities** on Settings → AI.
 
 The gated set is itself filterable:
 
@@ -111,9 +111,11 @@ add_filter( 'wpai_gated_abilities', function ( array $classes ): array {
 
 Entries must be class strings — anything else triggers `_doing_it_wrong()` and is skipped. `Abstract_Gated_Ability` requires `register(): void` and offers `requires_core_object_exposure(): bool`; when any gated ability returns `true`, the Experiment runs `Show_In_Abilities` once before registering.
 
+**`register()` runs on `init` priority 15, outside `wp_abilities_api_init`.** The built-in wrappers only hand off — `Content::init()`, `Users::init()`, `Settings::init()`, and `Posts::register()` each add a `wp_abilities_api_init` callback — and yours must do the same. Core rejects `wp_register_ability()` called outside that action with `_doing_it_wrong()`, so a gated `register()` that registers directly produces no ability.
+
 They register only when both the global feature switch and `wpai_feature_custom-abilities_enabled` are true. `Custom_Abilities::register()` reads `Gated_Abilities::get_all()`, runs the `Show_In_Abilities` polyfill if any member requires core-object exposure, then registers each member. Third parties filter the class-string list through `wpai_gated_abilities`; invalid classes fail with `_doing_it_wrong()`.
 
-Other Feature and Experiment Abilities, including the three Image Generation Abilities (`ai/image-generation`, `ai/image-import`, `ai/image-prompt-generation`) and `ai/comment-analysis`, remain conditional on their own Features. Resolve an Ability with `wp_get_ability()` on or after `wp_abilities_api_init`; do not assume a conditional ID exists or re-register a shipped ID blindly.
+Other Feature and Experiment Abilities, including the three Image Generation Abilities (`ai/image-generation`, `ai/image-import`, `ai/image-prompt-generation`) and `ai/comment-analysis`, remain conditional on their own Features. Resolve a conditional ID only after the registering callbacks have run (priority 11 or later on `wp_abilities_api_init`, or any later hook), and probe with `wp_has_ability()` before calling `wp_get_ability()`; do not assume a conditional ID exists or re-register a shipped ID blindly.
 
 ### Advanced feature settings
 
@@ -146,12 +148,12 @@ Everything previously listed here as "unreleased on `develop`" shipped in the 1.
 
 - **`Custom_Abilities`** (`custom-abilities`, `Experiment_Category::ADMIN`, `capability` `'none'`) — a single toggle that gates *all* of the plugin's custom Abilities (#881). `Gated_Abilities::get_all()` only instantiates the wrapper classes. `Custom_Abilities::register()` runs the `Show_In_Abilities` polyfill when needed and calls each wrapper's `register()`. `Gated_Abilities::GATED_ABILITY_CLASSES` currently holds `Post_Utilities`, `Read_Settings`, `Read_Users`, `Read_Content` — together registering five IDs (`core/read-content`, `core/read-settings`, `core/read-users`, `ai/get-post-details`, `ai/get-post-terms`). Third parties add their own via `wpai_gated_abilities`.
 
-  This is a behavioral inversion from 1.2.0: those Ability IDs are absent until a site admin enables the Experiment through `wpai_feature_custom-abilities_enabled`, and the `show_in_abilities` polyfill goes with them. Any downstream resolver must handle null.
+  This is a behavioral inversion from 1.2.0: those Ability IDs are absent until a site admin enables the Experiment through `wpai_feature_custom-abilities_enabled`, and the `show_in_abilities` polyfill goes with them. Any downstream resolver must treat them as optional and probe with `wp_has_ability()`.
 
 - **`Slug_Generation`** (`slug-generation`, `Experiment_Category::EDITOR`) — suggests SEO-friendly permalinks that can be applied as the post slug (#897, #932); `wpai_slug_generation_number_of_suggestions` filters how many.
 - **Public request-logging API** — `WordPress\AI\log_ai_request( array $data )` lets MCP servers and ability consumers write to the AI Request Log, returning the log ID or `false` when logging is inactive (#914). It works only while the AI Request Logging Experiment is enabled.
 - **Embedding helpers, staged but inactive** — `WordPress\AI\supports_embedding_generation()` and `WordPress\AI\generate_embeddings()` exist, and a vendored 1.4-era `EmbeddingBuilder` ships under `includes/Vendor/AiClient/`, but `SDK_Overlay::register()` is commented out at `ai.php:85` on purpose. On a stock install the helper returns `WP_Error( 'ai_embeddings_unsupported' )`. The wrapper also calls `usingProvider()` and `usingModelPreference()`, which PHP AI Client 1.5.0 removed from `EmbeddingBuilder`, so if a 1.5 SDK is what loads, every call path fails with `ai_embeddings_failed`. See the `wp-ai-client` skill's `references/embedding-builder.md`.
-- **Uninstall cleanup** — deleting the plugin removes its table, options, and scheduled events (post and comment meta such as `wpai_generated` survives). Opt out with `wpai_remove_data_on_uninstall` (#692).
+- **Uninstall cleanup** — deleting the plugin removes its request-log table, options (including `_secret_ai/*` rows), transients, scheduled events, and the connector-approval user meta, and deletes the Secrets master key once nothing else depends on it (post and comment meta such as `wpai_generated` survives). Opt out with `wpai_remove_data_on_uninstall` (#692).
 
 - **Ability-scoped prompt hooks** — `wpai_{$ability_slug}_system_instruction`, `wpai_{$ability_slug}_prompt`, and `wpai_{$ability_slug}_prompt_builder`. The global `wpai_system_instruction` hook has shipped since v0.7.0; the scoped family ships in 1.3.0. The builder variant is applied by `Abstract_Ability::filter_prompt_builder()` (`@since 1.3.0`), which runs after the model preference is applied and before generation support is verified; a return value that is not a `WP_AI_Client_Prompt_Builder` is discarded and the unfiltered builder is used.
 - **Settings import/export** — authenticated `GET /ai/v1/settings/export` and `POST /ai/v1/settings/import` endpoints, both gated by `manage_options`, using schema version 1 and excluding credential-like settings (#734).
@@ -163,10 +165,20 @@ These entries are in the 1.3.0 tag even where an individual docblock still carri
 ### Deprecated and removed in v1.3.0
 
 - **`AI_Service` and `get_ai_service()`** are deprecated (`@deprecated 1.3.0`) and will be removed in the next major release; `get_ai_service()` calls `_deprecated_function()`. Nothing in the plugin uses them — experiments and abilities call `wp_ai_client_prompt()` directly (#905).
-- **`wpai_meta_description_result_temperature`** still fires through `apply_filters_deprecated()`, but its value is ignored and it will be removed next release. The plugin stopped setting custom temperature values on any request (#913).
+- **`wpai_meta_description_result_temperature`** still fires through `apply_filters_deprecated()`, but its value is ignored and it is slated for removal (it still fires on `develop`). The plugin stopped setting custom temperature values on any request (#913).
 - Preferred models for the three default providers were refreshed (#913). Do not hard-code the plugin's model choices.
 - Meta keys moved to a `wpai_` prefix: `ai_generated`, `ai_generated_summary`, and `ai_note` became `wpai_generated`, `wpai_generated_summary`, and `wpai_note` (#867). The 1.3.0 upgrade routine migrates existing rows (it is skipped on fresh installs), but downstream code reading those keys directly must be updated.
 - `core/read-users` collections are now ordered by display name, A to Z (#948).
+
+### Unreleased on `develop` after v1.3.0 (milestone 1.4.0)
+
+Merged to `develop` but in no release as of 2026-09-27 (`ai.php` still says 1.3.0). Everything above describes 1.3.0; gate on `WPAI_VERSION` and feature-detect rather than assuming any of this.
+
+- **Read-ability renames (#1002, merged 2026-09-09).** `core/read-content` becomes `core/content-query` and `core/read-users` becomes `core/users-query`. The old IDs stay registered as deprecated aliases through the new `register_deprecated_ability_alias( string $deprecated_name, string $replacement_name, string $version )`, which copies the replacement's schemas, category, and meta, emits a deprecation notice, and forwards the call. `ai/get-post-details` is deprecated in favour of `core/content-query`'s single-post mode. The wrappers become `Gated\Content_Query` and `Gated\Users_Query`, and with Custom Abilities on the gate yields seven IDs instead of five. Resolve the new name first, then fall back to the old one.
+- **Embeddings go live (#975, #1005, #976, #993).** `ai.php` calls `SDK_Overlay::register()`, so on stock WordPress 7.x `supports_embedding_generation()` is normally true. `generate_embeddings()` requires a `model` argument (a `ModelInterface` or model ID) and, for an ID, a `provider`, failing with `ai_embeddings_missing_model` / `ai_embeddings_missing_provider`; `model_preference` is gone. A `WordPress\AI\Embeddings\` layer adds a `wpai_embeddings` table (`Embedding_Repository`, `Embedding_Record`, `Vector_Math`, `Vector_Ranker`), which uninstall also drops, plus `wp ai embeddings generate` and `wp ai embeddings compare`. Storage and similarity live in the plugin by design, not in core.
+- **Guidelines read `wp_knowledge` (#988).** See `guidelines-integration.md`.
+- **Comment moderation (#681, #972).** `ai/comment-analysis` results gain `value_score` (stored as `_wpai_value_score`; a short-circuited result without it defaults to 0.0), `wpai_comment_analysis_result` gains a fourth `?int $post_id` argument, the new `wpai_comment_analysis_post_context_shareable( bool $shareable, WP_Post $post )` filter controls whether post context is sent, and `wpai_bulk_action_max_items` also caps bulk comment analysis. That filter is the only new `wpai_*` hook (62 in all).
+- **Minimum WordPress 7.0.3 (#1011).**
 
 ## The enabled-state model
 
@@ -174,8 +186,8 @@ These entries are in the 1.3.0 tag even where an individual docblock still carri
 
 1. **Global toggle** — `wpai_features_enabled` option. Settings → AI's master switch. Returns false immediately if off.
 2. **Per-feature toggle** — `wpai_feature_{$id}_enabled` option. The Settings → AI screen renders one toggle per registered Feature.
-3. **Per-feature filter** — `wpai_feature_{$id}_enabled` filter (same name as the option). Last filter value wins. Use this in mu-plugins or hosting controls to force-enable or force-disable specific features.
-4. **Deprecated legacy filter** — `ai_experiments_experiment_{$id}_enabled` runs through `apply_filters_deprecated` for compat with code written before the 0.6.0 rename.
+3. **Deprecated legacy filter** — `ai_experiments_experiment_{$id}_enabled` runs first, through `apply_filters_deprecated`, for compat with code written before the 0.6.0 rename.
+4. **Per-feature filter** — `wpai_feature_{$id}_enabled` filter (same name as the option) runs last and receives the legacy filter's result, so it wins. Use this in mu-plugins or hosting controls to force-enable or force-disable specific features.
 
 Result is cached on the instance. Filters firing after the first `is_enabled()` call have no effect on that instance — important for testing.
 

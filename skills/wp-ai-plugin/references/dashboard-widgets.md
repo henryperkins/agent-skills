@@ -7,7 +7,7 @@ The AI plugin ships two dashboard widgets (since v0.8.0; still two as of v1.3.0)
 `includes/Admin/Dashboard/Dashboard_Widgets.php` registers two widgets via standard `wp_add_dashboard_widget()`, gated on `current_user_can( 'manage_options' )`:
 
 - **`wpai_status`** — AI Status widget (`AI_Status_Widget` class). Onboarding state, configured connectors, available Features and Experiments.
-- **`wpai_capabilities`** — AI Capabilities widget (`AI_Capabilities_Widget` class). Counts of available Abilities across the plugin and connected providers.
+- **`wpai_capabilities`** — AI Capabilities widget (`AI_Capabilities_Widget` class). Ability statistics mirroring the Abilities Explorer summary, plus the capabilities each connected AI provider offers.
 
 Both are constructed with the `Registry` instance and rendered via standard dashboard widget callbacks. Styles are enqueued via `Asset_Loader::enqueue_style( 'dashboard-widgets', 'admin/dashboard' )`.
 

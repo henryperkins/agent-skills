@@ -1211,6 +1211,41 @@ export function assertAiPluginPrecision(repoRoot) {
   requireExcludes(repoRoot, "skills/wp-abilities-api/SKILL.md", [
     "WordPress/ai 1.2.0, `includes/Abilities/`",
   ]);
+
+  // Verified against WordPress/ai 1.3.0 and WordPress 7.1 on 2026-09-27.
+  // Gated wrappers run on `init` 15, outside `wp_abilities_api_init`, so a
+  // wrapper that calls wp_register_ability() itself is rejected by core.
+  // get_post_context() skips every permission and status check. A bare
+  // wp_get_ability() probe of a gated ID fires _doing_it_wrong() whenever the
+  // experiment is off (core's get_registered()), which the plugin itself avoids
+  // with wp_has_ability(). The develop-branch notes (#1002 renames, #975
+  // embeddings, #988 wp_knowledge) are labelled unreleased until 1.4.0 ships.
+  requireIncludes(repoRoot, "skills/wp-ai-plugin/SKILL.md", [
+    "wp_has_ability(",
+    "outside `wp_abilities_api_init`",
+    "core/content-query",
+    "core/users-query",
+  ]);
+  requireExcludes(repoRoot, "skills/wp-ai-plugin/SKILL.md", [
+    "resolve them with `wp_get_ability()` and handle null",
+    "resolve with `wp_get_ability()` and handle `null`",
+    "does nothing but instantiate the real class",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-ai-plugin/references/hooks-and-filters.md", [
+    "performs no permission or status check",
+    "ai_embeddings_missing_model",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-ai-plugin/references/experiments-framework.md", [
+    "### Unreleased on `develop` after v1.3.0 (milestone 1.4.0)",
+    "register_deprecated_ability_alias",
+    "outside `wp_abilities_api_init`",
+  ]);
+  requireExcludes(repoRoot, "skills/wp-ai-plugin/references/experiments-framework.md", [
+    "Any downstream resolver must handle null.",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-ai-plugin/references/guidelines-integration.md", [
+    "no `wp_guideline` fallback",
+  ]);
 }
 
 /**

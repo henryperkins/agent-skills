@@ -38,7 +38,7 @@ if ( ! function_exists( 'wp_supports_ai' ) || ! wp_supports_ai() ) {
 
 AI plugin 1.3.0 treats a false result as a whole-plugin requirement failure on `plugins_loaded`: `Main::load()` returns before `includes/helpers.php` is loaded or any feature, settings, dashboard, or Site Health hooks are registered.
 
-The AI plugin uses this gate internally before initializing experiments (#268). Mirror it in your downstream code.
+Mirror the gate in your downstream code.
 
 ### Helper functions in `WordPress\AI` namespace
 
@@ -46,10 +46,10 @@ The AI plugin uses this gate internally before initializing experiments (#268). 
 
 - `WordPress\AI\normalize_content( string $content ): string` — strips HTML, collapses whitespace, applies `wpai_pre_normalize_content` and `wpai_normalize_content` filters.
 - `WordPress\AI\format_guidelines_for_prompt( array $categories, ?string $block_name = null ): string` — convenience wrapper around `Guidelines::get_instance()->format_for_prompt()`.
-- `WordPress\AI\get_post_context( int $post_id ): array` — associative post-context array for prompts (callers read keys like `$context['content']`); it is **not** a pre-formatted string.
+- `WordPress\AI\get_post_context( int $post_id ): array` — associative post-context array for prompts (callers read keys like `$context['content']`); it is **not** a pre-formatted string. It performs no permission or status check: it reads the post through `Posts::get_post_details()` rather than the Ability, so drafts, private posts, and password-protected content come back as readily as published ones. Check `current_user_can( 'read_post', $post_id )` (or stricter) before sending the result to a model or a client. The `wpai_get_post_details` and `wpai_get_post_terms` filters on that shared path fire even while Custom Abilities is off.
 - `WordPress\AI\get_preferred_models_for_text_generation(): array` — returns the plugin's preferred model list for `using_model_preference()`.
 - `WordPress\AI\log_ai_request()` — public v1.3.0 API for MCP servers and Ability consumers. It accepts `array $data` and returns `string|false`; the result is false while request logging is inactive or the write fails. Required data includes `type`, `operation`, and `status`.
-- `WordPress\AI\supports_embedding_generation(): bool` and `WordPress\AI\generate_embeddings()` — declared in v1.3.0, but unavailable on stock WordPress 7.1 because `SDK_Overlay::register()` is commented out in `ai.php`. Without `EmbeddingBuilder`, support is false and generation returns `WP_Error` code `ai_embeddings_unsupported`. Feature-detect at runtime.
+- `WordPress\AI\supports_embedding_generation(): bool` and `WordPress\AI\generate_embeddings()` — declared in v1.3.0, but unavailable on stock WordPress 7.1 because `SDK_Overlay::register()` is commented out in `ai.php`. Without `EmbeddingBuilder`, support is false and generation returns `WP_Error` code `ai_embeddings_unsupported`. Feature-detect at runtime. On `develop` (unreleased 1.4.0, #975) the overlay is registered, and `generate_embeddings()` requires a `model` argument — plus `provider` when the model is an ID — failing with `ai_embeddings_missing_model` or `ai_embeddings_missing_provider`.
 
 These are namespaced functions in `WordPress\AI`. Import as `use function WordPress\AI\normalize_content;` (or use the fully qualified name).
 
@@ -127,7 +127,7 @@ The matching action, `wpai_request_logged( $log_id, $insert_data )`, is document
 | Hook | Filtered value and additional arguments |
 | --- | --- |
 | `wpai_comment_analysis_response_schema` | `$schema` — `Abilities/Comment_Moderation/Comment_Analysis.php:205`; the toxicity/sentiment JSON schema |
-| `wpai_comment_analysis_result` | `null, $content, $author` — `Comment_Analysis.php:230`. A **pre-result short circuit**: returning an array skips the provider call entirely and the array is passed through `sanitize_analysis_result()`. Any non-array return is ignored |
+| `wpai_comment_analysis_result` | `null, $content, $author` — `Comment_Analysis.php:230`. A **pre-result short circuit**: returning an array skips the provider call entirely and the array is passed through `sanitize_analysis_result()`. Any non-array return is ignored. On `develop` (unreleased 1.4.0, #681) it gains a fourth `?int $post_id` argument and results carry `value_score` |
 | `wpai_comment_moderation_should_moderate` | `$should_moderate, $analysis, $comment_id` — `Experiments/Comment_Moderation/Comment_Moderation.php:406`; default is `toxicity_score >= 0.7 && 'negative' === $sentiment` |
 | `wpai_comment_moderation_show_dashboard_pills` | `true, $comment_id, $comment` — `Comment_Moderation.php:498`; only fires on the dashboard screen |
 
@@ -177,7 +177,7 @@ Also split across an Experiments class (output) and Abilities classes (generatio
 | `wpai_settings_feature_groups` | Settings → AI feature metadata | Extend or adjust feature groups |
 | `wpai_settings_feature_metadata` | Settings → AI feature metadata | Extend metadata supplied by Features; receives `$metadata, $registry` |
 | `wpai_feature_{$id}_settings` | A Feature that explicitly applies the hook | Adjust that Feature's settings; this is not universal (v1.3.0's Type Ahead Experiment applies it, and has since v1.1.0) |
-| `wpai_bulk_action_max_items` (v1.3.0+) | `get_bulk_action_max_items()` | Maximum items per bulk action as `( int $max_items, string $feature_id )`; default 100 and clamped to at least 1 |
+| `wpai_bulk_action_max_items` (v1.3.0+) | `get_bulk_action_max_items()` | Maximum items per bulk action as `( int $max_items, string $feature_id )`; default 100 and clamped to at least 1. On `develop` (unreleased 1.4.0, #972) it also caps bulk comment analysis (`'comment-moderation'`) |
 
 Advanced settings are Feature-provided metadata on the existing Settings → AI surface. These filters extend that data; they do not establish a separate public settings registry.
 
@@ -196,7 +196,7 @@ Version-marked per row — these did not all arrive together.
 | --- | --- | --- | --- |
 | `wpai_min_content_length` (v1.1.0+) | `WordPress\AI\get_min_content_length()` | helper default `250`; Editorial Notes passes `75`, Content Resizing `25`, Content Translation `5` | Per-feature minimum character count; replaces the deprecated `wpai_summarization_min_content_length` |
 | `wpai_has_image_generation_support` (v1.1.0+) | `WordPress\AI\has_image_generation_support()` | auto-detected bool | Receives `( bool $has_support, array $connectors )`; claim support when auto-detection misses it (for example, OAuth) |
-| `wpai_pre_has_valid_credentials_check` | `WordPress\AI\has_valid_ai_credentials()` | `null` | Receives one `bool|null` value. Any non-null result short-circuits the live `is_supported_for_text_generation()` probe; `null` preserves the probe. |
+| `wpai_pre_has_valid_credentials_check` | `WordPress\AI\has_valid_ai_credentials()` | `null` | Receives one `bool|null` value. Any non-null result short-circuits the live `is_supported_for_text_generation()` probe; `null` preserves the probe. Reached only after `has_ai_credentials()` returns true, so it cannot rescue a site with no configured connector. |
 | `wpai_has_ai_credentials` (v0.7.0+) | `WordPress\AI\has_ai_credentials()` | auto-detected bool | The credential-detection sibling of the row above, filtered as `( bool $has_credentials, array $connectors )`. The detection loop skips every connector whose auth method isn't `api_key`, so an OAuth connector must claim itself here or the site reads as unconfigured — it gates the AI Status widget's "Configure an AI provider" step, Settings → AI's `hasCredentials`, and Comment Moderation's provider check |
 | `wpai_is_{$connector_slug}_connector_configured` (v0.9.0+) | AI Status dashboard widget | connector's detected bool | Correct dashboard status for connectors whose configuration cannot be inferred from API-key/OAuth data; filtered as `( bool $configured, array $connector_data )` |
 | `wpai_comment_moderation_moderate_guests` (v1.1.0+) | Comment Moderation experiment | setting value (default yes) | Override whether guest comments are auto-moderated |
@@ -207,7 +207,7 @@ Version-marked per row — these did not all arrive together.
 | Filter | Signature/default | Use |
 | --- | --- | --- |
 | `wpai_gated_abilities` | array of class strings extending `Abstract_Gated_Ability` | Add/remove/replace the classes that register only while Custom Abilities is on. Non-string entries trigger `_doing_it_wrong()` and are skipped |
-| `wpai_remove_data_on_uninstall` | bool, default true | Return false to keep the plugin's table, options, and scheduled events when the plugin is **deleted** (deactivation never removes data); evaluated per site on multisite. The AI plugin is not loaded during uninstall, so add the filter from an mu-plugin or another active plugin. Post and comment meta such as `wpai_generated` and `wpai_note` survives uninstall either way |
+| `wpai_remove_data_on_uninstall` | bool, default true | Return false to keep the plugin's data when the plugin is **deleted** (deactivation never removes data): the request-log table, options including `_secret_ai/*` rows, transients, scheduled events, connector-approval user meta, and — once nothing else uses it — the Secrets master key. `develop` (unreleased 1.4.0) adds the `wpai_embeddings` table to that set. Evaluated per site on multisite. The AI plugin is not loaded during uninstall, so add the filter from an mu-plugin or another active plugin. Post and comment meta such as `wpai_generated` and `wpai_note` survives uninstall either way |
 | `wpai_slug_generation_number_of_suggestions` | int, default 3; clamped 1–10 | Control slug suggestions |
 | `wpai_content_classification_available_terms` | `( array $terms, string $taxonomy, string $strategy )` | Replace/suppress the candidate terms placed in the prompt |
 | `wpai_content_classification_min_confidence` | `( float $threshold, string $taxonomy, string $strategy )`; default 0.6, clamped 0–1 | Drop low-confidence suggestions before sorting/limiting |
@@ -282,7 +282,7 @@ That gives you every Ability-level filter with file/line context.
 | Action | Where | Use |
 | --- | --- | --- |
 | `wpai_register_features` | `Loader::register_features()` | Primary downstream entry point: register a Feature instance into the registry |
-| `wpai_features_initialized` | `Loader::initialize_features()` | Fires after every enabled Feature's `register()` has run; safe to assume features are wired up |
+| `wpai_features_initialized` | `Loader::initialize_features()` | Fires after every enabled Feature's `register()` has run; safe to assume features are wired up. Never fires when the `wpai_features_enabled` filter returns false, because the Loader returns first |
 | `wpai_request_logged` (v1.0.0+) | `AI_Request_Log_Repository::insert()` | Fires after a request row is inserted, as `( string $log_id, array $insert_data )` — `$log_id` is a `wp_generate_uuid4()` string, not an insert ID. Only reachable while the `ai-request-logging` Experiment is enabled; that Experiment is the sole production caller that instantiates the log manager |
 
 The plugin also fires the standard WordPress activation hook via `register_activation_hook( WPAI_PLUGIN_FILE, ... )`, which downstream code generally shouldn't depend on (use your own activation hook for your own plugin).
@@ -312,5 +312,5 @@ That gives you every filter and action with file/line context. The Experiment cl
 
 - **Don't replace `Abstract_Feature` with your own base class.** The framework hooks are wired into that hierarchy; subclassing it is the supported path.
 - **Don't write to `WPAI_*` constants.** They're set during the plugin's bootstrap; modifying them has no effect after that and creates "why isn't this taking?" debugging confusion.
-- **Don't rely on filters that fire only inside private methods.** They may be removed without notice. Stick to the documented public extension surface.
+- **Don't rely on undocumented internals.** A hook listed in this reference is part of the extension surface even when it fires from a private method; private methods, classes, and array shapes that no hook exposes can change without notice.
 - **Don't assume backward compatibility across 0.x releases.** The plugin is explicitly experimental; renames and reshapes happen. Pin your minimum version requirement (`WPAI_VERSION` check) and test against the next release before recommending it to users.
