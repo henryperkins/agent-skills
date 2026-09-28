@@ -182,7 +182,7 @@ The Connectors API runs discovery on `init` priority 15: Core hooks `_wp_connect
 | `init` | 15 | unsafe (same priority as the active Core/Gutenberg discovery callback; depends on registration order) |
 | `init` | 16+ | no (registry already queried) |
 | `wp_loaded` | any | no (too late) |
-| `wp_connectors_init` | any | no (this is for *overriding* connectors, not adding providers) |
+| `wp_connectors_init` | any | no — AI providers are discovered automatically; Core documents this action as primarily for registering non-AI-provider connectors and for overriding metadata on existing ones |
 
 **Convention: use `init` priority 5.** That's what every official provider plugin does. There's nothing magic about priority 5 — `plugins_loaded` works equally well — but matching the official pattern reduces friction for anyone reading your code.
 

@@ -40,9 +40,17 @@ Names such as `json_response`, `system_instruction`, `function_calling`, and `st
 
 ### Function declaration annotations (1.5.0)
 
-`FunctionDeclaration` takes an optional fourth constructor argument, `array $annotations`, exposed via `getAnnotations()` and serialized under an `annotations` key. The values are open-ended and JSON-serializable; the SDK does not interpret them, so a provider may read them to drive provider-native behaviour. Treat them as advisory hints, not contract — a declaration with no annotations is valid and yields `[]`.
+`FunctionDeclaration` takes an optional fourth constructor argument, `array $annotations`, exposed via `getAnnotations()` and serialized under an `annotations` key — omitted from `toArray()` when empty. The values are open-ended and JSON-serializable; the SDK does not interpret them, so a provider may read them to drive provider-native behaviour. Treat them as advisory hints, not contract — a declaration with no annotations is valid and yields `[]`. Upstream's architecture notes add three rules: use namespaced keys (or a nested provider-specific map), never merge annotations blindly into a provider request, and never treat them as authorization.
 
-Deferred tool loading is still in flux upstream: the pull request that added annotations (#282) briefly carried an `OptionEnum::toolSearch()` option and a `PROVIDER_DATA` message-part type, then dropped both before it merged ("Keep tool search policy in providers and limit core to conversation data"). Neither ever reached trunk, and neither exists in 1.5.0. Do not declare or consume them.
+**Standalone 1.5.0 only.** WordPress 7.0 and 7.1 bundle SDK 1.3.1, whose `FunctionDeclaration` has a three-argument constructor and no `getAnnotations()`, so a provider that calls it fatals on every stock 7.x site. Read them defensively:
+
+```php
+$annotations = method_exists( $declaration, 'getAnnotations' ) ? $declaration->getAnnotations() : array();
+```
+
+The SDK's OpenAI-compatible base (through 1.5.0) forwards each declaration's whole `toArray()` as `tools[].function`, annotations included, so a provider built on it sends them to the API verbatim; override the tools parameter if a strict endpoint rejects unknown keys.
+
+Deferred tool loading is still in flux upstream: the pull request that added annotations (#282) briefly carried an `OptionEnum::toolSearch()` option and a `PROVIDER_DATA` message-part type, then dropped both before it merged. Neither exists in 1.5.0, so do not declare or consume them — and re-check the release you target, because an open PR (#289) proposes a `PROVIDER_DATA` part type again.
 
 ## SupportedOption and modalities
 
@@ -65,7 +73,7 @@ Function-call conversion also needs an explicit empty-value contract. Anthropic 
 
 > **Core does not bundle this.** WP 7.0 and 7.1 vendor a pre-1.4 SDK: `src/wp-includes/php-ai-client/` has no `src/Providers/Models/EmbeddingGeneration/`, no `EmbeddingResult`/`EmbeddingBuilder`, and no `ModelConfig::KEY_DIMENSIONS` (so `OptionEnum::dimensions()` does not resolve). `CapabilityEnum::EMBEDDING_GENERATION` *is* in the bundled enum, which makes the surface look present. Keep `wordpress/php-ai-client: ^1.4` in `require-dev` and gate everything below on `interface_exists( EmbeddingGenerationModelInterface::class )` — the pattern `WordPress/ai-provider-for-openai` 1.1.0 ships — rather than bundling a second SDK copy that would collide with the one `wp-settings.php` already autoloads.
 
-An automatically discoverable text embedding model with configurable dimensions needs metadata shaped like:
+A text embedding model with configurable dimensions that passes 1.5.0's named-model verification — and that `findModelsMetadataForSupport()` can list for a model picker — needs metadata shaped like:
 
 ```php
 new ModelMetadata(
@@ -95,7 +103,7 @@ Read `$this->getConfig()->getDimensions()`, forward it when present, preserve in
 
 There is no implemented `EmbeddingOperation` or `EmbeddingGenerationOperationModelInterface` as of 1.5.0; use the synchronous interface above.
 
-The provider-facing interfaces, enums, and DTOs are byte-identical between 1.4.0 and 1.5.0, but 1.5.0 changes how your metadata is used. On the consumer side, `EmbeddingBuilder` no longer resolves a model, so callers must name one with `usingProviderModel()` or `usingModel()`. And the SDK now validates an explicitly named embedding model against its declared metadata — the capability, `inputModalities`, and supported options such as `dimensions()` must match the request, and the provider must report itself configured — where 1.4.0 used an explicitly named model unchecked. Metadata that omitted a modality or option, which 1.4 tolerated, is now rejected, so accurate declarations are more load-bearing than before, not less. 1.5.0 also adds an optional protected hook, `AbstractApiBasedModelMetadataDirectory::createModelMetadataForExplicitModelIds()` (#231), for building metadata for explicitly requested model IDs without a list-models request.
+The provider-facing embedding interface, the `Embedding` / `EmbeddingResult` DTOs, both enums, `ModelConfig`, `ModelMetadata`, and `SupportedOption` are unchanged between 1.4.0 and 1.5.0 (`ModelRequirements` and `AbstractApiBasedModelMetadataDirectory` did change), but 1.5.0 changes how your metadata is used. On the consumer side, `EmbeddingBuilder` no longer resolves a model, so callers must name one with `usingProviderModel()` or `usingModel()`. And the SDK now validates an explicitly named embedding model against its declared metadata — the capability, `inputModalities`, and supported options such as `dimensions()` must match the request, and the provider must report itself configured — where 1.4.0 used an explicitly named model unchecked. Metadata that omitted a modality or option, which 1.4 tolerated, is now rejected, so accurate declarations are more load-bearing than before, not less. 1.5.0 also adds an optional protected hook, `AbstractApiBasedModelMetadataDirectory::createModelMetadataForExplicitModelIds()` (#231), for building metadata for explicitly requested model IDs without a list-models request.
 
 ## Logo and brand assets
 

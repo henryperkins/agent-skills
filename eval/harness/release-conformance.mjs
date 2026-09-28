@@ -847,6 +847,18 @@ export function assertLocalRuntimeHygiene(repoRoot) {
     "<?php\nuse WordPress\\AiClient\\AiClient;\n$result = AiClient::generateTextResult( 'Hello' );\n",
     "utf8"
   );
+  // php-ai-client 1.5.0's embedding entry points: the fluent AiClient::input()
+  // chain the wp-ai-client skill teaches, and direct EmbeddingBuilder use.
+  fs.writeFileSync(
+    path.join(themeRoot, "assets", "embed-input.php"),
+    "<?php\nuse WordPress\\AiClient\\AiClient;\n$e = AiClient::input( 'x' )->usingProviderModel( 'openai', 'text-embedding-3-small' )->generateEmbedding();\n",
+    "utf8"
+  );
+  fs.writeFileSync(
+    path.join(themeRoot, "assets", "embed-new.php"),
+    "<?php\n$builder = new \\WordPress\\AiClient\\Builders\\EmbeddingBuilder( $registry );\n",
+    "utf8"
+  );
   fs.writeFileSync(
     path.join(themeRoot, "composer.json"),
     JSON.stringify({ "require-dev": { "wordpress/php-ai-client": "^1.4" } }),
@@ -866,6 +878,11 @@ export function assertLocalRuntimeHygiene(repoRoot) {
   assert(
     detectorReport.feature_endpoints.includes("assets/sdk.php"),
     "SDK static entry points must name their source file"
+  );
+  assert(
+    detectorReport.feature_endpoints.includes("assets/embed-input.php") &&
+      detectorReport.feature_endpoints.includes("assets/embed-new.php"),
+    "AiClient::input() chains and direct EmbeddingBuilder construction must count as AI Client usage"
   );
   assert(
     !detectorReport.feature_endpoints.includes("plugin.php"),
@@ -1133,6 +1150,38 @@ export function assertAiClientConnectorPrecision(repoRoot) {
   ]);
   requireExcludes(repoRoot, "skills/wp-ai-connectors/references/provider-registration.md", [
     "accepts arbitrary extra `authentication` data",
+  ]);
+
+  // Verified 2026-09-27 against php-ai-client 1.5.0, WordPress 7.1, and the
+  // released provider plugins. No released Google provider (through 1.2.0) has
+  // an embedding model, so GoogleProvider::model( 'gemini-embedding-001' )
+  // throws before the builder runs; OpenAI 1.1.0+ ships text-embedding-*.
+  // execute_ability() always returns a FunctionResponse, with failures carried
+  // in the response array's `code`. Core 7.0/7.1 bundle SDK 1.3.1, whose
+  // FunctionDeclaration has no getAnnotations(), so an unguarded provider call
+  // fatals on every stock 7.x site.
+  requireIncludes(repoRoot, "skills/wp-ai-client/references/embedding-builder.md", [
+    "OpenAiProvider::model( 'text-embedding-3-small' )",
+  ]);
+  requireExcludes(repoRoot, "skills/wp-ai-client/references/embedding-builder.md", [
+    "gemini-embedding-001",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-ai-client/SKILL.md", [
+    "invalid_ability_call",
+    "OpenAI-compatible base",
+  ]);
+  for (const file of ["skills/wp-ai-client/SKILL.md", "skills/wp-ai-client/references/prompt-builder.md"]) {
+    requireExcludes(repoRoot, file, ["`execute_ability()` returns `ability_not_allowed`"]);
+  }
+  requireIncludes(repoRoot, "skills/wp-ai-connectors/references/capabilities-declaration.md", [
+    "method_exists( $declaration, 'getAnnotations' )",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-ai-connectors/references/community-providers.md", [
+    "getAdditionalData()",
+    "invalidateCaches()",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-ai-connectors/references/provider-registration.md", [
+    "non-AI-provider connectors",
   ]);
 }
 

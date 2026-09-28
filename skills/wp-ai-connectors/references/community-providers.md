@@ -9,7 +9,7 @@ Source: the [Call for Testing: Community AI Connector Plugins](https://make.word
 OpenRouter is itself a router across many upstream providers (Anthropic, OpenAI, Google, Mistral, etc.). One plugin, many models. The pattern is interesting because:
 
 - A single provider declaration lists hundreds of models, drawn from OpenRouter's `/models` endpoint.
-- The models list shouldn't be hardcoded — fetch and cache (transient with a 24-hour expiry is a reasonable default).
+- The models list shouldn't be hardcoded — fetch and cache it. An API-based metadata directory already gets this from the SDK: `sendListModelsRequest()` results are cached for 24 hours in the `wp_ai_client` object-cache group. Add your own transient only for data the SDK does not cache.
 - Capabilities for each model are also exposed via OpenRouter's API, so the declarations can be data-driven rather than maintained by hand.
 - Model IDs follow OpenRouter's `provider/model` convention (e.g., `anthropic/claude-sonnet-5`) which is distinct from the flagship plugins. Site owners using both an aggregator and a direct provider will see overlapping models with different IDs. Treat the model slug as illustrative — resolve the exact string from the aggregator's own catalog endpoint rather than hardcoding it, since vendor lineups turn over faster than this reference does.
 
@@ -55,7 +55,7 @@ function my_provider_get_models(): array {
 }
 ```
 
-Add a "Refresh model list" button on your provider's settings screen for admins who just upgraded their plan or pulled a new local model.
+Add a "Refresh model list" button on your provider's settings screen for admins who just upgraded their plan or pulled a new local model. The refresh must also call `MyProvider::modelMetadataDirectory()->invalidateCaches()`; clearing only your transient leaves the SDK serving its own cached list for up to a day.
 
 ### Declare a "verify connection" admin action
 
@@ -63,7 +63,7 @@ Site owners need a way to confirm their key works without setting up a feature p
 
 ### Surface latency and pricing if you have the data
 
-The connector card itself doesn't show this in WP 7.0, but `getProviderMetadata()` and `getModelMetadata()` from `GenerativeAiResult` can carry it. Feature plugins that show their users "this took 1.2s and used 340 tokens" are noticeably better — and they can only do that if the provider populates the metadata.
+The connector card itself doesn't show this in WP 7.0, and neither metadata DTO can carry it: `ProviderMetadata` holds only an ID, name, description, type, credentials URL, authentication method, and logo path, and `ModelMetadata` only an ID, name, and supported capabilities and options. Return latency or cost in the result's `additionalData` (read back with `getAdditionalData()`); token counts belong in `getTokenUsage()`. Feature plugins that show their users "this took 1.2s and used 340 tokens" are noticeably better — and they can only do that if the provider populates the result.
 
 ### Don't reimplement Settings → Connectors
 

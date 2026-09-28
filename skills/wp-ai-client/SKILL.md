@@ -49,10 +49,12 @@ if ( ! function_exists( 'wp_supports_ai' ) || ! wp_supports_ai() ) {
 }
 
 $builder = wp_ai_client_prompt( 'test' )->using_temperature( 0.7 );
-if ( ! $builder->is_supported_for_text_generation() ) {
+if ( true !== $builder->is_supported_for_text_generation() ) {
     return; // Skip registering UI.
 }
 ```
+
+Compare with `true !==`, not `!`. If the SDK throws inside a support check, the wrapper stores the error and returns the builder itself — an object, which is truthy — so `! $builder->is_supported_…()` would read a failure as "supported".
 
 `is_supported_for_*()` never runs your prompt, but it is not a local lookup either: resolving the model list probes each registered API-based provider over HTTP — for most, a list-models request cached 24h in the `wp_ai_client` object-cache group (filterable since WordPress 7.1 with `wp_ai_client_cache_group`), which is per-request unless the site runs a persistent object cache. Don't call it on every front-end page load or inside a loop; cache the boolean yourself, or gate the check to admin/editor screens.
 
@@ -142,7 +144,7 @@ Do not handle API keys. The Connectors API (in core) reads keys from env var →
 
 If your feature needs the model to *call* something — read site metadata, classify content, update a record — pass registered ability IDs to `using_abilities()`. It converts each into a `FunctionDeclaration` (name, description, input schema) and terminates in `using_function_declarations()`. Pair this with `wp-abilities-api` to define the abilities themselves.
 
-**Core 7.1 registers exactly three abilities out of the box** — `core/get-site-info`, `core/get-environment-info`, and `core/get-user-info`. Nothing else in the `core/` namespace exists — media-oriented IDs of the `core/…-attachment` shape appear in older guidance and are not real. Every other ID in an example is a placeholder you must register yourself with `wp_register_ability()` before passing it here. Otherwise `using_abilities()` skips it with a `_doing_it_wrong()` notice; a resolver asked to execute an unregistered allowed ID returns `ability_not_found`.
+**Core 7.1 registers exactly three abilities out of the box** — `core/get-site-info`, `core/get-environment-info`, and `core/get-user-info`. Nothing else in the `core/` namespace exists — media-oriented IDs of the `core/…-attachment` shape appear in older guidance and are not real. Every other ID in an example is a placeholder you must register yourself with `wp_register_ability()` before passing it here. Otherwise `using_abilities()` skips it with two notices (core's registry "not found" notice from `wp_get_ability()`, then its own `_doing_it_wrong()`); probe optional abilities with `wp_has_ability()` first. A resolver asked to execute an unregistered allowed ID answers with an `ability_not_found` response.
 
 **`using_abilities()` does not execute anything.** A `FunctionDeclaration` carries no callable. When the model decides to call one, the result comes back holding a *function-call part*, and nothing has run: no `permission_callback`, no `execute_callback`. Executing it and feeding the answer back is the caller's job, and Core gives you `WP_AI_Client_Ability_Function_Resolver` to do it. Treat the loop below as mandatory, not as a low-level alternative:
 
@@ -168,27 +170,37 @@ if ( is_wp_error( $result ) ) {
 // The model may have asked for an ability instead of answering. Nothing has run yet.
 $model_message = $result->toMessage();
 $resolver      = new WP_AI_Client_Ability_Function_Resolver( ...$abilities );
+$history       = array( $user_message );
 
-if ( $resolver->has_ability_calls( $model_message ) ) {
+// Each follow-up can request another round, so loop — but bound it.
+for ( $round = 0; $round < 5 && $resolver->has_ability_calls( $model_message ); $round++ ) {
     // This is where permission_callback and execute_callback finally run.
     $tool_message = $resolver->execute_abilities( $model_message );
+    $history[]    = $model_message;
 
     $result = wp_ai_client_prompt( $tool_message )
         ->using_abilities( ...$abilities )
-        ->with_history( $user_message, $model_message )
+        ->with_history( ...$history )
         ->generate_text_result();
 
     if ( is_wp_error( $result ) ) {
         return $result;
     }
+    $history[]     = $tool_message;
+    $model_message = $result->toMessage();
+}
+
+if ( $resolver->has_ability_calls( $model_message ) ) {
+    // toText() would throw here: the last turn is a call, not an answer.
+    return new WP_Error( 'my_plugin_ability_rounds', 'The model kept requesting abilities.' );
 }
 
 $answer = $result->toText();
 ```
 
-Two things the resolver enforces that the builder does not. It allow-lists independently — `execute_ability()` returns `ability_not_allowed` for anything absent from *its own* constructor arguments, so pass the same list you gave `using_abilities()`. And a model can emit several calls in one turn: `execute_abilities()` handles all of them and returns one message of responses, which is why the example loops on the message rather than a single call.
+Two things the resolver enforces that the builder does not. It allow-lists independently, against *its own* constructor arguments, so pass the same list you gave `using_abilities()`. And `execute_ability()` always returns a `FunctionResponse`, never a `WP_Error`: a refusal or failure is data the model reads, carried in `getResponse()` as an array with a `code` — `ability_not_allowed` (not in the resolver's list), `ability_not_found`, `invalid_ability_call` (not an ability function call), or the ability's own `WP_Error` code. Check that `code` when you inspect a response yourself.
 
-A production loop should carry the full turn history (the original user message as well as `$model_message`) and should re-check for further calls, since the second response can request more. Abilities you pass must already be registered server-side via `wp_register_ability()`.
+A model can emit several calls in one turn: `execute_abilities()` handles all of them and returns **one** `UserMessage` holding every response. Providers built on the SDK's OpenAI-compatible base (through 1.5.0) — not the flagship Anthropic, Google, and OpenAI plugins, which implement their own models — allow a function response only as the sole part of a message, so a multi-call turn fails there with `prompt_invalid_argument`. For those, send one `UserMessage` per response part, passing all but the last through `with_history()`. `toText()` throws a `RuntimeException` when the final turn is another call rather than text, which is why the loop checks first. Abilities you pass must already be registered server-side via `wp_register_ability()`.
 
 The resolver also exposes static helpers that round-trip an Ability ID to the AI-safe function name the model actually sees, which is what you need when inspecting or logging raw function-call parts:
 
@@ -211,7 +223,7 @@ The filter fires during builder construction. Scope or remove it when the timeou
 
 - `is_supported_for_*()` returns `true` in your test environment with at least one configured provider.
 - Your REST endpoint returns the expected modality and a `GenerativeAiResult` payload (token usage, provider/model metadata visible).
-- With the provider's API key removed/invalidated, `is_supported_*()` returns `false` and your UI gracefully hides or shows a useful notice.
+- With the provider's API key removed/invalidated, `is_supported_*()` returns `false` once the cached model list expires or the `wp_ai_client` cache group is flushed (a persistent object cache keeps it for 24 hours, keyed on the SDK version and directory class rather than the key), and your UI gracefully hides or shows a useful notice.
 - The `wp_ai_client_prevent_prompt` filter, if used, blocks calls without leaking the prompt content to logs.
 
 ## Failure modes / debugging
@@ -248,9 +260,9 @@ if ( ! $builder->isSupported() ) {
 $values = $builder->generateEmbedding()->getValues();
 ```
 
-Store the provider ID and model ID with every vector you persist — a corpus whose model is unrecorded cannot be safely extended. Do not invent a `wp_ai_client_embedding()` wrapper; no such Core function exists. See `references/embedding-builder.md` for the complete standalone boundary, the 1.4 → 1.5 migration table, and the method contract.
+Store the provider ID and model ID with every vector you persist — a corpus whose model is unrecorded cannot be safely extended. Do not invent a `wp_ai_client_embedding()` wrapper; no such Core function exists (the open wordpress-develop#12530 proposes one, built on the SDK 1.4 builder, and it is not merged). See `references/embedding-builder.md` for the complete standalone boundary, the 1.4 → 1.5 migration table, and the method contract.
 
-Watch for this trap: `is_supported_for_embedding_generation()` shipped on the prompt builder back in 1.3.1, so it *is* reachable through Core and will happily return `true`. In 1.3.1 there is no corresponding generation method anywhere — not on the prompt builder, not on the client. The probe answers "this provider does embeddings", not "you can call them from here". Probe support and generate through the same package version.
+Watch for this trap: `is_supported_for_embedding_generation()` has been on the prompt builder since 0.1.0, so it *is* reachable through Core, and it returns `true` whenever a registered provider advertises `embeddingGeneration()`. The flagship OpenAI provider advertises it only when the 1.4 embedding interface exists, so on stock Core the probe is usually `false` — but a provider that advertises the capability without that gate makes it `true`. In 1.3.1 there is no corresponding generation method anywhere — not on the prompt builder, not on the client. The probe answers "this provider does embeddings", not "you can call them from here". Probe support and generate through the same package version.
 
 ## Escalation
 

@@ -197,7 +197,7 @@ if ( is_wp_error( $json ) ) {
 return rest_ensure_response( json_decode( $json, true ) );
 ```
 
-Validate the parsed JSON against your own schema afterward — model output is best-effort, not guaranteed.
+Validate the parsed JSON against your own schema afterward — model output is best-effort, not guaranteed. Providers built on the SDK's OpenAI-compatible base (through 1.5.0) can reject the schema request outright with `prompt_client_error`; see "Structured output" in `prompt-builder.md`.
 
 ## What to avoid
 

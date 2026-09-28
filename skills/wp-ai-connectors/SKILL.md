@@ -12,7 +12,7 @@ license: GPL-2.0-or-later
 Use this skill when the task involves:
 
 - writing a plugin that integrates a new AI provider (commercial API, self-hosted Ollama, OpenRouter, Mistral, etc.) with the WordPress AI Client,
-- adding or correcting embedding models, dimension support, input modalities, or other model metadata in a PHP AI Client 1.4.0 provider,
+- adding or correcting embedding models, dimension support, input modalities, or other model metadata in a PHP AI Client 1.4+ provider,
 - overriding metadata for a built-in connector (Anthropic, Google, OpenAI) — for example, customizing the description or pre-filling the credentials URL for an internal deployment,
 - diagnosing "my provider plugin is installed but doesn't appear in Settings → Connectors,"
 - understanding why a provider's API key is being read from the wrong source (env vs constant vs database).
@@ -78,7 +78,7 @@ The provider class itself (`AnthropicProvider` in this example) implements the S
 
 `ModelMetadata` keeps two different axes. `CapabilityEnum` contains generation kinds plus chat history; configuration features belong in `SupportedOption` entries keyed by `OptionEnum`. For example, embedding support (unchanged from 1.4.0 through 1.5.0) is `CapabilityEnum::embeddingGeneration()`, while caller-selectable dimensions are `OptionEnum::dimensions()`. Structured output, system instructions, function declarations, and modalities are options, not invented `CapabilityEnum` cases.
 
-An embedding model must implement both `ModelInterface` and `EmbeddingGenerationModelInterface`; the latter adds `generateEmbeddingResult( array $inputs ): EmbeddingResult` but does not itself extend `ModelInterface`. Declare `OptionEnum::inputModalities()` so automatic resolution can match the actual text/file inputs, and declare `OptionEnum::dimensions()` only when the model accepts caller-selected dimensions. Return exactly one vector per input in input order.
+An embedding model must implement both `ModelInterface` and `EmbeddingGenerationModelInterface`; the latter adds `generateEmbeddingResult( array $inputs ): EmbeddingResult` but does not itself extend `ModelInterface`. Declare `OptionEnum::inputModalities()` so 1.5.0's named-model verification accepts the actual text/file inputs, and declare `OptionEnum::dimensions()` only when the model accepts caller-selected dimensions. Return exactly one vector per input in input order.
 
 **This is a 1.4+ surface, and core does not ship it.** The provider-facing interfaces are unchanged in 1.5.0, but 1.5.0 validates an explicitly named embedding model against its declared metadata, so incomplete metadata that 1.4 tolerated is now rejected. Verified against the released WordPress 7.0 and 7.1 source: the vendored `src/wp-includes/php-ai-client/` is pre-1.4 — no `src/Providers/Models/EmbeddingGeneration/`, no `EmbeddingResult`/`EmbeddingBuilder`, and no `ModelConfig::KEY_DIMENSIONS`, so `OptionEnum::dimensions()` does not resolve. The trap is that `CapabilityEnum::EMBEDDING_GENERATION` **is** present in the bundled enum, so declaring the capability looks fine right up until `EmbeddingGenerationModelInterface` fatals as an unknown interface.
 
@@ -91,7 +91,7 @@ Once your provider is in `AiClient::defaultRegistry()`, the Connectors API disco
 1. WordPress fires `init`.
 2. Core's `_wp_connectors_init()` runs, registers built-in connectors (Anthropic/Google/OpenAI), then queries `AiClient::defaultRegistry()` for everything else. Gutenberg 23.9 replaces that callback with `_gutenberg_connectors_init()`, gated on `class_exists( AiClient::class )`; it keeps the same priority and net discovery flow.
 3. Your provider's metadata is merged on top of any defaults (provider registry values win).
-4. The `wp_connectors_init` action fires, giving plugins a final chance to override.
+4. The `wp_connectors_init` action fires, giving plugins a final chance to override existing connectors or register non-AI-provider connectors.
 
 If your provider used `api_key` auth, the database setting `connectors_ai_{your_id}_api_key` is created automatically and the env var / constant pattern `{YOUR_ID}_API_KEY` (uppercased) is wired up.
 
@@ -181,7 +181,7 @@ What that means for a provider you ship:
 - **Duplicate-ID error during `register()`**: another plugin already registered that ID. Use `is_registered()` first; if you need to override, follow the unregister-modify-register pattern.
 - **Provider works locally but not on a managed host**: the host may have set `MY_PROVIDER_API_KEY` as a sealed env var. Env beats constant beats database — that's the intended priority and the host's value will win.
 - **"My API key saves as blank"**: the post-dispatch validation call failed. See "Saving an API key runs a live provider call" above — a timeout during model discovery stores an empty string with no server-side error. Reproduce by pointing the provider at an unreachable host and saving.
-- **Embedding model never resolves**: metadata is missing `CapabilityEnum::embeddingGeneration()`, the exact `OptionEnum::inputModalities()` combination, or `OptionEnum::dimensions()` for the requested value; do not substitute made-up capability names.
+- **Embedding model is rejected** (`isSupported()` returns `false`, or generation throws `Model "…" from provider "…" cannot fulfill this embedding request.` with the unsupported capabilities and options): metadata is missing `CapabilityEnum::embeddingGeneration()`, the exact `OptionEnum::inputModalities()` combination, or `OptionEnum::dimensions()` for the requested value; do not substitute made-up capability names.
 - **`OptionEnum::dimensions()` throws, or `EmbeddingGenerationModelInterface` is "not found"**: the site is resolving core's bundled SDK, which is pre-1.4 through WP 7.1. `CapabilityEnum::embeddingGeneration()` resolving is not evidence the rest of the surface exists. Gate the 1.4-only surface on `interface_exists( EmbeddingGenerationModelInterface::class )` so the model is never advertised there; don't bundle a second SDK copy to force it.
 - **Embedding generation resolves but fails at runtime**: the concrete model does not also implement `ModelInterface`, returned a different vector count than input count, or reported dimensions that do not match every vector.
 

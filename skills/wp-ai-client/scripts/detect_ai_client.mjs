@@ -93,7 +93,9 @@ function callsAiClient(contents) {
   );
   return (
     /\bwp_ai_client_prompt\s*\(/.test(withoutWrapperDefinitions) ||
-    /\bAiClient\s*::\s*(?:prompt|generate[A-Z][A-Za-z0-9_]*)\s*\(/.test(contents)
+    // SDK static entry points, including the 1.4+ embedding chain AiClient::input().
+    /\bAiClient\s*::\s*(?:prompt|input|generate[A-Z][A-Za-z0-9_]*)\s*\(/.test(contents) ||
+    /\bnew\s+\\?(?:WordPress\\AiClient\\Builders\\)?EmbeddingBuilder\s*\(/.test(contents)
   );
 }
 

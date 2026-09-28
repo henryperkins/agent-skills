@@ -4,7 +4,7 @@
   "query": "My plugin runs on WordPress 7.1 and needs embeddings for semantic search. is_supported_for_embedding_generation() returns true, but I cannot find a generation method on wp_ai_client_prompt(). Can I install wordpress/php-ai-client 1.5 in the plugin, and what is the real embedding API?",
   "expected_behavior": [
     "Step 1: Route to wp-ai-client and identify this as an embedding/version-boundary task",
-    "Step 2: Explain that Core 7.1 still bundles PHP AI Client 1.3.1, whose prompt builder can probe embedding capability but has no embedding generation path, and that Core gains it in 7.2",
+    "Step 2: Explain that Core 7.1 still bundles PHP AI Client 1.3.1, whose prompt builder can probe embedding capability but has no embedding generation path, and that Core embedding support is planned for 7.2 but not merged (wordpress-develop#12530 is open and still vendors the 1.4 API)",
     "Step 3: Do not recommend loading the unprefixed standalone 1.5 package beside Core's bundled copy; recommend waiting for Core, isolating/prefixing the dependency, or using a separate service",
     "Step 4: Do not offer the canonical AI plugin as a workaround without noting that WordPress/ai 1.3.0 leaves its vendored SDK overlay unregistered, so generate_embeddings() returns WP_Error('ai_embeddings_unsupported')",
     "Step 5: For a standalone PHP application where Core is not loading the SDK, show AiClient::input() returning EmbeddingBuilder",

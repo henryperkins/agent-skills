@@ -33,7 +33,7 @@ Returns a `WP_AI_Client_Prompt_Builder`. Chain configuration methods, then call 
 | Function declarations (manual) | `using_function_declarations( FunctionDeclaration ...)` |
 | Web search configuration | `using_web_search( WebSearch )` |
 | Presence / frequency penalties | `using_presence_penalty( float )`, `using_frequency_penalty( float )` |
-| Request options (HTTP transport) | `using_request_options( RequestOptions )` |
+| Request options (HTTP transport) | `using_request_options( RequestOptions )` — replaces the options the constructor installed, including the `wp_ai_client_default_request_timeout` value; include a `timeout` or requests fall back to the WP HTTP API default (5 seconds) |
 | Top log probabilities | `using_top_logprobs( ?int )` |
 | Output modalities | `as_output_modalities( ...$modality_enums )` |
 | Output file type (image/audio/video) | `as_output_file_type( FileTypeEnum )` |
@@ -59,7 +59,7 @@ $result = wp_ai_client_prompt( 'Summarize this site’s WordPress and PHP versio
     ->generate_text_result();
 ```
 
-Those two IDs are real: Core 7.1 registers exactly `core/get-site-info`, `core/get-environment-info`, and `core/get-user-info`, and nothing else under `core/`. Any other ability ID in an example — `my-plugin/...` and the like — is a placeholder for one you register yourself; `execute_ability()` returns `ability_not_allowed` for anything the resolver was not constructed with, and `using_abilities()` cannot declare an ability that was never registered.
+Those two IDs are real: Core 7.1 registers exactly `core/get-site-info`, `core/get-environment-info`, and `core/get-user-info`, and nothing else under `core/`. Any other ability ID in an example — `my-plugin/...` and the like — is a placeholder for one you register yourself. The resolver answers a call to anything it was not constructed with by an `ability_not_allowed` response (a `FunctionResponse` carrying that `code`, not a `WP_Error`), and `using_abilities()` cannot declare an ability that was never registered.
 
 Running the requested ability and returning its output to the model requires `WP_AI_Client_Ability_Function_Resolver` and a second generation call. The abilities you pass must already be registered. See step 6 of the skill's `SKILL.md` for the full round trip, and the `wp-abilities-api` skill for the registration side.
 
@@ -96,7 +96,7 @@ $res    = wp_ai_client_prompt( $prompt )->generate_image_result();
 
 ## Structured output
 
-Pass a JSON Schema and the model returns a JSON-encoded string matching it:
+Pass a JSON Schema and the model returns a JSON-encoded string matching it. Support is provider-dependent: providers built on the SDK's OpenAI-compatible base (through 1.5.0) send the raw schema as `json_schema` without the `name`/`schema` envelope that strict OpenAI-style endpoints expect, so those can fail with `prompt_client_error`.
 
 ```php
 $schema = array(
@@ -165,8 +165,8 @@ These methods are synchronous and never run your prompt — they match the build
 
 ```php
 $builder = wp_ai_client_prompt( 'test' )->using_temperature( 0.7 );
-if ( ! $builder->is_supported_for_text_generation() ) {
-    return; // No suitable model available; skip UI.
+if ( true !== $builder->is_supported_for_text_generation() ) {
+    return; // No suitable model available (or the check itself failed); skip UI.
 }
 ```
 
@@ -196,7 +196,7 @@ The AI Client is two layers:
 
 Embedding generation is not a prompt-builder operation. Standalone PHP AI Client 1.5 uses `AiClient::input()` and `EmbeddingBuilder`, and requires an explicit model; see `embedding-builder.md`. Do not assume that standalone-only API is available from Core's bundled SDK.
 
-**Argument-typing caveat.** The wrapper forwards your arguments to the SDK method unchanged and its `__call` only `catch`es `Exception`. Passing a wrong *type* — e.g. an `array` to `using_stop_sequences( string ...$sequences )` or `with_history( Message ...$messages )` — raises a PHP `TypeError`, which extends `Error`, **not** `Exception`, so it is *not* converted to `WP_Error` and will fatal. Match the signatures in the table above (the variadic methods take spread arguments / DTO objects, not arrays). By contrast, `using_model_preference( ...$models )` is tolerant of value *shape* — each argument may be a model-ID string, a `ModelInterface` instance, or a `[ provider_id, model_id ]` tuple; a malformed tuple raises `InvalidArgumentException` (an `Exception`, so it *is* converted to `WP_Error`), not a `TypeError`. The wrapper also defers errors: once any call in a chain throws, the instance enters an error state and later non-generating calls become no-ops; the `WP_Error` surfaces only when a generating method is called.
+**Argument-typing caveat.** The wrapper forwards your arguments to the SDK method unchanged and its `__call` only `catch`es `Exception`. Passing a wrong *type* — e.g. an `array` to `using_stop_sequences( string ...$sequences )` or `with_history( Message ...$messages )` — raises a PHP `TypeError`, which extends `Error`, **not** `Exception`, so it is *not* converted to `WP_Error` and will fatal. Match the signatures in the table above (the variadic methods take spread arguments / DTO objects, not arrays). By contrast, `using_model_preference( ...$models )` is tolerant of value *shape* — each argument may be a model-ID string, a `ModelInterface` instance, or a `[ provider_id, model_id ]` tuple; a malformed tuple raises `InvalidArgumentException` (an `Exception`, so it *is* converted to `WP_Error`), not a `TypeError`. The wrapper also defers errors: once any call in a chain throws, the instance enters an error state — later calls return the builder unchanged, support checks return `false`, and generating methods return the stored `WP_Error`. A support check that *itself* throws returns the builder (truthy), which is why feature detection compares `true !==`. Prevention is sticky too: a generating call made while `wp_supports_ai()` is false or `wp_ai_client_prevent_prompt` returns true stores `prompt_prevented` on the builder, and it is still there after the filter is removed (a prevented support check stores nothing). A stored error takes precedence over prevention.
 
 ### A class-name nuance worth knowing
 
@@ -215,7 +215,7 @@ Update your plugin header to `Requires at least: 7.0` and remove the Composer de
 
 ### If you must support WordPress < 7.0
 
-Always load your plugin's own Composer autoloader; gating the entire `vendor/autoload.php` on `wp_ai_client_prompt()` also disables your own PSR-4 classes and unrelated dependencies on WordPress 7.0+. Never ship an unprefixed `wordpress/php-ai-client` beside Core's bundled SDK. Both autoloaders are lazy, so the main hazard is a mixed SDK: Core 1.3.1 uses scoped PSR namespaces while standalone 1.4.0 uses unscoped PSR namespaces, and one version's classes can load against the other's DTOs.
+Always load your plugin's own Composer autoloader; gating the entire `vendor/autoload.php` on `wp_ai_client_prompt()` also disables your own PSR-4 classes and unrelated dependencies on WordPress 7.0+. Never ship an unprefixed `wordpress/php-ai-client` beside Core's bundled SDK. Both autoloaders are lazy, so the main hazard is a mixed SDK: Core 1.3.1 uses scoped PSR namespaces while standalone 1.4+ (currently 1.5.0) uses unscoped PSR namespaces, and one version's classes can load against the other's DTOs.
 
 Choose one supported boundary:
 

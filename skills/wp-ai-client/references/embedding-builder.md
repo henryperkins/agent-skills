@@ -21,9 +21,9 @@ Carried over from 1.4.0 and now wrong:
 ## Version boundary
 
 - WordPress 7.0 and 7.1 (verified through 7.0.6 and 7.1.2) all bundle PHP AI Client **1.3.1** (`AiClient::VERSION` in `src/wp-includes/php-ai-client/src/AiClient.php`). Its `src/Builders/` holds only `MessageBuilder` and `PromptBuilder` — the bundled prompt builder can report embedding capability, but there is no embedding generation path in Core.
-- Upstream states embedding generation lands in **WordPress core 7.2** via [wordpress-develop#12530](https://github.com/WordPress/wordpress-develop/pull/12530) (`WordPress/ai`, `includes/Vendor/AiClient/README.md`).
+- Upstream plans embedding generation for **WordPress core 7.2** via [wordpress-develop#12530](https://github.com/WordPress/wordpress-develop/pull/12530) (`WordPress/ai`, `includes/Vendor/AiClient/README.md`). That PR is still open, and as of 2026-09-27 it vendors SDK **1.4.0** — the model-optional API that 1.5.0 replaced — and proposes a `wp_ai_client_embedding()` wrapper with `using_model_preference()` / `using_provider()`. Expect the Core surface to change before it merges.
 - Do not load an unprefixed standalone package beside Core's bundled copy. Both use the `WordPress\AiClient\` namespace.
-- In a standalone PHP application where WordPress Core is not loading the SDK, require the tested `wordpress/php-ai-client:1.5.0` release — this API already broke once between minors (1.4 → 1.5) — and register a configured provider before using `AiClient::input()`.
+- In a standalone PHP application where WordPress Core is not loading the SDK, require the tested `wordpress/php-ai-client:1.5.0` release — this API already broke once between minors (1.4 → 1.5) — and register a configured provider before using `AiClient::input()`. The SDK ships neither piece: it requires only PSR interfaces and `php-http/discovery`, so also install a PSR-18/HTTPlug client that discovery can find, and a provider package (for example `wordpress/ai-provider-for-openai`) that you `registerProvider()` explicitly.
 - For a future Core build, verify `AiClient::VERSION`, `class_exists( \WordPress\AiClient\Builders\EmbeddingBuilder::class )`, the Core wrapper surface, and provider availability independently. A standalone release does not prove Core availability.
 
 ### The canonical AI plugin does not close the gap yet
@@ -59,12 +59,14 @@ $values    = $embedding->getValues();
 To reference a provider class directly instead of an ID, pass a model instance:
 
 ```php
-use WordPress\GoogleAiProvider\Provider\GoogleProvider;
+use WordPress\OpenAiAiProvider\Provider\OpenAiProvider;
 
 $embedding = AiClient::input( 'Content to embed' )
-    ->usingModel( GoogleProvider::model( 'gemini-embedding-001' ) )
+    ->usingModel( OpenAiProvider::model( 'text-embedding-3-small' ) )
     ->generateEmbedding();
 ```
+
+This needs the OpenAI provider 1.1.0+ registered. Of the three official providers, only OpenAI ships an embedding model as of its 1.2.0: no released Google provider (through 1.2.0) lists one, so `GoogleProvider::model()` with an embedding model ID throws before the builder runs (Google support is pending in ai-provider-for-google#30), and Anthropic offers none.
 
 ## Builder methods
 
@@ -73,7 +75,7 @@ $embedding = AiClient::input( 'Content to embed' )
 | `withInput( ...$inputs )` | Adds independent inputs to embed |
 | `usingModel( ModelInterface $model )` | Names the model by instance; clears any provider/model pair |
 | `usingProviderModel( string $providerIdOrClassName, string $modelId )` | Names the model by provider + ID (1.5.0); clears any instance. Rejects empty strings |
-| `usingModelConfig( ModelConfig $config )` | Applies a full config (via `ModelConfigurationTrait`) |
+| `usingModelConfig( ModelConfig $config )` | Merges a config (via `ModelConfigurationTrait`); values already set on the builder, such as `usingDimensions()`, take precedence |
 | `usingDimensions( int $dimensions )` | Requests an embedding dimension; rejects values below 1 |
 | `usingRequestOptions( RequestOptions $options )` | HTTP transport options; applied only to API-based models |
 | `isSupported()` | Whether *the specified model* can fulfill the request. Throws if no model was specified |
@@ -145,6 +147,8 @@ Configure a PSR event dispatcher with `AiClient::setEventDispatcher()` before co
 - **No model specified** — `An embedding model must be specified…` from `generateEmbedding*()` *and* from `isSupported()`. This is the most common 1.4 → 1.5 migration break.
 - `usingModelPreference()` / `usingProvider()` on an `EmbeddingBuilder` is a fatal "call to undefined method" on 1.5; they exist only on `PromptBuilder`.
 - Passing a `ModelConfig` as the second argument of a static `AiClient::generateEmbedding*()` throws — it is the `$model` slot now.
+- A 1.4-style static call with no `$model` at all, `AiClient::generateEmbedding( $input )`, raises `ArgumentCountError`. That is an `Error`, so it escapes `catch ( Exception $e )`.
+- Naming a model that cannot do the job throws `InvalidArgumentException` (1.4.0 threw `RuntimeException` for a non-embedding model, so update any `catch` that targeted it): `Model "…" from provider "…" does not support embedding generation.` for a non-embedding model, or `… cannot fulfill this embedding request.` followed by the unsupported capabilities and options. `ModelRequirements::getUnmetRequirements()` exposes the same diagnosis for your own UI.
 - `is_supported_for_embedding_generation()` returning true on Core 7.0/7.1 proves provider capability, not the presence of a generation API.
 - `generateEmbedding()` rejects multiple inputs; use `generateEmbeddings()` for a batch.
 - Empty strings and non-text/non-file message parts are invalid inputs.
