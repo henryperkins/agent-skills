@@ -65,8 +65,8 @@ Abilities:
 
 - `wp_register_ability( string $name, array $args ): ?WP_Ability`
 - `wp_unregister_ability( string $name ): ?WP_Ability`
-- `wp_has_ability( string $name ): bool`
-- `wp_get_ability( string $name ): ?WP_Ability`
+- `wp_has_ability( string $name ): bool` — silent; use it to probe for an ability that may legitimately be absent.
+- `wp_get_ability( string $name ): ?WP_Ability` — for an unregistered name it returns `null` **and** fires `_doing_it_wrong()` ("Ability "%s" not found."), so call `wp_has_ability()` first when absence is an expected state rather than a bug.
 - `wp_get_abilities( array $args = array() ): array` — on 6.9/7.0 the signature is
   `wp_get_abilities(): array` and returns everything; filtering by `$args` is 7.1+.
 
@@ -135,7 +135,9 @@ try {
 So a missing `permission_callback` (on a default-class registration), a non-boolean `meta.public`,
 a malformed ability name, a duplicate name, or an unregistered `category` all produce the same
 observable result: **the ability simply is not there.** No exception reaches your code, nothing
-appears in the REST listing, and `wp_get_ability()` returns `null`.
+appears in the REST listing, and `wp_get_ability()` returns `null` — with a second
+`_doing_it_wrong()` notice of its own, which is why code that expects an ability to be absent
+should probe with `wp_has_ability()`.
 
 Two consequences worth designing around:
 
@@ -174,7 +176,7 @@ identical from the REST endpoint, and only the first one leaves a notice.
 | `ability_class` | Optional (default `WP_Ability`) | Fully-qualified class name to instantiate instead of `WP_Ability`. Must extend `WP_Ability` — `WP_Abilities_Registry::register()` checks `is_a( $args['ability_class'], WP_Ability::class, true )` and `_doing_it_wrong()` + `return null` otherwise. On 7.0+ supplying it makes the subclass responsible for both callbacks (see below); on 6.9 both are still required. |
 | `meta.public` | Optional (default `false`, **WP 7.1+**, `@since 7.1.0`) | General "this ability is meant for clients" declaration. Channel keys override it. Core resolves `show_in_rest = meta.show_in_rest ?? meta.public ?? false`. Has no effect on WP 6.9/7.0 core, but the MCP Adapter reads it on those versions too. |
 | `meta.show_in_rest` | Optional (default `false`) | Per-channel override for the `wp-abilities/v1` REST API namespace. On 7.1+ an explicit value always beats `meta.public`, in both directions. |
-| `meta.mcp.public` | Optional (default: `meta.public` on adapter 0.6.0+, `false` before) | Set `true` to expose the ability as a tool via the WordPress MCP adapter, or `false` to opt a `public` ability out. |
+| `meta.mcp.public` | Optional (default: `meta.public` on adapter 0.6.0+, `false` before) | Set `true` to make the ability MCP-public — reachable through the default server's discover/get-info/execute meta-tools, or auto-listed there as a resource or prompt when `meta.mcp.type` says so — or `false` to opt a `public` ability out. A custom server's `tools`/`resources`/`prompts` lists ignore this flag. |
 | `meta.mcp.type` | Optional (default `'tool'`) | One of `'tool'`, `'resource'`, `'prompt'`. Controls how the MCP adapter projects the ability. A typo does **not** fail loudly — it lands the ability back on the tool path. See "`meta.mcp.type`: a typo becomes a tool" in `mcp-exposure.md`. |
 | `meta.annotations.readonly` | **Strongly recommended** (default `null`) | `true` if the ability does not modify its environment. |
 | `meta.annotations.destructive` | **Strongly recommended** (default `null`) | `true` if the ability may perform destructive updates. `false` for additive-only updates. |

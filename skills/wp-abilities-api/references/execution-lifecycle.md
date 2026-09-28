@@ -134,10 +134,14 @@ sanitize pass contributes its `validate_input()` call only when there is input t
 schema to coerce it against.
 
 This is a correctness trap for exactly the use cases these filters attract. A rate limiter, audit
-row, or usage counter hung on `wp_ability_permission_result` records two events per REST call, two
-per MCP `tools/call` or `prompts/get` — the adapter's `McpTool::check_permission()` /
-`McpPrompt::check_permission()` runs the check, then `WP_Ability::execute()` runs it again — and
-one per direct `$ability->execute()` call from WP-CLI or PHP. So the same policy produces different
+row, or usage counter hung on `wp_ability_permission_result` records two events per REST call; two
+per MCP `tools/call` or `prompts/get` against an ability a server lists directly — the adapter's
+`McpTool::check_permission()` / `McpPrompt::check_permission()` runs the check, then
+`WP_Ability::execute()` runs it again; three times for the target through the default server's
+`mcp-adapter-execute-ability` tool (its permission callback checks the target during the adapter's
+check and again inside its own `execute()`, then the target's `execute()` checks once more), plus
+twice for `mcp-adapter/execute-ability` itself (adapter 0.6.1); and one per direct
+`$ability->execute()` call from WP-CLI or PHP. So the same policy produces different
 numbers depending on transport. An expensive `wp_ability_normalize_input` callback (a remote lookup,
 a cache warm) pays its cost twice.
 
@@ -418,7 +422,9 @@ Symptoms and where to look:
   `wp_ability_normalize_input` and `wp_ability_permission_result` fire twice per `/run` request,
   and `wp_ability_validate_input` three times when the request carries input for a schema-bearing
   ability, against once each per direct call. `wp_ability_permission_result` also fires twice per
-  MCP `tools/call`. Move metering to `wp_ability_invoked` or `wp_after_execute_ability`.
+  MCP `tools/call` against a directly listed ability, and three times for the target (plus twice
+  for `mcp-adapter/execute-ability`) through the default server. Move metering to
+  `wp_ability_invoked` or `wp_after_execute_ability`.
 - **Fatal inside a `wp_ability_execute_result` callback** — the filter fired with a `WP_Error`
   `$result` because the execute callback failed or threw, and the callback indexed it as an array.
   Guard on `is_wp_error( $result )` and return it unchanged.

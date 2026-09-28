@@ -1243,6 +1243,37 @@ export function assertAbilitiesApiMcpPrecision(repoRoot) {
     "designed to be a Composer dependency, not a standalone plugin",
     "Don't ship that to production",
   ]);
+
+  // Verified against v0.6.1 on 2026-09-27. The default server lists only the
+  // three mcp-adapter/* meta-tools, so every default-server tools/call arrives
+  // as mcp-adapter-execute-ability (or -get-ability-info): get_adapter_meta()
+  // ['ability'] names that meta-ability and the target sits in
+  // $args['ability_name']. The earlier sample keyed policy on the meta and so
+  // blocked every call as an allow-list, or matched nothing as a deny-list
+  // (fail open). #339's registration race, WP_MCP_VERSION as the canonical-plugin
+  // signal, and the prepared-but-untagged 0.7.0 break list are pinned with it.
+  requireIncludes(repoRoot, "skills/wp-abilities-api/references/mcp-exposure.md", [
+    "$args['ability_name']",
+    "returns only the three meta-tools",
+    "WordPress ability 'mcp-adapter/",
+    "defined( 'WP_MCP_VERSION' )",
+    "## Unreleased: MCP Adapter 0.7.0",
+    "LEGACY_PROTOCOL_VERSIONS",
+  ]);
+  requireExcludes(repoRoot, "skills/wp-abilities-api/references/mcp-exposure.md", [
+    "Compare against the sanitized form, or recover the ability name from the tool:",
+    "Confirm the client lists your tools (your registered abilities).",
+    "Allow-list which abilities the default server exposes.",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-abilities-api/references/execution-lifecycle.md", [
+    "three times for the target",
+  ]);
+  requireIncludes(repoRoot, "eval/scenarios/abilities-mcp-expose.json", [
+    "mcp-adapter-discover-abilities",
+  ]);
+  requireExcludes(repoRoot, "eval/scenarios/abilities-mcp-expose.json", [
+    "confirm the tools that appear are exactly the intended ones",
+  ]);
 }
 
 /**
@@ -1475,8 +1506,9 @@ export function runReleaseConformance(repoRoot) {
     "references/debugging.md",
   ]);
 
-  // MCP Adapter 0.6.0 reversed the packaging recommendation (bundling is
-  // deprecated in favour of the canonical plugin) and moved exposure into
+  // MCP Adapter 0.6.0 reordered the docs to recommend the canonical plugin (it
+  // deprecated nothing; the bundling deprecation is unreleased 0.7.0, see the
+  // "0.6.x deprecated Composer bundling" exclusion below) and moved exposure into
   // McpAbilityExposure::is_public(), which inherits meta.public when
   // meta.mcp.public is absent. WordPress 7.1 added meta.public and marks every
   // core ability public, so "omitting meta.mcp.public hides it" is now false.

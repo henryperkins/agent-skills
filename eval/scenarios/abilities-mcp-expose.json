@@ -19,7 +19,7 @@
     "Step 14: Ensure every ability has a permission_callback (especially destructive ones); MCP clients act as authenticated users, and exposure metadata is not authorization",
     "Step 15: Raise the default server's capability floors — discover/get/execute and the HTTP transport all default to 'read', which every Subscriber holds",
     "Step 16: Set up an Application Password for the Claude Desktop user; explain Settings → Permalinks must NOT be Plain",
-    "Step 17: Verify by hitting /wp-json/ for the namespace, enumerating the effectively-MCP-public set, and connecting Claude Desktop to confirm the tools that appear are exactly the intended ones",
+    "Step 17: Verify by hitting /wp-json/ for the namespace, enumerating the effectively-MCP-public set, and connecting Claude Desktop — on the default server tools/list shows only mcp-adapter-discover-abilities, mcp-adapter-get-ability-info, and mcp-adapter-execute-ability, so confirm the intended abilities (and nothing else) in the discover output and test permissions through execute-ability as a low-privilege user",
     "Step 18: Use a custom server, mcp_adapter_default_server_config, or mcp_adapter_create_default_server when the integration needs an explicit ability allow-list or a tools/resources/prompts split — a custom server is also the cleanest way to stay insulated from the 0.6.0 default",
     "Step 19: If mcp_adapter_validation_enabled is hooked, declare the two server parameters as optional ($enabled, $server_id = null, $server = null) because seven DTO call sites pass one argument and only McpServer passes three arguments",
     "Step 20: When wiring the STDIO command, pass --server=<server-id> explicitly and state that omitting it selects the first registered server, not the default server"
@@ -38,6 +38,7 @@
     "Recommends setting meta.mcp.public explicitly, including false to opt a public ability out, rather than relying on inheritance",
     "Does not claim that omitting meta.mcp.public guarantees an ability stays hidden from the default server",
     "Does not claim the default server exposes every registered ability",
+    "Does not tell the user their abilities will appear as their own entries in the client's tool list when served by the default server; says they are reached through the discover/get-info/execute meta-tools",
     "Keeps permission_callback enforcement separate from public discovery metadata",
     "Raises the 'read' capability floors on the default server before production use",
     "Surfaces the Plain permalinks gotcha",
