@@ -7,6 +7,34 @@ finding-to-section history is section 23.
 
 **Target repositories:** `WordPress/wp-bench` and the WP-Bench guidance in `agent-skills`
 
+**Upstream has moved since this revision (checked 2026-09-27 against `WordPress/wp-bench@e19d3a8`).**
+The body is left as written; these code-level claims in it no longer hold, so re-derive before acting on them:
+
+- **Reset** (section 4, section 8, B.6): since #53 (merged 2026-09-05) a baseline is captured once at setup and each
+  reset is one round trip, `wp db reset --yes && wp db import - && wp core is-installed`
+  (`environment.py:94-182`), about 1.18 s median — not `wp db reset` + `wp core install` at ~1.8 s. Reset
+  also refuses when no baseline was captured, and the B.4 comment is fixed (now `environment.py:165-167`).
+- **Line cites** (B.3): `environment.py:147-172` is now `environment.py:233-263`; behaviour unchanged.
+- **Records** (B.5, E): `RESULT_SCHEMA_VERSION` is `"2.2"`, records carry no `difficulty`, and the
+  run-level metadata list matches only the single-model runner (`core.py:465-484`); the multi-model and
+  `--skill` payload has no seed, limit, `selected_test_ids`, `errored_test_ids`, or `usage`, and adds
+  `skills`, `variants`, and `models{}` (`core.py:994-1017`).
+- **PR status** (B.9, Sources): #53 merged; #51 is still open and now conflicts.
+- **Grader version** (B.12, C.5): the grader is `WordPress/WordPress#7.1` on PHP 8.2; current core tags are
+  7.1.2 and 7.0.6. The repo-root `.wp-env.json` is still on the 6.9 branch with PHP 8.4.
+- **Corpus counts** (C.1, C.4, C.13, C.16, C.17): 350 tests in 39 files; 459 `custom_assertion` vs 3
+  `rest_response`; 218 tests with setup and 197 with teardown; 8 of 8 database tests use `CREATE TABLE`;
+  `wp_remote` appears in the 8 `http-api` tests (all intercepted with `pre_http_request`) and `WP_Http`
+  in one; `gb-interactivity-api` has 11 tests; at least four fixtures write files, plus the five
+  `wp_plugin_files` tests. C.12 and C.18 were not re-derived for the 165 tests #64 added.
+- **Scoring** (section 10.5): errored records are left out of the score aggregate (`core.py:91-99`); only
+  `execution_record_passed` in reference mode counts them as failures.
+- **Canonical environment** (§5, C.8): only wp-env sets `WP_DEBUG`, the amplifier C.7 and C.8 call
+  load-bearing, so bare `kind: docker` is not equivalent to it.
+
+Still holding: B.1, B.2, B.7, B.8, B.10, B.11, C.2, C.7, C.15, and the forged-result hole described
+under "Result channel integrity" (the candidate's `eval` is still not output-buffered, `class-sandbox.php:60`).
+
 **How to read this document.** Sections 1–22 are the specification. Sections marked **provisional**
 depend on a spike that has not yet run and must not be treated as approved targets. Appendices A–D
 are measurements taken on a single review host and inherit its configuration; they constrain the

@@ -20,7 +20,7 @@ This document describes how AI tools were used to create the skills in this repo
 
 3. **Contributor Review**: WordPress contributors reviewed each skill for accuracy, alignment with current best practices, and completeness.
 
-4. **AI-Assisted Testing**: Skills were tested by using them with AI coding assistants (Codex and Claude Code) on real WordPress development tasks, sourced from [WP Bench](https://make.wordpress.org/ai/2026/01/14/introducing-wp-bench-a-wordpress-ai-benchmark/) to verify they produce correct guidance. That said, skills have not (yet) been run across a formal evaluation system, *as one does not exist*.
+4. **AI-Assisted Testing**: Skills were tested by using them with AI coding assistants (Codex and Claude Code) on real WordPress development tasks, sourced from [WP Bench](https://make.wordpress.org/ai/2026/01/14/introducing-wp-bench-a-wordpress-ai-benchmark/) to verify they produce correct guidance. That said, the v1 skills were not run across a formal evaluation system, as none existed at the time. WP-Bench has since added in-harness skill A/B runs (`--skill`, wp-bench #50, 2026-08-13); see `docs/wp-bench-integration.md` for how this repository uses them.
 
 5. **Iteration**: Based on testing results, skills were refined before the v1 release.
 

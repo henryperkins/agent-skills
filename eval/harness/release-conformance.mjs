@@ -1537,6 +1537,18 @@ export function runReleaseConformance(repoRoot) {
     "--targets=antigravity-global",
   ]);
 
+  // Fork-side corrections to upstream-authored and wp-bench prose (2026-09-27):
+  // wp-bench #50 shipped in-harness skill A/B runs, and the verifier runs as
+  // user 0, not as an administrator. Keep an upstream merge from restoring either.
+  requireExcludes(repoRoot, "docs/ai-authorship.md", ["*as one does not exist*"]);
+  requireExcludes(repoRoot, "docs/wp-bench-integration.md", [
+    "because the fixture runs as an administrator",
+  ]);
+  requireIncludes(repoRoot, "docs/wp-bench-integration.md", [
+    "wp-bench run --config wp-bench.yaml",
+    "user 0",
+  ]);
+
   requireIncludes(repoRoot, "skills/blueprint/SKILL.md", [
     '"version": 2',
     '"blueprintMeta"',
