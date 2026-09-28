@@ -304,14 +304,8 @@ it), #55 (concurrency under `reset_per_test`), #62 (Python 3.11 floor), #58, #59
 
 ## Outside this pass, reported
 
-- **Provider plugins 1.2.0.** Google and OpenAI shipped 1.2.0 on 2026-09-21 (text
-  to speech among other changes). An index refresh reports drift against
-  `wp-ai-connectors`; the version names at `SKILL.md:4`, `:37`, `:85`,
-  `references/provider-registration.md:5`, `:116`,
-  `references/capabilities-declaration.md:74`, the harness pins for Google
-  1.1.1 and OpenAI 1.1.0, and `eval/scenarios/ai-connectors-register-provider.json:20`
-  move with it. OpenAI 1.2.0's `composer.json` requires `wordpress/php-ai-client:
-  ^1.3.1`, which the "`^1.4` stays in `require-dev`" sentence predates.
+- **Provider plugins 1.2.0.** Google and OpenAI shipped 1.2.0 on 2026-09-21.
+  Handled as a follow-up in release 1.12.2; see the addendum below.
 - **Synced personal skills** (claude.ai, not in this repository).
   `anthropic-skills:wp-bench` was verified against wp-bench on 2026-08-23 and is
   stale at `e19d3a8`: 185 tests (now 350), schema 2.1 (now 2.2), WordPress 7.0 (now
@@ -363,3 +357,35 @@ applied and committed inside the container only:
 
 GitHub Actions remain unavailable for this repository, so no hosted run is
 presented as evidence.
+
+## Addendum: provider plugins 1.2.0 (release 1.12.2)
+
+Done the same day as a follow-up, after the pass above had shipped as 1.12.1.
+The Google and OpenAI provider indices were refreshed (1.1.1 → 1.2.0 and
+1.1.0 → 1.2.0, both 2026-09-21), and `wp-ai-connectors` was re-verified against
+the tags.
+
+- **Unchanged, verified at the tags:** `Requires at least: 6.9`, `Requires PHP: 7.4`,
+  the `class_exists( AiClient::class )` guard, `init` priority 5, the hand-rolled
+  `src/autoload.php` (`plugin.php:30-54`, identical in shape to Anthropic 1.0.4's
+  once names are normalized), `/vendor` in `.distignore`, `deploy-to-wporg.yml`
+  running no `composer install`, and the readme's "For WordPress 6.9 … must be
+  installed" note. Google 1.2.0 still lists only `generateContent`/`predict`
+  models; OpenAI's `interface_exists()`-gated embedding branch
+  (`OpenAiProvider.php:59-64`) and `OpenAiEmbeddingGenerationModel` are unchanged.
+- **Changed:** both `composer.json` files moved `wordpress/php-ai-client` in
+  `require-dev` from `^1.4` (OpenAI 1.1.0) to `^1.3.1`, with a PHPUnit matrix over
+  PHP 7.4–8.4 × lowest/latest SDK (`ci.yml:55-79` in OpenAI). The skill cited
+  `^1.4` as the precedent at `SKILL.md:85` and
+  `references/capabilities-declaration.md:74`; both now describe `^1.3.1`.
+- **New:** `GoogleTextToSpeechConversionModel` and `OpenAiTextToSpeechConversionModel`
+  (`@since 1.2.0`), returned from `createModel()` on `isTextToSpeechConversion()`
+  with no version gate — `TextToSpeechConversionModelInterface` is already in the
+  SDK 1.3.1 that Core bundles. `capabilities-declaration.md` now draws that
+  contrast with the gated embedding branch. Google's thought-signature and
+  thought-token round-tripping (#26, #36, #44) and OpenAI's reasoning-item
+  preservation (#26) change no statement in the skills.
+
+Markers now read Google 1.2.0 and OpenAI 1.2.0; the harness pins and
+`eval/scenarios/ai-connectors-register-provider.json` moved with them. Anthropic
+is still 1.0.4.
