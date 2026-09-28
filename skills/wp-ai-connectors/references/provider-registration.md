@@ -2,7 +2,7 @@
 
 The end-to-end shape of a WordPress AI provider plugin in WP 7.0+.
 
-Verified release baselines: `ai-provider-for-anthropic` v1.0.4, Google 1.1.1, and OpenAI 1.1.0.
+Verified release baselines: `ai-provider-for-anthropic` v1.0.4, Google 1.2.0, and OpenAI 1.2.0.
 
 ## Two registries, one flow
 
@@ -113,7 +113,7 @@ When in doubt, copy from `wordpress/ai-provider-for-anthropic`, `wordpress/ai-pr
 
 ## Canonical bootstrap (adapted from `ai-provider-for-anthropic`)
 
-This mirrors the `plugin.php` from `WordPress/ai-provider-for-anthropic` v1.0.4 (reformatted to WordPress-style spacing; the upstream file uses tight PSR-12 spacing — e.g. `if (!class_exists(AiClient::class))`). Copy this shape — the registration shape is identical across the current Anthropic 1.0.4, Google 1.1.1, and OpenAI 1.1.0 releases:
+This mirrors the `plugin.php` from `WordPress/ai-provider-for-anthropic` v1.0.4 (reformatted to WordPress-style spacing; the upstream file uses tight PSR-12 spacing — e.g. `if (!class_exists(AiClient::class))`). Copy this shape — the registration shape is identical across the current Anthropic 1.0.4, Google 1.2.0, and OpenAI 1.2.0 releases:
 
 ```php
 <?php
@@ -164,7 +164,7 @@ add_action( 'init', __NAMESPACE__ . '\\register_provider', 5 );
 
 What each part does:
 
-- **`Requires at least: 6.9`** — the official plugins target 6.9 *not* because they bundle `wordpress/php-ai-client` (they don't: it sits in `require-dev` + `suggest`, and `/vendor` is in `.distignore`, so the wp.org ZIP carries no SDK) but because the `class_exists()` guard below leaves them inert on any 6.9 site that hasn't installed the package itself. Relying on Core's bundled SDK — what the official plugins do — means setting `Requires at least: 7.0`. Needing a newer SDK than core bundles is not a reason to bundle one yourself: `wp-settings.php` autoloads core's copy before any plugin runs, so gate the newer surface at runtime (`interface_exists()` / `version_compare( AiClient::VERSION, ... )`) the way `ai-provider-for-openai` 1.1.0 does for embeddings.
+- **`Requires at least: 6.9`** — the official plugins target 6.9 *not* because they bundle `wordpress/php-ai-client` (they don't: it sits in `require-dev` + `suggest`, and `/vendor` is in `.distignore`, so the wp.org ZIP carries no SDK) but because the `class_exists()` guard below leaves them inert on any 6.9 site that hasn't installed the package itself. Relying on Core's bundled SDK — what the official plugins do — means setting `Requires at least: 7.0`. Needing a newer SDK than core bundles is not a reason to bundle one yourself: `wp-settings.php` autoloads core's copy before any plugin runs, so gate the newer surface at runtime (`interface_exists()` / `version_compare( AiClient::VERSION, ... )`) the way `ai-provider-for-openai` has done for embeddings since 1.1.0.
 - **`require_once __DIR__ . '/src/autoload.php';`** — loads the plugin's autoloader (Composer or hand-rolled PSR-4). The provider class lives under `src/`.
 - **`class_exists( AiClient::class )`** — guards against the SDK not being loaded. Without this, the plugin fatals on sites where the SDK isn't bundled and Core hasn't yet provided it.
 - **`hasProvider( AnthropicProvider::class )`** — makes registration idempotent.

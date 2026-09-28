@@ -1868,18 +1868,34 @@ export function runReleaseConformance(repoRoot) {
     "WordPress Core verified through: 7.1",
     "PHP AI Client verified through: 1.5.0",
     "Anthropic provider verified through: 1.0.4",
-    "Google provider verified through: 1.1.1",
-    "OpenAI provider verified through: 1.1.0",
+    "Google provider verified through: 1.2.0",
+    "OpenAI provider verified through: 1.2.0",
+  ]);
+  // Google and OpenAI 1.2.0 (2026-09-21) lowered the dev constraint from ^1.4 to
+  // ^1.3.1 — the SDK Core bundles — and run PHPUnit against the lowest and latest
+  // SDK. Embeddings stay behind interface_exists(); text to speech needs no gate,
+  // because TextToSpeechConversionModelInterface already ships in 1.3.1.
+  requireIncludes(repoRoot, "skills/wp-ai-connectors/SKILL.md", [
+    "`wordpress/php-ai-client: ^1.3.1`",
+  ]);
+  requireExcludes(repoRoot, "skills/wp-ai-connectors/SKILL.md", [
+    "`wordpress/php-ai-client: ^1.4` stays in `require-dev`",
+  ]);
+  requireIncludes(repoRoot, "skills/wp-ai-connectors/references/capabilities-declaration.md", [
+    "TextToSpeechConversionModelInterface",
+  ]);
+  requireExcludes(repoRoot, "skills/wp-ai-connectors/references/capabilities-declaration.md", [
+    "Keep `wordpress/php-ai-client: ^1.4` in `require-dev`",
   ]);
   requireIncludes(repoRoot, "skills/wp-ai-connectors/references/provider-registration.md", [
     "ai-provider-for-anthropic` v1.0.4",
-    "Google 1.1.1",
-    "OpenAI 1.1.0",
+    "Google 1.2.0",
+    "OpenAI 1.2.0",
   ]);
   requireIncludes(repoRoot, "eval/scenarios/ai-connectors-register-provider.json", [
     "Anthropic 1.0.4",
-    "Google 1.1.1",
-    "OpenAI 1.1.0",
+    "Google 1.2.0",
+    "OpenAI 1.2.0",
     "empty tool-call arguments",
     "model-aware",
     "interface_exists( EmbeddingGenerationModelInterface::class )",

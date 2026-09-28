@@ -34,6 +34,8 @@ At PHP AI Client 1.5.0 (unchanged since 1.4.0), `CapabilityEnum` contains exactl
 - `embeddingGeneration()`
 - `chatHistory()`
 
+**Gate only what Core's SDK lacks.** Core 7.0 and 7.1 bundle SDK 1.3.1, which already defines `TextToSpeechConversionModelInterface`, so text-to-speech needs no version check: the Google and OpenAI 1.2.0 providers return their `…TextToSpeechConversionModel` (`@since 1.2.0`) from `createModel()` on `isTextToSpeechConversion()` alone. Embeddings are different — the interface arrived in 1.4.0 — so OpenAI's `createModel()` wraps its embedding branch in `interface_exists()` (see "Embedding provider contract" below).
+
 Names such as `json_response`, `system_instruction`, `function_calling`, and `streaming` are not `CapabilityEnum` cases. Structured output uses `OptionEnum::outputSchema()`, system instructions use `OptionEnum::systemInstruction()`, and function calling uses `OptionEnum::functionDeclarations()`. Input/output modalities are also options.
 
 `OptionEnum` is not a fixed list: it reflects over `ModelConfig`'s `KEY_*` constants and adds `INPUT_MODALITIES`. Read `ModelConfig` at the SDK version you target rather than memorising cases.
@@ -71,7 +73,7 @@ Function-call conversion also needs an explicit empty-value contract. Anthropic 
 
 ## Embedding provider contract (PHP AI Client 1.4+)
 
-> **Core does not bundle this.** WP 7.0 and 7.1 vendor a pre-1.4 SDK: `src/wp-includes/php-ai-client/` has no `src/Providers/Models/EmbeddingGeneration/`, no `EmbeddingResult`/`EmbeddingBuilder`, and no `ModelConfig::KEY_DIMENSIONS` (so `OptionEnum::dimensions()` does not resolve). `CapabilityEnum::EMBEDDING_GENERATION` *is* in the bundled enum, which makes the surface look present. Keep `wordpress/php-ai-client: ^1.4` in `require-dev` and gate everything below on `interface_exists( EmbeddingGenerationModelInterface::class )` — the pattern `WordPress/ai-provider-for-openai` 1.1.0 ships — rather than bundling a second SDK copy that would collide with the one `wp-settings.php` already autoloads.
+> **Core does not bundle this.** WP 7.0 and 7.1 vendor a pre-1.4 SDK: `src/wp-includes/php-ai-client/` has no `src/Providers/Models/EmbeddingGeneration/`, no `EmbeddingResult`/`EmbeddingBuilder`, and no `ModelConfig::KEY_DIMENSIONS` (so `OptionEnum::dimensions()` does not resolve). `CapabilityEnum::EMBEDDING_GENERATION` *is* in the bundled enum, which makes the surface look present. Keep the SDK in `require-dev` — the 1.2.0 flagship providers declare `^1.3.1`, the version Core bundles, and run their tests against both the lowest and the latest SDK — and gate everything below on `interface_exists( EmbeddingGenerationModelInterface::class )`, the pattern `WordPress/ai-provider-for-openai` has shipped since 1.1.0, rather than bundling a second SDK copy that would collide with the one `wp-settings.php` already autoloads.
 
 A text embedding model with configurable dimensions that passes 1.5.0's named-model verification — and that `findModelsMetadataForSupport()` can list for a model picker — needs metadata shaped like:
 

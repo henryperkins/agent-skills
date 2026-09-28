@@ -1,12 +1,18 @@
 {
   "source": "https://api.github.com/repos/WordPress/ai-provider-for-openai/releases?per_page=30",
   "latest": {
-    "tag": "1.1.0",
-    "name": "1.1.0",
-    "publishedAt": "2026-08-17T19:45:23Z",
-    "url": "https://github.com/WordPress/ai-provider-for-openai/releases/tag/1.1.0"
+    "tag": "1.2.0",
+    "name": "1.2.0",
+    "publishedAt": "2026-09-21T18:11:03Z",
+    "url": "https://github.com/WordPress/ai-provider-for-openai/releases/tag/1.2.0"
   },
   "recent": [
+    {
+      "tag": "1.2.0",
+      "name": "1.2.0",
+      "publishedAt": "2026-09-21T18:11:03Z",
+      "url": "https://github.com/WordPress/ai-provider-for-openai/releases/tag/1.2.0"
+    },
     {
       "tag": "1.1.0",
       "name": "1.1.0",
