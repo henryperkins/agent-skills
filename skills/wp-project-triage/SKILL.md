@@ -17,8 +17,9 @@ Use this skill to quickly understand what kind of WordPress repo you’re in and
 
 ## Procedure
 
-1. Run the detector (prints JSON to stdout):
-   - `node scripts/detect_wp_project.mjs`
+1. Resolve this installed skill's directory to an absolute path. Keep the process working directory at the target project's root, then run the detector (prints JSON to stdout):
+   - `node "/absolute/path/to/wp-project-triage/scripts/detect_wp_project.mjs"`
+   - Replace the example path with the actual installed location; changing into the skill directory would scan the skill package instead of the target project.
 2. If you need the exact output contract, read:
    - `references/triage.schema.json`
 3. Use the report to select workflow guardrails:
@@ -27,6 +28,8 @@ Use this skill to quickly understand what kind of WordPress repo you’re in and
    - tests present
    - version hints and sources
 4. If the report is missing signals you need, update the detector rather than guessing.
+
+Block themes are identified by a readable `templates/index.html` or legacy `block-templates/index.html` in the detected theme root; `theme.json` is optional. `hasPhpUnit` includes configured or declared PHPUnit, while `hasPhpUnitDependency` and `hasPhpUnitExecutable` distinguish a Composer declaration from an installed `vendor/bin/phpunit` launcher.
 
 ## Verification
 

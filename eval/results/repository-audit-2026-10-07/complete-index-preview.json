@@ -1,0 +1,53 @@
+{
+  "runtime": "v24.15.0",
+  "cases": [
+    {
+      "name": "strict refreshed-index run",
+      "args": [],
+      "exitCode": 1,
+      "expectedPass": false,
+      "passed": true,
+      "output": "match every committed upstream index"
+    },
+    {
+      "name": "drift suppression alone",
+      "args": [
+        "--skip-upstream-drift"
+      ],
+      "exitCode": 1,
+      "expectedPass": false,
+      "passed": true,
+      "output": "match every committed upstream index"
+    },
+    {
+      "name": "preview alone keeps drift strict",
+      "args": [
+        "--index-preview"
+      ],
+      "exitCode": 1,
+      "expectedPass": false,
+      "passed": true,
+      "output": "Upstream drift check failed"
+    },
+    {
+      "name": "complete index preview",
+      "args": [
+        "--skip-upstream-drift",
+        "--index-preview"
+      ],
+      "exitCode": 0,
+      "expectedPass": true,
+      "passed": true,
+      "output": "OK: 7 maintenance preview regressions passed.\nOK: 17 detector and installed-launch regressions passed.\nOK: 7 workflow write-gate regressions passed.\nOK: 7 direct-PHP Core ability execution cases passed.\nOK: skills frontmatter, triage report, drift, and quality checks passed."
+    },
+    {
+      "name": "corrupt recorded state preview",
+      "exitCode": 1,
+      "passed": true,
+      "output": "Recorded maintenance checksum must match its own state"
+    }
+  ],
+  "recordedStateUnchanged": true,
+  "recordedStateSha256": "557a7d5c4c8ce36cc0d5f2e55de0d26904294603fa3404329bb8b41f08b27ca6",
+  "fixture": "Synthetic MCP index advance to v0.7.1; no online refresh or upstream release claim."
+}

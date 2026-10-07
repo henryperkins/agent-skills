@@ -1,0 +1,54 @@
+{
+  "helpers": [
+    {
+      "command": "node \"$AUDIT_SCRATCH\\candidate-install\\.codex\\skills\\wp-project-triage\\scripts\\detect_wp_project.mjs\"",
+      "cwd": "$AUDIT_SCRATCH\\skill exercise target",
+      "status": "fulfilled",
+      "value": {
+        "chunk_id": "6f362f",
+        "wall_time_seconds": 0.7361786,
+        "exit_code": 0,
+        "original_token_count": 691,
+        "output": "{\n  \"tool\": {\n    \"name\": \"detect_wp_project\",\n    \"version\": \"0.2.0\"\n  },\n  \"project\": {\n    \"kind\": [\n      \"wp-block-theme\"\n    ],\n    \"primary\": \"wp-block-theme\",\n    \"notes\": []\n  },\n  \"signals\": {\n    \"paths\": {\n      \"repoRoot\": \"C:\\\\Users\\\\htper\\\\AppData\\\\Local\\\\Temp\\\\agent-skills-audit-42d549fe91954d1e896a91c11754da3d\\\\skill exercise target\",\n      \"wpContent\": null,\n      \"pluginsDir\": null,\n      \"themesDir\": null,\n      \"muPluginsDir\": null\n    },\n    \"isWpCoreCheckout\": false,\n    \"isGutenbergRepo\": false,\n    \"hasWpContentDir\": false,\n    \"hasPluginsDir\": false,\n    \"hasThemesDir\": false,\n    \"hasMuPluginsDir\": false,\n    \"detectedPluginName\": null,\n    \"detectedThemeName\": \"Workshop\",\n    \"detectedThemeRoot\": \"C:\\\\Users\\\\htper\\\\AppData\\\\Local\\\\Temp\\\\agent-skills-audit-42d549fe91954d1e896a91c11754da3d\\\\skill exercise target\",\n    \"parentThemeRoot\": null,\n    \"isBlockPlugin\": false,\n    \"isBlockTheme\": true,\n    \"usesInteractivityApi\": false,\n    \"usesAbilitiesApi\": false,\n    \"usesInnerBlocks\": false,\n    \"usesWpCli\": false,\n    \"performanceHints\": {\n      \"wpConfig\": null,\n      \"constants\": {},\n      \"dropins\": {\n        \"objectCache\": false,\n        \"advancedCache\": false,\n        \"db\": false,\n        \"sunrise\": false\n      },\n      \"plugins\": {\n        \"queryMonitor\": false,\n        \"performanceLab\": false\n      }\n    },\n    \"interactivityHints\": {\n      \"packageJson\": false,\n      \"matches\": {},\n      \"scanTruncated\": false\n    },\n    \"abilitiesHints\": {\n      \"packageJson\": false,\n      \"matches\": {},\n      \"scanTruncated\": false\n    },\n    \"innerBlocksHints\": {\n      \"matches\": {},\n      \"scanTruncated\": false\n    },\n    \"wpCliHints\": {\n      \"configFiles\": [],\n      \"configScanTruncated\": false,\n      \"composerJson\": false,\n      \"matches\": {},\n      \"scanTruncated\": false\n    },\n    \"blockJsonFiles\": [],\n    \"themeJsonFiles\": [],\n    \"scanTruncated\": false\n  },\n  \"tooling\": {\n    \"php\": {\n      \"hasComposerJson\": true,\n      \"hasVendorDir\": false,\n      \"phpunitXml\": [],\n      \"hasPhpUnitDependency\": true,\n      \"hasPhpUnitExecutable\": false\n    },\n    \"node\": {\n      \"hasPackageJson\": false,\n      \"packageManager\": null,\n      \"usesWordpressScripts\": false\n    },\n    \"tests\": {\n      \"hasPhpUnit\": true,\n      \"hasWpEnv\": false,\n      \"hasPlaywright\": false,\n      \"hasJest\": false\n    }\n  },\n  \"versions\": {\n    \"wordpress\": {\n      \"core\": {\n        \"value\": null,\n        \"source\": null\n      }\n    },\n    \"gutenberg\": {\n      \"value\": null,\n      \"source\": null\n    }\n  },\n  \"recommendations\": {\n    \"commands\": [\n      \"composer install\"\n    ],\n    \"notes\": [\n      \"PHPUnit is declared in Composer but vendor/bin/phpunit is not installed; install dependencies before running it.\"\n    ]\n  }\n}\n"
+      }
+    },
+    {
+      "command": "node \"$AUDIT_SCRATCH\\candidate-install\\.codex\\skills\\wp-block-themes\\scripts\\detect_block_themes.mjs\"",
+      "cwd": "$AUDIT_SCRATCH\\skill exercise target",
+      "status": "fulfilled",
+      "value": {
+        "chunk_id": "00268e",
+        "wall_time_seconds": 0.6956967,
+        "exit_code": 0,
+        "original_token_count": 133,
+        "output": "{\n  \"tool\": {\n    \"name\": \"detect_block_themes\",\n    \"version\": \"0.2.0\"\n  },\n  \"repoRoot\": \"C:\\\\Users\\\\htper\\\\AppData\\\\Local\\\\Temp\\\\agent-skills-audit-42d549fe91954d1e896a91c11754da3d\\\\skill exercise target\",\n  \"truncated\": false,\n  \"count\": 1,\n  \"themes\": [\n    {\n      \"themeRoot\": \".\",\n      \"themeJson\": null,\n      \"version\": null,\n      \"hasTemplates\": true,\n      \"hasParts\": false,\n      \"hasPatterns\": false,\n      \"hasStyles\": false,\n      \"isBlockTheme\": true,\n      \"indexTemplate\": \"templates/index.html\"\n    }\n  ]\n}\n"
+      }
+    }
+  ],
+  "additional_commands": [
+    {
+      "command": "composer validate --no-check-publish",
+      "cwd": "$AUDIT_SCRATCH\\skill exercise target",
+      "status": "fulfilled",
+      "value": {
+        "chunk_id": "f7fcf2",
+        "wall_time_seconds": 5.5079579,
+        "exit_code": 0,
+        "original_token_count": 66,
+        "output": "./composer.json is valid, but with a few warnings\r\nSee https://getcomposer.org/doc/04-schema.md for details on the schema\r\n# General warnings\r\n- No license specified, it is recommended to do so. For closed-source software you may use \"proprietary\" as license.\r\n"
+      }
+    },
+    {
+      "command": "php -l permission-example.php",
+      "cwd": "$AUDIT_SCRATCH",
+      "status": "fulfilled",
+      "value": {
+        "chunk_id": "b5922f",
+        "wall_time_seconds": 0.9958608,
+        "exit_code": 0,
+        "original_token_count": 13,
+        "output": "No syntax errors detected in permission-example.php\n"
+      }
+    }
+  ]
+}

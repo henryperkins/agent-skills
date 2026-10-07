@@ -92,22 +92,24 @@ Prefer the repo's canonical location? Once merged upstream, the same commands wo
 
 ### Other tools (Codex, Copilot/VS Code, Cursor)
 
+These commands install this fork's 22-skill collection. For the upstream collection, explicitly substitute `WordPress/agent-skills`; upstream currently omits this fork's three AI skills.
+
 The fastest way to install a skill is with a single command:
 
 ```bash
-npx skills add WordPress/agent-skills --skill wp-plugin-development
+npx skills add henryperkins/agent-skills --skill wp-plugin-development
 ```
 
 To see all available skills:
 
 ```bash
-npx skills add WordPress/agent-skills --list
+npx skills add henryperkins/agent-skills --list
 ```
 
 To install multiple skills at once:
 
 ```bash
-npx skills add WordPress/agent-skills --skill wp-plugin-development wp-abilities-api wp-playground
+npx skills add henryperkins/agent-skills --skill wp-plugin-development wp-abilities-api wp-playground
 ```
 
 #### Choosing a scope
@@ -117,7 +119,7 @@ npx skills add WordPress/agent-skills --skill wp-plugin-development wp-abilities
 Installing **globally** makes the skill available to your user (across **all** your projects). Adding the `-g` / `--global` flag, it will install your skill with global scope:
 
 ```bash
-npx skills add WordPress/agent-skills --skill wp-plugin-development --global
+npx skills add henryperkins/agent-skills --skill wp-plugin-development --global
 ```
 
 ### Install globally for Claude Code (manual, unnamespaced)
@@ -126,7 +128,7 @@ Prefer the [plugin marketplace method](#claude-code-just-link-the-repo) above fo
 
 ```bash
 # Clone agent-skills
-git clone https://github.com/WordPress/agent-skills.git
+git clone https://github.com/henryperkins/agent-skills.git
 cd agent-skills
 
 # Build the distribution
@@ -145,7 +147,7 @@ This installs skills to `~/.claude/skills/` where Claude Code will automatically
 
 ```bash
 # Clone agent-skills
-git clone https://github.com/WordPress/agent-skills.git
+git clone https://github.com/henryperkins/agent-skills.git
 cd agent-skills
 
 # Build the distribution

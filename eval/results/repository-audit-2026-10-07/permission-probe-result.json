@@ -1,0 +1,102 @@
+{
+  "scope": "Exact supplied WP_Ability methods with local hook/error/object-schema shims; no live WP/REST/MCP.",
+  "core_source": "$AUDIT_SCRATCH/core/class-wp-ability.php",
+  "example_source": "$AUDIT_SCRATCH/permission-example.php",
+  "results": [
+    {
+      "case": "supplied_callback_unprivileged",
+      "has_manage_options": false,
+      "outcome": {
+        "thrown_class": "Error",
+        "message": "Call to a member function get_name() on string"
+      },
+      "trace": [
+        "wp_ability_invoked",
+        "wp_pre_execute_ability"
+      ]
+    },
+    {
+      "case": "supplied_callback_privileged",
+      "has_manage_options": true,
+      "outcome": {
+        "thrown_class": "Error",
+        "message": "Call to a member function get_name() on string"
+      },
+      "trace": [
+        "wp_ability_invoked",
+        "wp_pre_execute_ability"
+      ]
+    },
+    {
+      "case": "signature_corrected_only_unprivileged",
+      "has_manage_options": false,
+      "outcome": {
+        "value": {
+          "report": "private cached copy"
+        }
+      },
+      "trace": [
+        "wp_ability_invoked",
+        "wp_pre_execute_ability"
+      ]
+    },
+    {
+      "case": "pre_filter_removed_unprivileged",
+      "has_manage_options": false,
+      "outcome": {
+        "wp_error": "ability_invalid_permissions",
+        "message": "Ability \"workshop/private-report\" does not have necessary permission."
+      },
+      "trace": [
+        "wp_ability_invoked",
+        "wp_pre_execute_ability",
+        "wp_ability_normalize_input",
+        "schema:input",
+        "wp_ability_validate_input",
+        "current_user_can:manage_options",
+        "wp_ability_permission_result"
+      ]
+    },
+    {
+      "case": "cache_in_execute_callback_unprivileged",
+      "has_manage_options": false,
+      "outcome": {
+        "wp_error": "ability_invalid_permissions",
+        "message": "Ability \"workshop/private-report\" does not have necessary permission."
+      },
+      "trace": [
+        "wp_ability_invoked",
+        "wp_pre_execute_ability",
+        "wp_ability_normalize_input",
+        "schema:input",
+        "wp_ability_validate_input",
+        "current_user_can:manage_options",
+        "wp_ability_permission_result"
+      ]
+    },
+    {
+      "case": "cache_in_execute_callback_privileged",
+      "has_manage_options": true,
+      "outcome": {
+        "value": {
+          "report": "private cached copy"
+        }
+      },
+      "trace": [
+        "wp_ability_invoked",
+        "wp_pre_execute_ability",
+        "wp_ability_normalize_input",
+        "schema:input",
+        "wp_ability_validate_input",
+        "current_user_can:manage_options",
+        "wp_ability_permission_result",
+        "wp_before_execute_ability",
+        "execute_callback:cached_fixture",
+        "wp_ability_execute_result",
+        "schema:output",
+        "wp_ability_validate_output",
+        "wp_after_execute_ability"
+      ]
+    }
+  ]
+}

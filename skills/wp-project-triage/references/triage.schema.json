@@ -76,7 +76,9 @@
           "properties": {
             "hasComposerJson": { "type": "boolean" },
             "hasVendorDir": { "type": "boolean" },
-            "phpunitXml": { "type": "array", "items": { "type": "string" } }
+            "phpunitXml": { "type": "array", "items": { "type": "string" } },
+            "hasPhpUnitDependency": { "type": "boolean" },
+            "hasPhpUnitExecutable": { "type": "boolean" }
           },
           "additionalProperties": true
         },

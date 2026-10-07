@@ -22,6 +22,7 @@ import {
   buildUpstreamState,
   detectUpstreamChanges,
   getUpstreamStateHash,
+  fingerprintUpstreamState,
   inspectConfiguration,
 } from "../../shared/scripts/ai-generate-updates.mjs";
 
@@ -42,7 +43,7 @@ function compareSemver(a, b) {
 }
 
 function read(repoRoot, relativePath) {
-  return fs.readFileSync(path.join(repoRoot, relativePath), "utf8");
+  return fs.readFileSync(path.join(repoRoot, relativePath), "utf8").replace(/\r\n/g, "\n");
 }
 
 function readJson(repoRoot, relativePath) {
@@ -663,7 +664,7 @@ export function assertIndependentUpstreamDrift(repoRoot) {
   assert(JSON.parse(formatDriftJson(clean)).checks.length === clean.checks.length, "JSON drift report must preserve every check");
 }
 
-export function assertCompleteMaintenanceState(repoRoot) {
+export function assertCompleteMaintenanceState(repoRoot, { indexPreview = false } = {}) {
   const baselines = indexedReleaseBaselines(repoRoot);
   const nextVersions = Object.fromEntries(
     Object.entries(baselines).map(([id, version]) => [id, incrementLastVersionComponent(version)])
@@ -673,11 +674,25 @@ export function assertCompleteMaintenanceState(repoRoot) {
   );
   const committedState = getUpstreamStateHash(committedIndices, CORE_AI_UPSTREAMS);
   const recordedState = readJson(repoRoot, ".github/state/last-sync.json");
-  assert(recordedState.hash === committedState.hash, "Recorded maintenance hash must match every committed upstream index");
-  assert(
-    JSON.stringify(recordedState.state) === JSON.stringify(committedState.state),
-    "Recorded maintenance state must exactly match every committed upstream index"
-  );
+  assert(recordedState.state?.schemaVersion === 3, "Recorded maintenance state must use schema version 3");
+  const fingerprints = recordedState.state.fingerprints;
+  assert(fingerprints && Object.keys(fingerprints).length === CORE_AI_UPSTREAMS.length, "Recorded maintenance fingerprints must cover every source");
+  for (const upstream of CORE_AI_UPSTREAMS) {
+    assert(/^[a-f0-9]{64}$/.test(fingerprints[upstream.id] ?? ""), `${upstream.id} recorded fingerprint must be a SHA-256 hash`);
+    if (upstream.sourceType !== "html-version-map") {
+      const version = recordedState.state.versions?.[upstream.id];
+      assert(typeof version === "string" && version !== "", `${upstream.id} recorded version must be present`);
+    }
+  }
+  assert(Number.isInteger(recordedState.state.versionMapRowCount) && recordedState.state.versionMapRowCount > 0, "Recorded version map must contain rows");
+  assert(recordedState.hash === fingerprintUpstreamState(recordedState.state), "Recorded maintenance checksum must match its own state");
+  if (!indexPreview) {
+    assert(recordedState.hash === committedState.hash, "Recorded maintenance hash must match every committed upstream index");
+    assert(
+      JSON.stringify(recordedState.state) === JSON.stringify(committedState.state),
+      "Recorded maintenance state must exactly match every committed upstream index"
+    );
+  }
   const indices = Object.fromEntries(
     CORE_AI_UPSTREAMS.map((upstream) => [
       upstream.id,
@@ -1285,7 +1300,7 @@ export function assertAiPluginPrecision(repoRoot) {
     "ai_embeddings_missing_model",
   ]);
   requireIncludes(repoRoot, "skills/wp-ai-plugin/references/experiments-framework.md", [
-    "### Unreleased on `develop` after v1.3.0 (milestone 1.4.0)",
+    "### Released in 1.4.0",
     "register_deprecated_ability_alias",
     "outside `wp_abilities_api_init`",
   ]);
@@ -1341,7 +1356,7 @@ export function assertAbilitiesApiMcpPrecision(repoRoot) {
     "returns only the three meta-tools",
     "WordPress ability 'mcp-adapter/",
     "defined( 'WP_MCP_VERSION' )",
-    "## Unreleased: MCP Adapter 0.7.0",
+    "## MCP Adapter 0.7.0: current schema runtime",
     "LEGACY_PROTOCOL_VERSIONS",
   ]);
   requireExcludes(repoRoot, "skills/wp-abilities-api/references/mcp-exposure.md", [
@@ -1434,13 +1449,32 @@ export function assertRemediationRelease191(repoRoot) {
   assert(JSON.stringify(listedSkills) === JSON.stringify(actualSkills), "Skill inventory must exactly match skills/*");
 }
 
-export function runReleaseConformance(repoRoot) {
+export function assertAuditRemediationGuidance(repoRoot) {
+  const unsafeGuarantee = /(?:permission_callback` runs on every execution|every execution still (?:runs|reaches)[\s\S]{0,35}(?:permission_callback|permission callback))/;
+  for (const file of [
+    "skills/wp-abilities-api/references/php-registration.md",
+    "skills/wp-abilities-api/references/mcp-exposure.md",
+    "skills/wp-abilities-verify/references/exposure-checks.md",
+  ]) {
+    requireNoMatch(repoRoot, file, unsafeGuarantee, "must distinguish normal permissions from pre-execution replacements");
+  }
+  requireExcludes(repoRoot, "skills/wp-ai-plugin/references/guidelines-integration.md", [
+    "`true` if `wp_guideline` CPT is registered",
+    "Gutenberg < 23.0, 23.6.0+, or experiment off",
+    "The service handles `publish` and `draft`",
+  ]);
+  requireExcludes(repoRoot, "skills/wp-abilities-api/SKILL.md", ["unreleased 1.4.0"]);
+  requireIncludes(repoRoot, "skills/wp-abilities-api/SKILL.md", ["core/settings-get"]);
+}
+
+export function runReleaseConformance(repoRoot, { indexPreview = false } = {}) {
   assertPluginVersionFresh(repoRoot);
   assertMarketplaceVersionMatches(repoRoot);
   assertReleaseFloor(repoRoot);
   assertUpstreamNormalization(repoRoot);
   assertIndependentUpstreamDrift(repoRoot);
-  assertCompleteMaintenanceState(repoRoot);
+  assertCompleteMaintenanceState(repoRoot, { indexPreview });
+  assertAuditRemediationGuidance(repoRoot);
   assertCoreAiUpstreamRegistry(repoRoot);
   assertAiMaintenanceWorkflow(repoRoot);
   assertLocalRuntimeHygiene(repoRoot);
@@ -1603,7 +1637,7 @@ export function runReleaseConformance(repoRoot) {
   ]);
 
   // MCP Adapter 0.6.0 reordered the docs to recommend the canonical plugin (it
-  // deprecated nothing; the bundling deprecation is unreleased 0.7.0, see the
+  // deprecated nothing; the bundling deprecation shipped in 0.7.0, see the
   // "0.6.x deprecated Composer bundling" exclusion below) and moved exposure into
   // McpAbilityExposure::is_public(), which inherits meta.public when
   // meta.mcp.public is absent. WordPress 7.1 added meta.public and marks every
@@ -1612,7 +1646,7 @@ export function runReleaseConformance(repoRoot) {
     "meta.mcp.public",
     "McpAbilityExposure",
     "Requires Plugins: mcp-adapter",
-    "wp plugin install https://github.com/WordPress/mcp-adapter/releases/latest/download/mcp-adapter.zip",
+    "wp plugin install mcp-adapter --version=0.7.0 --activate",
     "WordPress 6.9+ and PHP 7.4+",
     "WP\\MCP\\Transport\\HttpTransport",
     "WP\\MCP\\Infrastructure\\ErrorHandling\\ErrorLogMcpErrorHandler",
@@ -1620,7 +1654,7 @@ export function runReleaseConformance(repoRoot) {
     // Adapter 0.6.0 reversed the default: an absent meta.mcp.public now
     // inherits meta.public. Guidance that omits this understates the MCP
     // surface, so the reversal must stay documented.
-    "Current release: 0.6.1",
+    "Current release: 0.7.0",
     "McpAbilityExposure::is_public()",
     "@since 0.6.0",
     "verified in v0.6.1",
@@ -1639,9 +1673,9 @@ export function runReleaseConformance(repoRoot) {
   ]);
   requireIncludes(repoRoot, "skills/wp-abilities-api/SKILL.md", [
     "WordPress Core verified through: 7.1",
-    "Gutenberg verified through: 24.0.0",
-    "MCP Adapter 0.6.x requires **WordPress 6.9+ and PHP 7.4+**",
-    "MCP Adapter verified through: 0.6.1",
+    "Gutenberg verified through: 24.1.0",
+    "WordPress 6.9+ and PHP 7.4+",
+    "MCP Adapter verified through: 0.7.0",
     "PHP 7.2.24+ on 6.9; PHP 7.4+ on 7.0/7.1",
     "upgrade the site runtime or stop before installing the adapter",
     "Read `references/mcp-exposure.md` before giving installation, bootstrap, or server code.",
@@ -1655,17 +1689,17 @@ export function runReleaseConformance(repoRoot) {
     "released adapter 0.5.0 reads that key and nothing else",
     // The feature plugin was archived 2026-02-05; core is the only source.
     "you may need the Abilities API plugin/package rather than relying on core",
-    // Released 0.6.x still supports bundling without a notice; only unreleased
-    // trunk (0.7.0) deprecates it. Guidance must not claim the release does.
+    // Released 0.6.x still supports bundling without a notice; released
+    // 0.7.0 deprecates it. Guidance must not claim the release does.
     "0.6.x deprecated Composer bundling",
   ]);
   requireIncludes(repoRoot, "skills/wp-abilities-audit/SKILL.md", [
     "WordPress Core verified through: 7.1",
-    "MCP Adapter verified through: 0.6.1",
+    "MCP Adapter verified through: 0.7.0",
   ]);
   requireIncludes(repoRoot, "skills/wp-abilities-verify/SKILL.md", [
     "WordPress Core verified through: 7.1",
-    "MCP Adapter verified through: 0.6.1",
+    "MCP Adapter verified through: 0.7.0",
   ]);
   // WP 7.1 defines meta.public in core (WP_Ability::DEFAULT_PUBLIC, @since 7.1.0),
   // resolved in prepare_properties(). The registration reference must not deny it.
@@ -1696,8 +1730,8 @@ export function runReleaseConformance(repoRoot) {
   requireIncludes(repoRoot, "skills/wp-abilities-verify/references/exposure-checks.md", [
     "meta.mcp.public ?? meta.public ?? false",
     "adapter 0.6.0",
-    "Verified unchanged in WordPress 7.1 final",
-    "MCP Adapter 0.6.1",
+    "Verified in WordPress 7.1",
+    "MCP Adapter 0.7.0",
   ]);
   requireExcludes(repoRoot, "skills/wp-ai-plugin/references/experiments-framework.md", [
     "MCP Adapter 0.5.0 uses explicit",
@@ -1737,7 +1771,7 @@ export function runReleaseConformance(repoRoot) {
     "usingProviderModel(",
     "An embedding model must be specified",
     "SDK_Overlay::register()",
-    "commented out",
+    "the conditional `SDK_Overlay::register()` is active",
     "usingModelPreference()",
     "AiClient::generateEmbeddings()",
     "BeforeGenerateEmbeddingEvent",
@@ -1763,14 +1797,18 @@ export function runReleaseConformance(repoRoot) {
   // Custom Abilities experiment (#881) and released the ability-scoped prompt
   // hooks that 1.2.0-era notes called unreleased.
   requireIncludes(repoRoot, "skills/wp-ai-plugin/SKILL.md", [
-    "AI plugin verified through: 1.3.0",
-    "Gutenberg verified through: 24.0.0",
+    "AI plugin verified through: 1.4.0",
+    "Gutenberg verified through: 24.1.0",
     "PHP AI Client verified through: 1.5.0",
     "wpai_feature_custom-abilities_enabled",
   ]);
   requireIncludes(repoRoot, "skills/wp-ai-plugin/references/experiments-framework.md", [
     "v1.3.0",
-    "nineteen entries",
+    "twenty unique Experiments",
+    "Markdown_Feeds",
+    "core/content-query",
+    "core/users-query",
+    "core/settings-get",
     "Type_Ahead",
     "Key_Encryption",
     "Suggest_Reply",
@@ -1810,7 +1848,7 @@ export function runReleaseConformance(repoRoot) {
     // log_ai_request() accepts only ai_client, mcp_tool, or ability as `type`.
     "mcp_tool",
     "SDK_Overlay::register()",
-    "commented out",
+    "the conditional `SDK_Overlay::register()` is active",
     "ai_embeddings_unsupported",
   ]);
   requireExcludes(repoRoot, "skills/wp-ai-plugin/references/experiments-framework.md", [
@@ -1826,7 +1864,7 @@ export function runReleaseConformance(repoRoot) {
     "wpai_{$ability_slug}_system_instruction",
   ]);
   requireIncludes(repoRoot, "skills/wp-ai-plugin/SKILL.md", [
-    "current canonical release: v1.3.0",
+    "current canonical release: v1.4.0",
     "Custom Abilities",
   ]);
   requireIncludes(repoRoot, "eval/playground/ai-plugin-smoke/blueprint.json", [
@@ -1867,7 +1905,7 @@ export function runReleaseConformance(repoRoot) {
   requireIncludes(repoRoot, "skills/wp-ai-connectors/SKILL.md", [
     "WordPress Core verified through: 7.1",
     "PHP AI Client verified through: 1.5.0",
-    "Anthropic provider verified through: 1.0.4",
+    "Anthropic provider verified through: 1.0.5",
     "Google provider verified through: 1.2.0",
     "OpenAI provider verified through: 1.2.0",
   ]);

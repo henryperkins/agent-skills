@@ -3,14 +3,12 @@
 The MCP Adapter (`WordPress/mcp-adapter`) bridges the Abilities API to the Model Context Protocol, letting external AI agents (Claude Desktop, Claude Code, Cursor, ChatGPT) discover and execute WordPress abilities as MCP tools, resources, and prompts.
 
 The adapter is a separate WordPress plugin. WordPress ships the Abilities API in core from 6.9
-onward but does **not** ship the adapter. MCP Adapter 0.6.x requires **WordPress 6.9+ and PHP 7.4+**
+onward but does **not** ship the adapter. MCP Adapter 0.7.0 and 0.6.x require **WordPress 6.9+ and PHP 7.4+**
 (`^7.4 || ^8.0`). WordPress 6.9 supports PHP 7.2.24+, while WordPress 7.0 and 7.1 require PHP 7.4+,
 so a 6.9 site on PHP 7.2 or 7.3 must upgrade PHP before activating the adapter — or leave MCP
 exposure off.
 
-**Current release: 0.6.1.** Verify against the version the project actually pulls in — this
-package moves faster than core, and 0.6.0 changed both the exposure default and the minimum
-platform:
+**Current release: 0.7.0 (October 2, 2026).** This reference is verified against the [v0.7.0 tag](https://github.com/WordPress/mcp-adapter/tree/v0.7.0). Review "MCP Adapter 0.7.0: current schema runtime" when integrating directly with Adapter internals. The exposure and platform changes introduced in 0.6.0 continue to apply:
 
 - **WordPress 6.9+ is now required**, and the standalone `WordPress/abilities-api` plugin is no
   longer a supported installation path (that repository is archived; the API
@@ -33,12 +31,10 @@ The rest of the 0.6.0/0.6.1 changes are under "What changed in 0.6.0 / 0.6.1" be
 Install the canonical **WordPress plugin (recommended)** and activate it:
 
 ```bash
-wp plugin install https://github.com/WordPress/mcp-adapter/releases/latest/download/mcp-adapter.zip --activate
+wp plugin install mcp-adapter --version=0.7.0 --activate
 ```
 
-`releases/latest` resolves to whatever was published last. This reference is verified against
-0.6.1, and 0.7.0 is prepared on upstream trunk with breaking changes, so check the installed
-version (`WP_MCP_VERSION`) and read "Unreleased: MCP Adapter 0.7.0" below if it reports 0.7.x.
+The plugin is [listed on WordPress.org](https://wordpress.org/plugins/mcp-adapter/). Check the installed version (`WP_MCP_VERSION`) before choosing current or legacy integration APIs. The pinned command above installs the reviewed release.
 
 Declare the dependency in the header of every plugin that integrates with the adapter, then guard
 the integration at runtime so deactivation never causes a fatal:
@@ -68,13 +64,7 @@ can bundle the library, and a bundled copy that nobody boots never fires `mcp_ad
 defines it). Keep the integration itself inside an `mcp_adapter_init` callback, which fires only
 after an adapter has actually booted.
 
-**`Requires Plugins` cannot install the adapter for site owners yet.** WordPress resolves that header
-against the WordPress.org directory, and the adapter is not listed there as of 0.6.1
-([#178](https://github.com/WordPress/mcp-adapter/issues/178) tracks the listing; upstream trunk added a
-WordPress.org deploy step to its release workflow in #347, so the listing is expected with 0.7.0 —
-re-check before relying on it). Until it is, the header offers no install link — it only blocks
-activating your plugin until someone installs and activates the release zip. Pair it with the
-runtime guard and an admin notice:
+**WordPress can resolve `Requires Plugins: mcp-adapter` from the directory.** Retain the runtime guard for partial installations and optional integration, and show an admin notice when the integration is unavailable:
 
 ```php
 add_action( 'admin_notices', function () {
@@ -97,7 +87,7 @@ generate `autoload_packages.php`: the autoloader's Composer plugin only runs whe
 requires `automattic/jetpack-autoloader` directly, and Composer refuses to run it until the root
 `composer.json` allows it in `config.allow-plugins`. Do both, or the file silently never appears.
 
-Upstream trunk — the unreleased 0.7.0 — deprecates bundled loading: `McpAdapter::check_plugin_loaded()`
+Released 0.7.0 deprecates bundled loading: `McpAdapter::check_plugin_loaded()`
 calls `_deprecated_function()` when the adapter loads without the canonical plugin, and when both are
 present but the bundled classes load first, the plugin logs `_doing_it_wrong()` and shows a
 non-dismissible admin notice (`WP_MCP_AUTOLOAD=false` turns off the plugin's own autoloader; upstream
@@ -105,7 +95,7 @@ does not recommend it). Do not start a new deployment on the Composer path. To m
 drop `automattic/jetpack-autoloader` and its `config.allow-plugins` entry if nothing else needs them,
 switch `vendor/autoload_packages.php` back to `vendor/autoload.php`, and clear the generated files
 (`rm -rf vendor && composer install`) — a leftover `autoload_packages.php` works locally and fails in
-production. Upstream's [migration guide](https://github.com/WordPress/mcp-adapter/blob/trunk/docs/migration/v0.7.0.md)
+production. Upstream's [migration guide](https://github.com/WordPress/mcp-adapter/blob/v0.7.0/docs/migration/v0.7.0.md)
 has the full sequence.
 
 ## How abilities become MCP tools
@@ -114,7 +104,7 @@ Once the adapter is loaded:
 
 1. The default server's `discover-abilities`, `get-ability-info`, and `execute-ability` abilities only surface registered abilities that resolve to MCP-public — on 0.6.0+ that means `meta.mcp.public` when set, otherwise `meta.public` (see the resolution rules below).
 2. A custom server may explicitly list selected ability IDs as tools, resources, or prompts; that selection does not bypass each ability's `permission_callback`.
-3. The adapter respects the ability's `permission_callback` at execution — agents can only invoke what the authenticated user is authorized to do.
+3. `ToolsHandler` performs a separate permission check before execution. Ability-backed tools call `WP_Ability::check_permissions()` there; the default execute-ability callback also checks the target ability. This outer gate is distinct from the inner `WP_Ability::execute()` path: on Core 7.1+, `wp_pre_execute_ability` can replace its result before validation and permissions. Such filters must authorize and validate their own work; direct PHP callers do not automatically receive MCP's outer gate.
 4. The ability's `input_schema` and `output_schema` become the MCP tool's input and output schemas — but MCP requires both to be object-typed, so `SchemaTransformer::transform_to_object_schema()` rewrites a non-object root. An input schema of `{ "type": "string" }` is advertised to clients as `{ "type": "object", "properties": { "input": { "type": "string" } }, "required": [ "input" ] }`, a non-object output schema is wrapped under `result`, and an absent `input_schema` is advertised as an empty object schema. The adapter unwraps and rewraps around execution, so the ability itself still sees its declared shape. Declare an object root if you want the tool schema clients read to match the registration.
 5. The ability's annotations map to MCP annotations: `readonly` → `readOnlyHint`, `destructive` → `destructiveHint`, `idempotent` → `idempotentHint`.
 
@@ -227,8 +217,9 @@ running a current adapter — and the adapter honors `meta.public` on WordPress 
 where core itself still ignores that key for REST. The exposure can therefore precede the REST
 behavior the author was actually aiming for.
 
-This is a discoverability change, not an authorization hole: every execution still runs the
-ability's `permission_callback`. But the default server's own gate is `read` (see the table
+This changes discovery. Normal MCP tool/target handlers check the ability's permissions before
+execution; direct PHP's pre-execution replacements can bypass its inner permission check.
+The default server's own gate is `read` (see the table
 below), so "discoverable by any Subscriber" is the realistic blast radius.
 
 Practical rules:
@@ -348,7 +339,7 @@ A custom callback that throws or returns `WP_Error` fails closed — the transpo
 
 `create_server()` enforces that it can only be called inside the `mcp_adapter_init` action — calling it elsewhere triggers `_doing_it_wrong()`. The function returns either an `McpAdapter` instance or a `WP_Error`.
 
-The tools/resources/prompts lists decide which abilities this server projects; they do not grant access. Each selected ability retains its own `permission_callback`, which runs when the ability executes. These entries are **ability** names with the slash intact — `my-plugin/list-comments`, not `my-plugin-list-comments`. The adapter sanitizes them into tool names on its own; writing the hyphenated form here means `wp_get_ability()` returns nothing and the tool is not registered. The traces are a core `_doing_it_wrong()` notice ("Ability … not found.", visible only with `WP_DEBUG`) and an error-handler log line — and passing `null` as the error handler selects `NullMcpErrorHandler`, which logs nothing.
+The tools/resources/prompts lists decide which abilities this server projects; they do not grant access. Each selected ability retains its own `permission_callback`; the normal MCP tool handler checks it before execution, separately from Core's inner execution path. These entries are **ability** names with the slash intact — `my-plugin/list-comments`, not `my-plugin-list-comments`. The adapter sanitizes them into tool names on its own; writing the hyphenated form here means `wp_get_ability()` returns nothing and the tool is not registered. The traces are a core `_doing_it_wrong()` notice ("Ability … not found.", visible only with `WP_DEBUG`) and an error-handler log line — and passing `null` as the error handler selects `NullMcpErrorHandler`, which logs nothing.
 
 Read the `create_server()` docblock in `includes/Core/McpAdapter.php` for the complete parameter documentation, and `includes/Servers/DefaultServerFactory.php` for the canonical "how to call it" example.
 
@@ -443,13 +434,9 @@ Beyond the platform, exposure, session, `_meta`, URI-scheme, and packaging chang
 - **`McpValidator`'s MIME validation helpers were removed.** Integrations that called them directly must apply their own MIME validation. `mimeType` is now emitted exactly as declared, including parameterised values such as `text/html;profile=mcp-app`.
 - **0.6.1 is a packaging fix only.** 0.6.0's release ZIP shipped a Jetpack Autoloader class map pointing at test-only files, so `class_exists( 'WP_CLI' )` could fatal on a normal web request. No API, hook, or protocol behaviour changed; upgrading from 0.6.0 needs no migration.
 
-## Unreleased: MCP Adapter 0.7.0
+## MCP Adapter 0.7.0: current schema runtime
 
-Prepared on upstream trunk on 2026-09-23 (`mcp-adapter.php` says 0.7.0 and the CHANGELOG has the
-section) but **not tagged as of 2026-09-27**; everything else in this reference describes 0.6.1.
-Exposure resolution (`McpAbilityExposure`), the default server and its three meta-abilities, the
-name sanitizer, the schema transformer, the transport permission check, and session storage are
-unchanged on trunk. What changes:
+Released October 2, 2026 and verified against v0.7.0. Ordinary ability registration remains revision-neutral. Exposure resolution, the default server, name sanitization, schema transformation, and outer transport/tool permission gates remain in place. Direct Adapter consumers must account for these changes:
 
 - **Protocol revisions.** The schema-backed revisions are exactly `2025-11-25` and `2026-07-28`.
   `2025-06-18` and `2024-11-05` move to `McpVersionNegotiator::LEGACY_PROTOCOL_VERSIONS`: still
@@ -488,15 +475,13 @@ unchanged on trunk. What changes:
 - **Internals.** DTO classes and `get_protocol_dto()` give way to exact-revision schema records from
   `wordpress/php-mcp-schema` `^0.2.0`; `JsonRpcResponseBuilder` is removed and custom transports must
   delegate to `HttpRequestHandler` or `McpWireOrchestrator`. Code that touches adapter internals
-  needs upstream's [migration guide](https://github.com/WordPress/mcp-adapter/blob/trunk/docs/migration/v0.7.0.md).
+  needs upstream's [migration guide](https://github.com/WordPress/mcp-adapter/blob/v0.7.0/docs/migration/v0.7.0.md).
 
-When 0.7.0 is tagged, re-verify this reference against the tag rather than trunk: the CHANGELOG
-and code already disagree in places (the CHANGELOG says `list` adds columns; the code adds the
-`--protocol` switch and keeps the columns).
+Custom transports must delegate to `HttpRequestHandler` or `McpWireOrchestrator`. Select schemas via `$server->get_schemas()->forVersion( Schemas::V2026_07_28 )`; protocol-facing getters such as `get_tools( $schema )` require that selected schema. Use the [tagged migration guide](https://github.com/WordPress/mcp-adapter/blob/v0.7.0/docs/migration/v0.7.0.md) before replacing removed DTO APIs.
 
 ## Protocol version negotiation
 
-`McpVersionNegotiator::SUPPORTED_PROTOCOL_VERSIONS` accepts `2025-11-25`, `2025-06-18`, and `2024-11-05`, in that preference order (verified in v0.6.1). A client requesting a supported version gets it; any other version, older or newer, is answered with `2025-11-25`. Pin nothing client-side unless a specific version is required. The unreleased 0.7.0 changes this list — see "Unreleased: MCP Adapter 0.7.0".
+In 0.7.0, exact schema revisions are `2025-11-25` and `2026-07-28`. The `2025-06-18` and `2024-11-05` identifiers are legacy aliases served through the 2025 schema. Select a schema explicitly for protocol-facing getters and consult the migration guide before changing custom transports. Legacy 0.6.x accepted `2025-11-25`, `2025-06-18`, and `2024-11-05`, in that preference order; unsupported requests fell back to `2025-11-25`.
 
 ## Sessions and request interception
 
@@ -553,9 +538,9 @@ uppercase, and an exact-string deny-list fails open. Key resource policy on the 
 `$mcp_resource->get_adapter_meta()['ability']` (the filter's third argument), not on `$uri`.
 `$prompt_name` in `mcp_adapter_pre_prompt_get` is sanitized the same way tool names are.
 
-**0.6.x only:** the unreleased 0.7.0 removes this filter, `McpServer::is_mcp_validation_enabled()`,
+**0.6.x only:** released 0.7.0 removes this filter, `McpServer::is_mcp_validation_enabled()`,
 and the three component validators; schema validation always runs there and a hooked callback simply
-never fires (see "Unreleased: MCP Adapter 0.7.0").
+never fires (see "MCP Adapter 0.7.0: current schema runtime").
 
 `mcp_adapter_validation_enabled` is **off** by default and its arity varies by call site. Verified in v0.6.1, it is applied at eight places:
 
@@ -575,7 +560,7 @@ add_filter( 'mcp_adapter_validation_enabled', function ( $enabled, $server_id = 
 
 It is not an untrusted-input control. It gates deeper MCP component/DTO compliance checks on the *definitions* you register (`McpToolValidator::validate_tool_dto()`, run while the tool is constructed). `McpTool::execute()` passes arguments to the ability or handler on the same path either way. Enable it to catch malformed tool definitions in development; do not enable it expecting argument validation.
 
-Validate untrusted arguments at the ability boundary instead. `WP_Ability::execute()` normalizes input, validates it against the ability's `input_schema` via `rest_validate_value_from_schema()`, runs `check_permissions()`, and validates the result against `output_schema` — which is why every ability that accepts input needs an `input_schema`. That check is what the adapter is relying on when it defaults validation off. A custom server registered with a raw `handler` callback rather than an ability gets none of it: `call_user_func( $this->handler, $args )` receives whatever the client sent, so such a handler must validate its own arguments. (Server `tools` and `prompts` arrays accept `McpTool` / `McpPrompt` instances — and, for prompts, `McpPromptBuilderInterface` builders — alongside ability names; that is how raw-handler components get registered. In the unreleased 0.7.0 a raw handler is called as `( $args, ?McpToolCallContext $context )`.)
+Validate untrusted arguments at the ability boundary. On its normal path, `WP_Ability::execute()` normalizes and validates input, runs `check_permissions()`, and validates the output. A `wp_pre_execute_ability` replacement returns before those checks; invalid input also returns before permissions. Review pre-execution hooks separately, and preserve the independent MCP tool/target permission gates. Raw-handler components must validate their own arguments. In 0.7.0 a raw tool handler receives `( $args, ?McpToolCallContext $context )`; legacy 0.6.x receives only `$args`.
 
 ## Verifying the server
 
@@ -586,7 +571,7 @@ For a more thorough check, connect an MCP client (Claude Desktop, MCP Inspector,
 - **Default server:** `tools/list` returns only the three meta-tools — `mcp-adapter-discover-abilities`, `mcp-adapter-get-ability-info`, and `mcp-adapter-execute-ability`. Confirm your abilities appear in the *discover* output (and that nothing you did not mean to expose does), read their schemas with get-ability-info, and test `permission_callback` enforcement through execute-ability as a low-privilege user.
 - **Custom server:** `tools/list` shows the abilities in its `tools` list under their sanitized names. Check each schema against your `input_schema` declaration and execute each as a low-privilege user.
 
-**An empty default server on 0.6.x.** If the route exists but `tools/list` is empty and the error log shows `WordPress ability 'mcp-adapter/…' does not exist.` three times, another plugin opened the Abilities registry during `init`, before the adapter hooked its own registration. The adapter adds that hook only when it initializes (`rest_api_init`, or `init` priority 20 under WP-CLI), and core fires `wp_abilities_api_init` once, on first registry access. Remove the early registry access. Upstream fixed the ordering on trunk (#339, unreleased 0.7.0); a bundled copy that boots late remains exposed to it.
+**An empty default server on 0.6.x.** If the route exists but `tools/list` is empty and the error log shows `WordPress ability 'mcp-adapter/…' does not exist.` three times, another plugin opened the Abilities registry during `init`, before the adapter hooked its own registration. The adapter adds that hook only when it initializes (`rest_api_init`, or `init` priority 20 under WP-CLI), and core fires `wp_abilities_api_init` once, on first registry access. Remove the early registry access. Released 0.7.0 fixes the ordering (#339); a bundled copy that boots late remains exposed to it.
 
 ## Security posture
 
@@ -602,7 +587,7 @@ MCP clients act as authenticated WordPress users. An overly permissive ability i
 
 ## Sources
 
-- MCP Adapter repo: https://github.com/WordPress/mcp-adapter — verified against **v0.6.1**: `includes/Abilities/McpAbilityExposure.php`, `includes/Abilities/ExecuteAbilityAbility.php`, `includes/Core/McpAdapter.php`, `includes/Core/McpComponentRegistry.php`, `includes/Servers/DefaultServerFactory.php`, `includes/Handlers/Tools/ToolsHandler.php`, `includes/Handlers/Resources/ResourcesHandler.php`, `includes/Transport/HttpTransport.php`, `docs/getting-started/installation.md`. The 0.7.0 material (`CHANGELOG.md`, `docs/migration/v0.7.0.md`, and the code it describes) was read at trunk `05b10aa` on 2026-09-27, before any 0.7.0 tag existed
+- MCP Adapter repo: https://github.com/WordPress/mcp-adapter — verified against **v0.7.0** (legacy 0.6.x sections retain their tag boundary): `includes/Abilities/McpAbilityExposure.php`, `includes/Abilities/ExecuteAbilityAbility.php`, `includes/Core/McpAdapter.php`, `includes/Core/McpComponentRegistry.php`, `includes/Servers/DefaultServerFactory.php`, `includes/Handlers/Tools/ToolsHandler.php`, `includes/Handlers/Resources/ResourcesHandler.php`, `includes/Transport/HttpTransport.php`, `docs/getting-started/installation.md`.. Also reviewed at v0.7.0: `CHANGELOG.md`, `docs/migration/v0.7.0.md`, exact schema records, and transport orchestration.
 - Adapter releases: https://github.com/WordPress/mcp-adapter/releases
 - WordPress 7.1 `WP_Ability` (`meta.public`, `@since 7.1.0`) and core ability registrations: `src/wp-includes/abilities-api/class-wp-ability.php`, `src/wp-includes/abilities.php`
 - Developer Blog walkthrough: https://developer.wordpress.org/news/2026/02/from-abilities-to-ai-agents-introducing-the-wordpress-mcp-adapter/

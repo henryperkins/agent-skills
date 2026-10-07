@@ -197,7 +197,7 @@ async function main() {
     // AI Client usage.
     if (callsAiClient(contents)) {
       result.uses_ai_client = true;
-      result.feature_endpoints.push(path.relative(root, file));
+      result.feature_endpoints.push(path.relative(root, file).split(path.sep).join("/"));
     }
 
     // Legacy SDK class reference (works as a hint even without composer.json).

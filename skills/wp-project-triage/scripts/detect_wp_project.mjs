@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 
-const TOOL_VERSION = "0.1.0";
+const TOOL_VERSION = "0.2.0";
 
 const DEFAULT_IGNORES = new Set([
   ".git",
@@ -281,7 +281,10 @@ function buildRecommendations({ repoRoot, primaryKind, packageManager, packageJs
 
   if (tooling.php.hasComposerJson) {
     commands.push("composer install");
-    if (tooling.php.phpunitXml.length > 0) commands.push("vendor/bin/phpunit");
+    if (tooling.php.hasPhpUnitExecutable) commands.push("vendor/bin/phpunit");
+    if (tooling.php.hasPhpUnitDependency && !tooling.php.hasPhpUnitExecutable) {
+      notes.push("PHPUnit is declared in Composer but vendor/bin/phpunit is not installed; install dependencies before running it.");
+    }
   }
 
   if (tooling.tests.hasWpEnv) notes.push("Detected wp-env; E2E workflows may rely on Docker.");
@@ -373,9 +376,13 @@ function main() {
   }
 
   let detectedThemeName = null;
+  let detectedThemeRoot = null;
   for (const styleCss of themeCandidates) {
     detectedThemeName = detectThemeHeaderFromStyleCss(styleCss);
-    if (detectedThemeName) break;
+    if (detectedThemeName) {
+      detectedThemeRoot = path.dirname(styleCss);
+      break;
+    }
   }
 
   // Fallback for standalone plugin/theme repos whose main file is nested in a
@@ -420,6 +427,7 @@ function main() {
         const name = detectThemeHeaderFromStyleCss(styleCss);
         if (name) {
           detectedThemeName = name;
+          detectedThemeRoot = path.dirname(styleCss);
           break;
         }
       }
@@ -436,13 +444,26 @@ function main() {
     maxDepth: 8,
   });
 
-  const templatesDirCandidates = [
-    path.join(repoRoot, "templates"),
-    path.join(repoRoot, "parts"),
-    path.join(repoRoot, "patterns"),
-  ];
-
-  const isBlockTheme = themeJsonFiles.length > 0 && templatesDirCandidates.some((p) => existsDir(p));
+  // WP_Theme::is_block_theme() requires a readable index block template;
+  // theme.json and parts/patterns directories alone do not establish one.
+  let parentThemeRoot = null;
+  if (detectedThemeRoot !== null) {
+    const header = readFileSafe(path.join(detectedThemeRoot, "style.css"), 8192);
+    const parentName = header?.slice(0, 8192).match(/^[\s*#]*Template\s*:\s*([^\r\n]+)/im)?.[1]?.trim();
+    if (parentName) {
+      const candidate = path.resolve(path.dirname(detectedThemeRoot), parentName);
+      const relative = path.relative(repoRoot, candidate);
+      if (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative) && detectThemeHeaderFromStyleCss(path.join(candidate, "style.css"))) {
+        parentThemeRoot = candidate;
+      }
+    }
+  }
+  const isBlockTheme = detectedThemeRoot !== null && ["templates/index.html", "block-templates/index.html"].some((relativePath) => {
+    const ownTemplate = path.join(detectedThemeRoot, relativePath);
+    const template = statSafe(ownTemplate) || parentThemeRoot === null ? ownTemplate : path.join(parentThemeRoot, relativePath);
+    if (!existsFile(template)) return false;
+    try { fs.accessSync(template, fs.constants.R_OK); return true; } catch { return false; }
+  });
   const isBlockPlugin = blockJsonFiles.length > 0;
 
   const interactivityScan = scanForTokens(repoRoot, {
@@ -551,7 +572,9 @@ function main() {
       packageJson?.dependencies?.["@wordpress/jest-preset-default"]
   );
 
-  const hasPhpUnit = phpunitXml.length > 0 || Boolean(composerJson?.requireDev?.phpunit || composerJson?.["require-dev"]?.phpunit);
+  const hasPhpUnitDependency = Boolean(composerRequire["phpunit/phpunit"] || composerRequireDev["phpunit/phpunit"]);
+  const hasPhpUnitExecutable = existsFile(path.join(repoRoot, "vendor", "bin", "phpunit"));
+  const hasPhpUnit = phpunitXml.length > 0 || hasPhpUnitDependency || hasPhpUnitExecutable;
 
   const signals = {
     paths: {
@@ -569,6 +592,8 @@ function main() {
     hasMuPluginsDir,
     detectedPluginName,
     detectedThemeName,
+    detectedThemeRoot,
+    parentThemeRoot,
     isBlockPlugin,
     isBlockTheme,
     usesInteractivityApi,
@@ -629,6 +654,8 @@ function main() {
       hasComposerJson: existsFile(path.join(repoRoot, "composer.json")),
       hasVendorDir: existsDir(path.join(repoRoot, "vendor")),
       phpunitXml,
+      hasPhpUnitDependency,
+      hasPhpUnitExecutable,
     },
     node: {
       hasPackageJson: existsFile(path.join(repoRoot, "package.json")),

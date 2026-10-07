@@ -85,9 +85,13 @@ export function buildUpstreamState(indices, registry = CORE_AI_UPSTREAMS) {
   return { schemaVersion: 3, versions, versionMapRowCount, fingerprints };
 }
 
+export function fingerprintUpstreamState(state) {
+  return hashJson(state);
+}
+
 export function getUpstreamStateHash(indices, registry = CORE_AI_UPSTREAMS) {
   const state = buildUpstreamState(indices, registry);
-  const hash = hashJson(state);
+  const hash = fingerprintUpstreamState(state);
   return { hash, state };
 }
 

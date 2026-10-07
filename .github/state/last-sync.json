@@ -1,42 +1,63 @@
 {
-  "hash": "fe3b8caa5a01214301e780fab1c85ad3c346600e4e5d5357a0c4b58f0b22baca",
+  "hash": "fa3d97ab673191c6ab9a9d0d16482e037cf6dc13d29c104d2dc5dc45de2b5e44",
   "state": {
     "schemaVersion": 3,
     "versions": {
-      "anthropic-provider": "1.0.4",
+      "anthropic-provider": "1.0.5",
       "google-provider": "1.2.0",
-      "gutenberg": "v24.0.0",
-      "mcp-adapter": "v0.6.1",
+      "gutenberg": "v24.1.0",
+      "mcp-adapter": "v0.7.0",
       "openai-provider": "1.2.0",
       "php-ai-client": "1.5.0",
-      "wordpress-ai-plugin": "1.3.0",
-      "wordpress-core": "7.1.2",
+      "wordpress-ai-plugin": "1.4.0",
+      "wordpress-core": "7.1.3",
       "wp-ai-client": "0.4.0"
     },
     "versionMapRowCount": 24,
     "fingerprints": {
-      "anthropic-provider": "4c9a462d19cfcc478f988b275dd00df8d611038e748f49494063e6a0e11df7b2",
+      "anthropic-provider": "8fe3c71368f7e13218f9299f4e41e0421a6ead9f4abd5cb88faf7ecf64fe6323",
       "google-provider": "f61deab17d0216e4fe5f4642d02cc0391e3d82f8910b95c3df02bcd73ae0f953",
-      "gutenberg": "6701d059fd8bc6be6b06b5d40c03421923cb1333a0942ee7df009eed5b7b050c",
-      "mcp-adapter": "9627f0bbb29e2a64ef40d69c2433c1913a6d6998a88a22bfc18a7c23f9ceafcc",
+      "gutenberg": "f98556e38d28b3b44e2557d6d31a15425695eab70bad17db988b59daac820abe",
+      "mcp-adapter": "a3856f0b823f6ad591e322256955711bce50624d691f1dda111ba8b05475dba7",
       "openai-provider": "f394bdb018602800ed68defa57e9398c1c66232bd08765d60be8387ca2e4ae76",
       "php-ai-client": "4d94f6527f3452a033edcaf70063020cd795cabc6550bb9427d8fd31b909a58d",
-      "wordpress-ai-plugin": "6c3043045aebebc7b1d6c135d9f1f5c535bce207a28a09e3762816368b4299a7",
-      "wordpress-core": "d93ddeadd7c7c58c9e98ec3808f2cd29dd2ab7f1b52a249ee1c159f2df61185b",
+      "wordpress-ai-plugin": "d040dd592bdb7199b6b8280e18ab7bdcf5f5ce84a955b7a325ecf0d9b31850c3",
+      "wordpress-core": "a78b6698ca6e0cdcdc0c947d99f75c39cb74fc83805335b9d235bc6ca74fbb41",
       "wp-ai-client": "b86ce319b33e89d3b50b883b26839b35bbe987f6b764d37a567f74e76aa6b448",
       "wp-gutenberg-version-map": "0b23b58988e90fe847011874a482c4d4160cc9b1023e33f64750152415f82401"
     }
   },
-  "lastSync": "2026-09-28T01:19:51.034Z",
+  "lastSync": "2026-10-07T23:19:18.416Z",
   "lastChanges": [
     {
       "type": "upstream-release",
-      "sourceId": "google-provider",
-      "description": "google-provider updated: 1.1.1 → 1.2.0",
-      "oldVersion": "1.1.1",
-      "newVersion": "1.2.0",
-      "releaseUrl": "https://github.com/WordPress/ai-provider-for-google/releases/tag/1.2.0",
+      "sourceId": "wordpress-core",
+      "description": "wordpress-core updated: 7.1.2 → 7.1.3",
+      "oldVersion": "7.1.2",
+      "newVersion": "7.1.3",
+      "releaseUrl": "https://api.wordpress.org/core/version-check/1.7/",
       "affectedSkills": [
+        "wp-abilities-api",
+        "wp-abilities-audit",
+        "wp-abilities-verify",
+        "wp-ai-client",
+        "wp-ai-connectors",
+        "wp-ai-plugin",
+        "wp-block-themes"
+      ],
+      "riskLevel": "medium",
+      "taggedFiles": []
+    },
+    {
+      "type": "upstream-release",
+      "sourceId": "gutenberg",
+      "description": "gutenberg updated: v24.0.0 → v24.1.0",
+      "oldVersion": "v24.0.0",
+      "newVersion": "v24.1.0",
+      "releaseUrl": "https://github.com/WordPress/gutenberg/releases/tag/v24.1.0",
+      "affectedSkills": [
+        "wp-abilities-api",
+        "wp-ai-plugin",
         "wp-ai-connectors"
       ],
       "riskLevel": "medium",
@@ -44,11 +65,40 @@
     },
     {
       "type": "upstream-release",
-      "sourceId": "openai-provider",
-      "description": "openai-provider updated: 1.1.0 → 1.2.0",
-      "oldVersion": "1.1.0",
-      "newVersion": "1.2.0",
-      "releaseUrl": "https://github.com/WordPress/ai-provider-for-openai/releases/tag/1.2.0",
+      "sourceId": "wordpress-ai-plugin",
+      "description": "wordpress-ai-plugin updated: 1.3.0 → 1.4.0",
+      "oldVersion": "1.3.0",
+      "newVersion": "1.4.0",
+      "releaseUrl": "https://github.com/WordPress/ai/releases/tag/1.4.0",
+      "affectedSkills": [
+        "wp-ai-plugin"
+      ],
+      "riskLevel": "medium",
+      "taggedFiles": []
+    },
+    {
+      "type": "upstream-release",
+      "sourceId": "mcp-adapter",
+      "description": "mcp-adapter updated: v0.6.1 → v0.7.0",
+      "oldVersion": "v0.6.1",
+      "newVersion": "v0.7.0",
+      "releaseUrl": "https://github.com/WordPress/mcp-adapter/releases/tag/v0.7.0",
+      "affectedSkills": [
+        "wp-abilities-api",
+        "wp-abilities-audit",
+        "wp-abilities-verify",
+        "wp-ai-plugin"
+      ],
+      "riskLevel": "medium",
+      "taggedFiles": []
+    },
+    {
+      "type": "upstream-release",
+      "sourceId": "anthropic-provider",
+      "description": "anthropic-provider updated: 1.0.4 → 1.0.5",
+      "oldVersion": "1.0.4",
+      "newVersion": "1.0.5",
+      "releaseUrl": "https://github.com/WordPress/ai-provider-for-anthropic/releases/tag/1.0.5",
       "affectedSkills": [
         "wp-ai-connectors"
       ],

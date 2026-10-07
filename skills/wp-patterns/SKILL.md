@@ -36,12 +36,14 @@ license: GPL-2.0-or-later
 
 ## Procedure
 
+Resolve helper paths from this installed skill directory; replace example absolute paths with the real location and keep the working directory at the target project root.
+
 ### 0) Triage and locate the pattern target
 
 1. Run triage when working in a repository:
-   - `node ../wp-project-triage/scripts/detect_wp_project.mjs` when the `wp-project-triage` skill is installed alongside; otherwise classify the project manually.
+   - Resolve the installed `wp-project-triage` directory to its absolute path and keep the process working directory at the target project root: `node "/absolute/path/to/wp-project-triage/scripts/detect_wp_project.mjs"`. If unavailable, classify manually.
 2. For block themes, locate the target theme root:
-   - `node ../wp-block-themes/scripts/detect_block_themes.mjs` when the `wp-block-themes` skill is installed alongside; otherwise locate `theme.json` manually.
+   - Resolve the installed `wp-block-themes` skill directory and run `node "/absolute/path/to/wp-block-themes/scripts/detect_block_themes.mjs"` from the target project root; otherwise locate the theme and its index template manually.
 3. Confirm the pattern belongs in a theme `patterns/` directory or needs manual plugin registration.
 4. If multiple themes/plugins exist, scope all changes to the requested target.
 

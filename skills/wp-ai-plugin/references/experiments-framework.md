@@ -1,6 +1,6 @@
 # Experiments framework
 
-The conceptual model and lifecycle for AI plugin Experiments, anchored to the `WordPress/ai` v1.3.0 tag.
+The conceptual model and lifecycle for AI plugin Experiments, anchored to the `WordPress/ai` 1.4.0 tag, with explicit 1.3.0 compatibility notes.
 
 ## What an Experiment is
 
@@ -12,7 +12,7 @@ Three stability levels exist (declared in `load_metadata()` or defaulted):
 - **`'stable'`** — graduated through testing and contributor consensus
 - **`'deprecated'`** — slated for removal
 
-Image Generation is a stable Feature (promoted in v0.8.0, #418; registered via `Loader::get_default_features()`) — and at v1.3.0 it holds the tree's only `'stability' => 'stable'` declaration. No registered Experiment sets the key, so all nineteen fall back to `'experimental'`. The AI Status widget uses `Registry::get_features_by_stability()` to split its lists; the value is not cosmetic. In v1.0.0, *Review Notes* and *Refine from Notes* became **Editorial Notes** (`editorial-notes`) and **Editorial Updates** (`editorial-updates`). The path is experimental → stable → potentially core.
+Image Generation is a stable Feature (promoted in v0.8.0, #418; registered via `Loader::get_default_features()`) — and at v1.3.0 it holds the tree's only `'stability' => 'stable'` declaration. No registered Experiment sets the key, so all twenty at 1.4.0 fall back to `'experimental'`. The AI Status widget uses `Registry::get_features_by_stability()` to split its lists; the value is not cosmetic. In v1.0.0, *Review Notes* and *Refine from Notes* became **Editorial Notes** (`editorial-notes`) and **Editorial Updates** (`editorial-updates`). The path is experimental → stable → potentially core.
 
 ## The contract (`Abstract_Feature`)
 
@@ -74,7 +74,7 @@ Use this action for normal downstream registration as well as custom constructio
 
 ### Built-in Experiments
 
-The plugin's own Experiments are registered via `Experiments::register_default_experiment_classes()` hooked to `wpai_default_feature_classes` at priority 9. `Experiments::EXPERIMENT_CLASSES` at the **v1.3.0 tag** has nineteen entries:
+The plugin's own Experiments are registered via `Experiments::register_default_experiment_classes()` hooked to `wpai_default_feature_classes` at priority 9. `Experiments::EXPERIMENT_CLASSES` at the **1.4.0 tag** registers twenty unique Experiments (the class list contains repeated entries, collapsed by ID):
 
 ```
 Abilities_Explorer, Custom_Abilities, AI_Request_Logging,
@@ -82,10 +82,10 @@ Connector_Approval, Key_Encryption, Comment_Moderation,
 Suggest_Reply, Alt_Text_Generation, Content_Classification,
 Content_Resizing, Summarization, Content_Translation,
 Editorial_Notes, Editorial_Updates, Excerpt_Generation,
-Meta_Description, Slug_Generation, Title_Generation, Type_Ahead
+Meta_Description, Slug_Generation, Title_Generation, Type_Ahead, Markdown_Feeds
 ```
 
-Relative to 1.2.0's sixteen, `Custom_Abilities`, `Content_Translation`, and `Slug_Generation` are new, and none were removed. `Example_Experiment` exists in the tree as an authoring template and is deliberately not registered.
+1.4.0 adds `Markdown_Feeds` (`markdown-feeds`, `capability => none`) to 1.3.0's nineteen. Relative to 1.2.0's sixteen, `Custom_Abilities`, `Content_Translation`, and `Slug_Generation` are new, and none were removed. `Example_Experiment` exists in the tree as an authoring template and is deliberately not registered.
 
 Plus the internal `Image_Generation` Feature (registered separately as a stable Feature in `Loader::get_default_features()`).
 
@@ -146,7 +146,7 @@ Everything previously listed here as "unreleased on `develop`" shipped in the 1.
 
   Codes are normalised with `sanitize_key()`, entries with a non-string or empty label are discarded, and a non-array return value is ignored entirely so the language picker and the ability schema keep working. The filtered list feeds the ability's input schema, so adding a language your provider cannot handle produces runtime failures rather than a validation error.
 
-- **`Custom_Abilities`** (`custom-abilities`, `Experiment_Category::ADMIN`, `capability` `'none'`) — a single toggle that gates *all* of the plugin's custom Abilities (#881). `Gated_Abilities::get_all()` only instantiates the wrapper classes. `Custom_Abilities::register()` runs the `Show_In_Abilities` polyfill when needed and calls each wrapper's `register()`. `Gated_Abilities::GATED_ABILITY_CLASSES` currently holds `Post_Utilities`, `Read_Settings`, `Read_Users`, `Read_Content` — together registering five IDs (`core/read-content`, `core/read-settings`, `core/read-users`, `ai/get-post-details`, `ai/get-post-terms`). Third parties add their own via `wpai_gated_abilities`.
+- **`Custom_Abilities`** (`custom-abilities`, `Experiment_Category::ADMIN`, `capability` `'none'`) — a single toggle that gates *all* of the plugin's custom Abilities (#881). `Gated_Abilities::get_all()` only instantiates the wrapper classes. `Custom_Abilities::register()` runs the `Show_In_Abilities` polyfill when needed and calls each wrapper's `register()`. `Gated_Abilities::GATED_ABILITY_CLASSES` in 1.3.0 holds `Post_Utilities`, `Read_Settings`, `Read_Users`, `Read_Content` — together registering five IDs (`core/read-content`, `core/read-settings`, `core/read-users`, `ai/get-post-details`, `ai/get-post-terms`). Third parties add their own via `wpai_gated_abilities`.
 
   This is a behavioral inversion from 1.2.0: those Ability IDs are absent until a site admin enables the Experiment through `wpai_feature_custom-abilities_enabled`, and the `show_in_abilities` polyfill goes with them. Any downstream resolver must treat them as optional and probe with `wp_has_ability()`.
 
@@ -170,13 +170,14 @@ These entries are in the 1.3.0 tag even where an individual docblock still carri
 - Meta keys moved to a `wpai_` prefix: `ai_generated`, `ai_generated_summary`, and `ai_note` became `wpai_generated`, `wpai_generated_summary`, and `wpai_note` (#867). The 1.3.0 upgrade routine migrates existing rows (it is skipped on fresh installs), but downstream code reading those keys directly must be updated.
 - `core/read-users` collections are now ordered by display name, A to Z (#948).
 
-### Unreleased on `develop` after v1.3.0 (milestone 1.4.0)
+### Released in 1.4.0
 
-Merged to `develop` but in no release as of 2026-09-27 (`ai.php` still says 1.3.0). Everything above describes 1.3.0; gate on `WPAI_VERSION` and feature-detect rather than assuming any of this.
+These changes shipped in the October 5, 2026 release. Check `WPAI_VERSION` and feature-detect when supporting installations still on 1.3.0.
 
-- **Read-ability renames (#1002, merged 2026-09-09).** `core/read-content` becomes `core/content-query` and `core/read-users` becomes `core/users-query`. The old IDs stay registered as deprecated aliases through the new `register_deprecated_ability_alias( string $deprecated_name, string $replacement_name, string $version )`, which copies the replacement's schemas, category, and meta, emits a deprecation notice, and forwards the call. `ai/get-post-details` is deprecated in favour of `core/content-query`'s single-post mode. The wrappers become `Gated\Content_Query` and `Gated\Users_Query`, and with Custom Abilities on the gate yields seven IDs instead of five. Resolve the new name first, then fall back to the old one.
+- **Read-ability renames (#1002).** `core/read-content`, `core/read-users`, and `core/read-settings` become `core/content-query`, `core/users-query`, and `core/settings-get`. The old IDs stay registered as deprecated aliases through `register_deprecated_ability_alias( string $deprecated_name, string $replacement_name, string $version )`, which copies the replacement's schemas, category, and meta, emits a deprecation notice, and forwards the call. `ai/get-post-details` is deprecated in favour of `core/content-query`'s single-post mode. The wrappers are `Gated\Content_Query`, `Gated\Users_Query`, and `Gated\Settings_Get`; with Custom Abilities enabled, the default gate registers eight IDs including aliases. Resolve the new name first, then fall back to the old one.
 - **Embeddings go live (#975, #1005, #976, #993).** `ai.php` calls `SDK_Overlay::register()`, so on stock WordPress 7.x `supports_embedding_generation()` is normally true. `generate_embeddings()` requires a `model` argument (a `ModelInterface` or model ID) and, for an ID, a `provider`, failing with `ai_embeddings_missing_model` / `ai_embeddings_missing_provider`; `model_preference` is gone. A `WordPress\AI\Embeddings\` layer adds a `wpai_embeddings` table (`Embedding_Repository`, `Embedding_Record`, `Vector_Math`, `Vector_Ranker`), which uninstall also drops, plus `wp ai embeddings generate` and `wp ai embeddings compare`. Storage and similarity live in the plugin by design, not in core.
 - **Guidelines read `wp_knowledge` (#988).** See `guidelines-integration.md`.
+- **Markdown Feeds.** `Markdown_Feeds` is the twentieth unique registered Experiment; its capability is `none`.
 - **Comment moderation (#681, #972).** `ai/comment-analysis` results gain `value_score` (stored as `_wpai_value_score`; a short-circuited result without it defaults to 0.0), `wpai_comment_analysis_result` gains a fourth `?int $post_id` argument, the new `wpai_comment_analysis_post_context_shareable( bool $shareable, WP_Post $post )` filter controls whether post context is sent, and `wpai_bulk_action_max_items` also caps bulk comment analysis. That filter is the only new `wpai_*` hook (62 in all).
 - **Minimum WordPress 7.0.3 (#1011).**
 

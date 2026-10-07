@@ -1,12 +1,12 @@
 # Guidelines integration
 
-The AI plugin v0.8.0 introduced Guidelines integration (#359). The released AI plugin 1.3.0 still reads Gutenberg's legacy `wp_guideline` custom post type when an Ability declares interest.
+The current AI plugin [1.4.0](https://github.com/WordPress/ai/tree/1.4.0) reads only **published** `wp_knowledge` rows typed `guideline` (slug-keyed, `guideline-{scope}` and `guideline-block-*`). It takes scopes from `wp_guideline_scopes()` and the length cap from `wp_guideline_max_length()` when available; `wpai_max_guideline_length` still filters the result. There is **no `wp_guideline` fallback** and no automatic migration.
 
-The supported window is precise: **Gutenberg 23.0 through 23.5.x** registers that storage. **Gutenberg 23.6.0+** replaced it with the experimental Knowledge model — #79149 renamed the post type to `wp_knowledge` without migrating existing `wp_guideline` rows — while AI plugin 1.3.0 still checks `post_type_exists( 'wp_guideline' )`. In that combination, `Guidelines::is_available()` returns `false`, `get_guidelines()` returns `null`, and `format_for_prompt()` returns `''`. WordPress/ai **PR #988** adapts the service to `wp_knowledge`; it merged to `develop` on 2026-09-01 (milestone 1.4.0) but is in no release yet, so until a release containing it is installed, do not describe Guidelines as active on Gutenberg 23.6.0+.
+This works with **Gutenberg 23.6.0+** when the `gutenberg-guidelines` experiment registers Knowledge storage, and is unavailable on 23.0–23.5.x. PR #988 shipped in 1.4.0. Confirm `Guidelines::is_available()` at runtime, because the plugin does not register the storage itself.
 
-The adaptation inverts the window rather than widening it. On `develop` the service reads only **published** `wp_knowledge` rows typed `guideline` (slug-keyed, `guideline-{scope}` and `guideline-block-*`), takes scopes from `wp_guideline_scopes()` and the length cap from `wp_guideline_max_length()` when those exist (`wpai_max_guideline_length` still filters the result), and has **no `wp_guideline` fallback** and no migration. So on 1.4.0, Guidelines work only on Gutenberg 23.6.0+ with the `gutenberg-guidelines` experiment on, become unavailable on 23.0–23.5.x, and ignore draft rows that 1.3.0 read.
+**Legacy AI plugin 1.3.0:** **Gutenberg 23.0 through 23.5.x** registers its `wp_guideline` storage. With Gutenberg 23.6.0+, `Guidelines::is_available()` returns `false`, `get_guidelines()` returns `null`, and formatted guidelines are empty. Gutenberg renamed the CPT without migrating existing rows, so users must explicitly re-enter or migrate older Guidelines before the current service can read them.
 
-As of **Gutenberg 24.0**, Knowledge is still plugin-only experimental code, loaded only while the `gutenberg-guidelines` experiment is enabled, and nothing Knowledge-related is staged in `lib/compat/wordpress-7.1/` or `lib/compat/wordpress-7.2/`. It missed WordPress 7.1; a core PR ([wordpress-develop#12201](https://github.com/WordPress/wordpress-develop/pull/12201)) is open against trunk, so core-merge timing remains unsettled. The API names below were re-verified at 24.0.
+As of **Gutenberg 24.1.0**, Knowledge is still plugin-only experimental code, loaded only while the `gutenberg-guidelines` experiment is enabled, and nothing Knowledge-related is staged in `lib/compat/wordpress-7.1/` or `lib/compat/wordpress-7.2/`. It missed WordPress 7.1; a core PR ([wordpress-develop#12201](https://github.com/WordPress/wordpress-develop/pull/12201)) is open against trunk, so core-merge timing remains unsettled. The API names below were re-verified at 24.1.0.
 
 Gutenberg 23.6.0+ uses the following model under `lib/experimental/knowledge/`:
 >
@@ -17,7 +17,7 @@ Gutenberg 23.6.0+ uses the following model under `lib/experimental/knowledge/`:
 >
 > WordPress 7.1 core ships neither `wp_guideline` nor `wp_knowledge`; these are Gutenberg-plugin experiments. Without a Gutenberg release that registers `wp_guideline` (23.0–23.5.x), the AI plugin 1.3.0 `Guidelines` service has no storage to read.
 
-## Where Guidelines live
+## Legacy storage: AI plugin 1.3.0 and Gutenberg 23.0–23.5.x
 
 For Gutenberg 23.0 through 23.5.x, Guidelines are stored as a `wp_guideline` custom post type. Each post stores guidelines in four post meta fields:
 
@@ -80,7 +80,7 @@ use WordPress\AI\Services\Guidelines;
 $service = Guidelines::get_instance();
 
 if ( ! $service->is_available() ) {
-    // Legacy wp_guideline CPT is absent: Gutenberg < 23.0, 23.6.0+, or experiment off.
+    // Current wp_knowledge CPT is absent: Gutenberg < 23.6.0 or experiment off.
     $guidelines_xml = '';
 } else {
     $guidelines_xml = $service->format_for_prompt(
@@ -102,7 +102,7 @@ The service caches results internally (singleton pattern). For tests, call `Guid
 
 | Method | Returns | Use |
 | --- | --- | --- |
-| `is_available(): bool` | `true` if `wp_guideline` CPT is registered | Gate before calling other methods |
+| `is_available(): bool` | `true` if `wp_knowledge` CPT is registered (1.4.0); legacy 1.3.0 checks `wp_guideline` | Gate before calling other methods |
 | `get_guidelines( ?string $category = null ): ?array` | Keyed array of category → text, or null | Direct access to raw guideline strings |
 | `get_block_guidelines( string $block_name ): ?string` | Block-specific guideline text or null | When you only want guidelines for one block type |
 | `format_for_prompt( array $categories, ?string $block_name = null ): string` | XML-tagged string suitable for prompt injection, or `''` | The standard integration call |
@@ -132,7 +132,7 @@ Each category is wrapped only if it has content. Returns empty string if nothing
 
 ## Length limits
 
-Each category is truncated to the value of the `wpai_max_guideline_length` filter (default 5000 characters). Override for sites with shorter or longer guideline content:
+Each category is truncated to `wp_guideline_max_length()` when available, otherwise 5000 characters; `wpai_max_guideline_length` filters that limit. Override for sites with shorter or longer guideline content:
 
 ```php
 add_filter( 'wpai_max_guideline_length', fn() => 2000 );
@@ -155,7 +155,7 @@ The service caches guidelines on first read for the request. If your code edits 
 ## What not to do
 
 - **Don't bypass the integration with a "raw mode" toggle in your Ability.** If site owners want different behavior in different contexts, that's what Guidelines' own context system is for.
-- **Don't read `wp_guideline` CPT directly with `get_posts()`.** The service handles `publish` and `draft`, newest-first ordering, the `content` taxonomy term when available, caching, sanitization, and length limits.
+- **Use the service rather than reading its CPT directly.** In 1.4.0 it reads published `wp_knowledge` rows by guideline scope/block slug, applies the `guideline` term filter when `wp_knowledge_type` is registered, and handles caching, prompt formatting, and length limits. Legacy 1.3.0 instead read `wp_guideline` rows with publish/draft status and the `content` taxonomy term.
 - **Don't pass user-supplied content as guideline text into the prompt.** The XML-wrapping is a structural marker for the model, not a security boundary. User content goes in the `with_text()` payload.
 - **Don't make your Ability worse when Guidelines is on.** If the system instruction stops working when Guidelines append themselves, the prompt was fragile. Test with and without Guidelines.
 

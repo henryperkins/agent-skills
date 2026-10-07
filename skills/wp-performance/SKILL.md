@@ -29,6 +29,8 @@ This skill assumes the agent cannot use a browser UI. Prefer WP-CLI, logs, and H
 
 ## Procedure
 
+Resolve helper paths from this installed skill directory; replace example absolute paths with the real location and keep the working directory at the target project root.
+
 ### 0) Guardrails: measure first, avoid risky ops
 
 1. Confirm whether you may run write operations (plugin installs, config changes, cache flush).
@@ -43,7 +45,7 @@ Read:
 
 Run:
 
-- `node scripts/perf_inspect.mjs --path=<path> [--url=<url>]`
+- `node "/absolute/path/to/wp-performance/scripts/perf_inspect.mjs" --path=<path> [--url=<url>]`
 
 This detects:
 

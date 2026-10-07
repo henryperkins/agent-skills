@@ -19,7 +19,13 @@ jobs:
         with:
           node-version: 20
 
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          coverage: none
+
       - name: Run local eval harness
+        # The frozen Core execution fixture requires PHP in hosted validation.
         run: node eval/harness/run.mjs
 
       - name: Build skillpacks (Codex + VS Code)

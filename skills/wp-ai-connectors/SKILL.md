@@ -1,7 +1,7 @@
 ---
 name: wp-ai-connectors
 description: "Use when building or debugging a WordPress AI provider plugin, registering an AI service with the PHP AI Client, exposing it through Settings → Connectors, declaring model capabilities/options, or adding text, media, function-calling, or embedding support at the provider layer."
-compatibility: "Targets WordPress 7.0+ (PHP 7.4+); WordPress Core verified through: 7.1; Gutenberg verified through: 24.0.0; PHP AI Client verified through: 1.5.0 (Core 1.3.1); Anthropic provider verified through: 1.0.4; Google provider verified through: 1.2.0; OpenAI provider verified through: 1.2.0. `application_password` requires WordPress 7.1. Embeddings require standalone 1.4+ with runtime gates. Local files; some WP-CLI."
+compatibility: "Targets WordPress 7.0+ (PHP 7.4+); WordPress Core verified through: 7.1; Gutenberg verified through: 24.1.0; PHP AI Client verified through: 1.5.0 (Core 1.3.1); Anthropic provider verified through: 1.0.5; Google provider verified through: 1.2.0; OpenAI provider verified through: 1.2.0. `application_password` requires WordPress 7.1. Embeddings require standalone 1.4+ with runtime gates. Local files; some WP-CLI."
 license: GPL-2.0-or-later
 ---
 
@@ -28,9 +28,11 @@ If the task is to *consume* AI features (build a summarization endpoint, add ima
 
 ## Procedure
 
+Resolve helper paths from this installed skill directory; replace example absolute paths with the real location and keep the working directory at the target project root.
+
 ### 0) Triage and confirm scope
 
-1. Run project triage if available: `node ../wp-project-triage/scripts/detect_wp_project.mjs` when the `wp-project-triage` skill is installed alongside; otherwise classify the project manually.
+1. Run project triage if available: Resolve the installed `wp-project-triage` directory to its absolute path and keep the process working directory at the target project root: `node "/absolute/path/to/wp-project-triage/scripts/detect_wp_project.mjs"`. If unavailable, classify manually.
 2. Confirm this is a *provider* plugin, not a *feature* plugin. The two have different shapes:
    - **Provider plugin**: registers with the `AiClient::defaultRegistry()` so other plugins can use the provider.
    - **Feature plugin**: calls `wp_ai_client_prompt()` to build something. That's `wp-ai-client` territory.
@@ -70,7 +72,7 @@ Notes:
 - The method is `registerProvider()`, not `register()`. Argument is a class name string, not an instance.
 - `class_exists( AiClient::class )` makes the plugin safely activate on sites without the SDK.
 - `hasProvider()` makes the registration idempotent.
-- `init` priority 5 runs before connector discovery at **priority 15** (`_wp_connectors_init` in Core, or Gutenberg's replacement `_gutenberg_connectors_init`). Any priority earlier than 15 works (`plugins_loaded`, or `init` ≤ 14); `init` priority 5 is what every official provider plugin uses, so match it for consistency.
+- `init` priority 5 runs before connector discovery at **priority 15** (`_wp_connectors_init` in Core and Gutenberg 24.1.0; Gutenberg 23.6–24.0 used `_gutenberg_connectors_init`). Any priority earlier than 15 works (`plugins_loaded`, or `init` ≤ 14); `init` priority 5 is what every official provider plugin uses, so match it for consistency.
 
 The provider class itself (`AnthropicProvider` in this example) implements the SDK's provider interface and lives in your plugin's `src/` directory. See `references/provider-registration.md` for the full annotated pattern and where to look in the SDK source for the current interface contract.
 
@@ -126,7 +128,7 @@ For `api_key` connectors, the SDK itself reads the environment variable and PHP 
 
 Database storage is unencrypted by default but masked in the UI. The canonical AI plugin (`WordPress/ai` v1.1.0+) ships an opt-in **Key Encryption** experiment that transparently encrypts `connectors_ai_*_api_key` options at rest (libsodium via a bundled secrets API) and restores plaintext on opt-out or deactivation. Core-level encryption is still being explored upstream ([#64789](https://core.trac.wordpress.org/ticket/64789)).
 
-**Application-password connectors require WordPress 7.1.** `authentication.method` accepts `'api_key' | 'application_password' | 'none'` there. The 7.1 registry and implementing functions carry the released surface, and the built Settings → Connectors route renders the credentials UI ([#79403](https://github.com/WordPress/gutenberg/pull/79403)). Gutenberg 23.6+ contains a compatibility copy, but it cannot extend a WordPress 7.0 site: Core declares its final 7.0 registry class before plugins load, so Gutenberg's guarded registry class is skipped — even Gutenberg's replacement `init` callback ends up instantiating core's class — and the 7.0 `register()` allow-list still rejects `application_password`. On WordPress 6.9, where Core has no registry, Gutenberg's copy can matter only when an SDK-providing plugin is also active. The 7.1 contract mirrors `api_key` with one twist — the credential is a *pair*:
+**Application-password connectors require WordPress 7.1.** `authentication.method` accepts `'api_key' | 'application_password' | 'none'` there. The 7.1 registry and implementing functions carry the released surface, and the built Settings → Connectors route renders the credentials UI ([#79403](https://github.com/WordPress/gutenberg/pull/79403)). Gutenberg 23.6–24.0 contains a compatibility copy, but it cannot extend a WordPress 7.0 site: Core declares its final 7.0 registry class before plugins load, so Gutenberg's guarded registry class is skipped — even Gutenberg's replacement `init` callback ends up instantiating core's class — and the 7.0 `register()` allow-list still rejects `application_password`. On WordPress 6.9, where Core has no registry, Gutenberg's copy can matter only when an SDK-providing plugin is also active. Gutenberg 24.1.0 removes those registry/discovery compatibility copies and uses Core; its remaining connector override is the settings-menu registration. The 7.1 contract mirrors `api_key` with one twist — the credential is a *pair*:
 
 - `env_var_name` / `constant_name` hold a single `username:password` string (e.g. `remote-user:abcd efgh ijkl mnop 1234`), split on the **first** colon so passwords may contain colons. Both are only consulted when provided. A non-empty value that won't parse triggers `_doing_it_wrong()` and is skipped, falling through to the next source.
 - The database setting stores an array of `username` + `password`, registered as an `object` setting and masked in `/wp/v2/settings` (a non-empty password becomes 16 `•` characters; the username is not masked). Resubmitting the masked value keeps the stored password, and an empty username discards both fields so a partial update can't orphan a secret. `setting_name` follows the general `connectors_{$type}_{$id}_{$method}` pattern — so `connectors_{$type}_{$id}_application_password` when omitted (hyphens in type/ID normalized to underscores) — or can be set explicitly.

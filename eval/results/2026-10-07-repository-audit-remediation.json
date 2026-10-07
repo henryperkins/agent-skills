@@ -1,0 +1,307 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-07",
+  "baseCommit": "fe2e33c8bff665349f2a3a30c0d565bb912087d5",
+  "branch": "fix/repository-audit-2026-10-07",
+  "releaseCandidate": "1.12.3",
+  "status": "local-fixes-validated-hosted-billing-blocker",
+  "audit": {
+    "reportSha256": "6acd389a89975cd932a5a837dcf68c53d0c1eaa975282bc503183aea552cf3c4",
+    "manifestFilesVerified": 18,
+    "probesBefore": {
+      "passed": 0,
+      "failed": 6
+    },
+    "probesAfter": {
+      "passed": 6,
+      "failed": 0
+    }
+  },
+  "reviewedReleases": {
+    "core": "7.1.3",
+    "gutenberg": "24.1.0",
+    "mcpAdapter": "0.7.0",
+    "aiPlugin": "1.4.0",
+    "anthropicProvider": "1.0.5"
+  },
+  "upstreamStateHash": "fa3d97ab673191c6ab9a9d0d16482e037cf6dc13d29c104d2dc5dc45de2b5e44",
+  "checks": {
+    "standardHarness": {
+      "passed": true,
+      "runtimes": [
+        "Node 24.15.0 + PHP 8.3.33",
+        "Node 20.20.2 + PHP 8.3.33 with CI=true"
+      ],
+      "detectorAndInstalledLaunchCases": 17,
+      "workflowGateCases": 7,
+      "directCoreExecutionCases": 7,
+      "upstreamDriftChecks": 22,
+      "driftFailures": 0,
+      "maintenancePreviewCases": 7
+    },
+    "syntax": {
+      "javascriptModules": 24,
+      "phpFiles": 4,
+      "passed": true
+    },
+    "officialFrontmatter": {
+      "skills": 22,
+      "passed": true,
+      "validatorCommit": "69ef37e9424c0a7ea9dd2293b559e43ec8176379",
+      "python": "3.11.15",
+      "utf8Mode": true
+    },
+    "packages": [
+      {
+        "target": "codex",
+        "skills": 22,
+        "sourceFiles": 133,
+        "builtFilesMatched": 133,
+        "installedFilesMatched": 133
+      },
+      {
+        "target": "vscode",
+        "skills": 22,
+        "sourceFiles": 133,
+        "builtFilesMatched": 133,
+        "installedFilesMatched": 133
+      },
+      {
+        "target": "claude",
+        "skills": 22,
+        "sourceFiles": 133,
+        "builtFilesMatched": 133,
+        "installedFilesMatched": 133
+      },
+      {
+        "target": "cursor",
+        "skills": 22,
+        "sourceFiles": 133,
+        "builtFilesMatched": 133,
+        "installedFilesMatched": 133
+      },
+      {
+        "target": "antigravity",
+        "skills": 22,
+        "sourceFiles": 133,
+        "builtFilesMatched": 133,
+        "installedFilesMatched": 133
+      }
+    ],
+    "workflows": {
+      "validator": "actionlint 1.7.12",
+      "workflows": 3,
+      "passed": true,
+      "externalShellcheckAndPyflakes": false
+    },
+    "completeIndexPreview": {
+      "cases": 5,
+      "passed": true,
+      "recordedStateUnchanged": true,
+      "result": "eval/results/repository-audit-2026-10-07/complete-index-preview.json"
+    }
+  },
+  "independentReview": {
+    "status": "completed-with-findings-addressed",
+    "inputCommit": "a52712c4b38898715aadd963cfd54cbff18939bb",
+    "critical": 0,
+    "important": 3,
+    "minor": 1,
+    "importantFixed": 3,
+    "minorFixed": 1,
+    "secondReview": false,
+    "record": "eval/results/2026-10-07-repository-audit-review.md"
+  },
+  "behavioralExercises": {
+    "status": "two-scoped-exercises-completed",
+    "inputCandidate": "1.12.3 before final review fixes",
+    "prescribedAnswersProvided": false,
+    "scope": [
+      "Installed triage/theme helpers against a project path with spaces.",
+      "Direct PHP permission/caching review and exact-Core probe with minimal host shims."
+    ],
+    "outputs": "eval/results/repository-audit-2026-10-07",
+    "limits": [
+      "No trigger accuracy or aggregate success rate is established.",
+      "No full WordPress, live REST/MCP, or provider requests occurred.",
+      "The raw permission input contained a signature error; the evaluator identified it before demonstrating a corrected-signature bypass."
+    ],
+    "probeArchived": "eval/results/repository-audit-2026-10-07/permission-probe.php",
+    "probeAdaptation": "Only input paths were made repository-relative; replayed results match all original case outcomes and traces.",
+    "replayedCases": 6
+  },
+  "limits": [
+    "PHP runner uses the unmodified Core class with minimal host shims, not a full WordPress runtime.",
+    "Workflow tests evaluate source-derived job guards locally, not a hosted dispatch.",
+    "July behavioral evidence was not rerun or relabeled as current.",
+    "Theme detection cannot evaluate runtime filters or parent themes outside the scan root."
+  ],
+  "hosted": {
+    "status": "blocked-before-start",
+    "reason": "GitHub account billing lock",
+    "runs": [
+      "https://github.com/henryperkins/agent-skills/actions/runs/36366808395",
+      "https://github.com/henryperkins/agent-skills/actions/runs/35585989561"
+    ]
+  },
+  "normalizedLfSkillFileSha256": {
+    "skills/blueprint/references/v1-compatibility.md": "6364a69c4a5eafb428374ce0c66748ecf72e5879e7c72802569e25c3353eda20",
+    "skills/blueprint/SKILL.md": "e7c192e61a00d89cba9338f2020cfef1547624c85375b27d4ddba3c7451b089f",
+    "skills/wordpress-router/references/decision-tree.md": "e2b69dadcd291b3daa4c2627095cc1b1b8fe0666eb3001e9d68d1b9b96ef6872",
+    "skills/wordpress-router/SKILL.md": "04fbe9dd29f09b8cb3e9e84c7ca33d03753c17649ab1f572532b5f9af36964c6",
+    "skills/wp-abilities-api/references/client-side.md": "0f8a9de07c5c4ac7b4e7345fc1ca0a8e25264507619accfd27c2a79503e1e507",
+    "skills/wp-abilities-api/references/delegate-helper-pattern.md": "477ffc8689d7afd7edb8b86f256c592863c7997c197f4ac0c46138470d2febd7",
+    "skills/wp-abilities-api/references/domain-vs-projection.md": "5ffa9bb9459e773839e61029ad05bc25e5e51073559d57f79fbc8787fb8402ee",
+    "skills/wp-abilities-api/references/error-code-vocabulary.md": "0b0437b89fb464f0558b379e93fc980318a240fd7c71a003786652c328247ac6",
+    "skills/wp-abilities-api/references/execution-lifecycle.md": "9050ba57d7208e54616f155ea55409f2c73287574d91814f7bc417b2da960eb5",
+    "skills/wp-abilities-api/references/grouping-heuristic.md": "125247117e9f50802fe28e3f0fec8661c62a3d6f12c08c0f3d464a9ac8211867",
+    "skills/wp-abilities-api/references/input-schema-gotchas.md": "734995ee8fece8e7dba0f655e9ce4ef53b4fda6559d534237694d34c5c42237a",
+    "skills/wp-abilities-api/references/mcp-exposure.md": "2c1c0edf0e867d686bcc7beec87143c9d4e791e15eba0511b5ac22e109fb8afd",
+    "skills/wp-abilities-api/references/php-registration.md": "e84440de128890c4b284c196aaa2384d6230f0801d5c411c7f5cd5b491edf811",
+    "skills/wp-abilities-api/references/plugin-family-patterns.md": "8a0e16f1ab6aff76441c11b6981877dc248cd96cfae0bcbe0cd601faa9f6f545",
+    "skills/wp-abilities-api/references/rest-api.md": "7810df4460884424580bd9178a947800dde614004e18e54201c039abbed8c6d4",
+    "skills/wp-abilities-api/references/shared-core-service.md": "639da91b3fb0c46a375f13704e7f5f6e800bff21796ffc22c781285e8332327c",
+    "skills/wp-abilities-api/SKILL.md": "75930890a4723ba3ab4ef796e3efbb3531dcefd8714276521efd3e256f7b6f91",
+    "skills/wp-abilities-audit/references/audit-schema.md": "3589de146117eb6d8f2e51612f5e9de9ad4160c46923afbc74c5a9bf3dc761c1",
+    "skills/wp-abilities-audit/references/capability-gate-tracing.md": "a8a28a35a933fc7132a5dd9f18c623c7968ad107b69c6f8dd3cbca34bc6fc761",
+    "skills/wp-abilities-audit/references/controller-enumeration.md": "15a5961b87394c6bd6e7476e7b4f9e4a85fbbdcd2024592eb7efb3e9128e6be1",
+    "skills/wp-abilities-audit/SKILL.md": "e47e68939add3ae2b74d6e2f01a075b25c3f7d05868e7515935f45730594b55d",
+    "skills/wp-abilities-verify/references/annotation-correctness.md": "8577fced325cffe3faea1337774155dcc5c69271941e8ab011f5a2dacec405c7",
+    "skills/wp-abilities-verify/references/audit-schema-validation.md": "280fa7c6a07f7bec33496e2e711c37cf1b67a05801b0bd63b4f034ff83e93f16",
+    "skills/wp-abilities-verify/references/exposure-checks.md": "64d32baf95c354af2bc9767933a13c4cb6cc94ed66994acf0c2ccde2711f324e",
+    "skills/wp-abilities-verify/references/permission-roundtrip.md": "14a922d14476d10eb1d28c3fefabae4a677c1d8ef0d527b87f48c43df819b6ac",
+    "skills/wp-abilities-verify/references/runtime-harness.md": "4afc3aa83da18ae9f0749be743ed3bdf7ad72dcb4d186b197c7d46d2d6e47ee1",
+    "skills/wp-abilities-verify/references/schema-lints.md": "ab0be36576097e5c4604a7904a18de946d92761ab091a1131cdf2ad7bf086116",
+    "skills/wp-abilities-verify/references/static-enumeration.md": "a58c102c9df80757a61b407d23cabf1c8893fc3af51cad6468f3f410c2a942b9",
+    "skills/wp-abilities-verify/SKILL.md": "f31948093fb868c2366398d2d918d05d9e1df6be5505772c61c32ea2fa5b5468",
+    "skills/wp-ai-client/references/embedding-builder.md": "1b5340ecb3ca8cc87871ba2f20986566343a97cfcd39b0dc5ea7d9f6b87f9153",
+    "skills/wp-ai-client/references/error-handling.md": "77ca99a8dd0e6c3ec35656d87fe7f03b4f97cc0979f07e3b691b81fa1cb96e4d",
+    "skills/wp-ai-client/references/prompt-builder.md": "0cc7f6eedce594243bc32e8e3a1fc3aa96787d3ae3e3c352434ebdebc8684600",
+    "skills/wp-ai-client/references/rest-patterns.md": "be82b8588b16baaac1928895fc39c74793151b6e66485d7ad18959fcab2bcd35",
+    "skills/wp-ai-client/scripts/detect_ai_client.mjs": "7ed597ea246d28ca6c60da33818fdadbee7f6a581710dfbd671cef398f79fbb0",
+    "skills/wp-ai-client/SKILL.md": "f9909f7d3f9145e1a4927296a597afc2ee3a36b6c971ea1010de4788449f44a5",
+    "skills/wp-ai-connectors/references/capabilities-declaration.md": "93158cdee369b7b753b5560b105837b1b303f9ea7e2a30d36cb29092c816bf18",
+    "skills/wp-ai-connectors/references/community-providers.md": "6ec27b5827cbf77168d28b585e414579d15b3a64fb5ce5c8108f333a21421a4b",
+    "skills/wp-ai-connectors/references/provider-registration.md": "1fff80e32732722115594bcdec69465fd689ec83b298fac68c5b8cf3c64ee5e5",
+    "skills/wp-ai-connectors/SKILL.md": "dad8837f17c967baf6bc800c285da871add6105cbae15a92d6f07af255ac712c",
+    "skills/wp-ai-plugin/references/dashboard-widgets.md": "684c5763c132fe349fc97e5f4265baee9c4760eb36bf06687968ddc44181f030",
+    "skills/wp-ai-plugin/references/experiments-framework.md": "29f9c9650087686971d6cc575e36fa9afb8ddbee58917c42d0b3835313a12476",
+    "skills/wp-ai-plugin/references/guidelines-integration.md": "546c469ac4982e4d2dce11b4b4497d52b6348b831e215507715e9416c1501ab7",
+    "skills/wp-ai-plugin/references/hooks-and-filters.md": "fe3596596f916e9db8e0f1101793f68d8f6f4e2e8010bf886a94266aa6b396d8",
+    "skills/wp-ai-plugin/SKILL.md": "b01e8890d7fc9b4e269576fc610e8fd86e21a8408507598bd0404285051389e1",
+    "skills/wp-block-development/references/attributes-and-serialization.md": "953725785cda47a6f6fc0ee19d5c96b9b4016300278b68eb64bdaaabf5d41a45",
+    "skills/wp-block-development/references/block-json.md": "ff63c4d7788208943fef8f57feb9528358984f2906affe38aade0a38043df0e8",
+    "skills/wp-block-development/references/creating-new-blocks.md": "45a437e3a4bc78e517ed478fb550cdb70c88b5b7bd05fe2b61525c95e2a35e0c",
+    "skills/wp-block-development/references/debugging.md": "098ec73d8756442307fa8841ce337628f565b79cab8eb631e758d94e67159a69",
+    "skills/wp-block-development/references/deprecations.md": "136b1328823964ae7a7c638398c5662304db5b9d6f45f318a3523705ffd5e937",
+    "skills/wp-block-development/references/dynamic-rendering.md": "fee9acc6909290cf3549f7d23d23cc12fc3003f4db07ba9c49f0e165b2e39dd1",
+    "skills/wp-block-development/references/inner-blocks.md": "06d5b2b929d9e27d7c9114ecb14b2d7ee538d24088d80d1e9b3e49890ce16355",
+    "skills/wp-block-development/references/registration.md": "b5b0386a03b6c5eabcd9076e3067f78231fef471018e88c1bcf4e4745e9d1e9c",
+    "skills/wp-block-development/references/supports-and-wrappers.md": "e4001355e8e6c1117da157881589a2267520a7846666ee7540251114f88f697a",
+    "skills/wp-block-development/references/tooling-and-testing.md": "571c08dbc19c99bfdc59d277189e8391bb7651e6ee3ea8f09c2b7c412a2cf9d5",
+    "skills/wp-block-development/scripts/list_blocks.mjs": "68faf732d27d85cf10477deae6c91b951bc39d584b7f77ffea88c240862f4665",
+    "skills/wp-block-development/SKILL.md": "d6a6138cc74fdebf2a482df236396122990ab37aec61f5938cd54fd77c9e1842",
+    "skills/wp-block-themes/references/creating-new-block-theme.md": "3dcb5bb2ed6c1298b9bb26e3f665f7c3ebebe69e94810a0a0a065fa8a054b774",
+    "skills/wp-block-themes/references/debugging.md": "f2f87df450779686710af698cdf4846f987da25856f6686a4473687b09cae221",
+    "skills/wp-block-themes/references/patterns.md": "43a2f184a42a80d4784cb0ce064339aead8d411c18827f7d958b247d633453a4",
+    "skills/wp-block-themes/references/style-variations.md": "6f50b6055d3da1dd89543bbafcef2b726756c1901bedf55574f7f5bc1cbd208d",
+    "skills/wp-block-themes/references/templates-and-parts.md": "05e9491404e434fe66711d4fcb63ceddb52385365ccb5a5c8ce9b7020a859edc",
+    "skills/wp-block-themes/references/theme-json.md": "1446754e80ef79aa7ff471e24e5b45e10b515c207b147a0dcace2f7662bdb070",
+    "skills/wp-block-themes/scripts/detect_block_themes.mjs": "411efd420c68697f5353268c3ca86a0165deae35ac6f1c99459289dac102940b",
+    "skills/wp-block-themes/SKILL.md": "071116434713f9db6ff19154ede0f5024bb4df58f22aef40c629cfa4ec02cd8b",
+    "skills/wp-env/SKILL.md": "bfc407fdf7608b1fc1d0ab83f012f1b30f22da82808d116a14ed78f0aa0e3ec3",
+    "skills/wp-interactivity-api/references/debugging.md": "580ad118dfc4f8dc3b59e301a8f123b5b707a18243a97209960141d983125c41",
+    "skills/wp-interactivity-api/references/directives-quickref.md": "8ca55a2636a528ba74fb1edc01caf81e453ff3b5c5aa207391f9b66d25408a7e",
+    "skills/wp-interactivity-api/references/server-side-rendering.md": "49110c3ff77c60f46419e0fcf80a321fc65a0118696a9db82a37c24aa34c65bb",
+    "skills/wp-interactivity-api/SKILL.md": "7edf17cbd49ce0a870231fc22e53c89c40bcfd871a440a428cce0c120624f259",
+    "skills/wp-patterns/references/anti-patterns.md": "3ac8deb9c3085f2cf7be273d48d9c33d79c653f3ceaf8e6a1043e456bce50bb6",
+    "skills/wp-patterns/references/block-markup-reference.md": "af8b544bea2111274798e544b19197dc634bc879d4e04955529f3a4332640d3e",
+    "skills/wp-patterns/references/design-with-tokens.md": "4f15bc8d4fb7f629309a84902eea3b8628b27ffbb226ba77a867bee322086c70",
+    "skills/wp-patterns/references/example-prompts.md": "783397b05a5e12b3d068cf18f95df6f49c1d204a4bad88cf9dc8376a6554e0d6",
+    "skills/wp-patterns/references/pattern-categories-and-types.md": "398e39733320c52663c25965e003ca4697c8e256016a6f005fdb2d145798556c",
+    "skills/wp-patterns/references/pattern-registration.md": "b3db41735dc8e7f9c4124ca2e4f82eb42e8805c6909abe0f274a9c546878f19b",
+    "skills/wp-patterns/references/visual-composition.md": "f4416789a8c29c7e6f3baaea5c4eb11d68085f61db25fbf80ba02d70f8485739",
+    "skills/wp-patterns/SKILL.md": "88ced2ce30bb1d7c9be8f0954671b537991114c47e368a17832cd424b7657a4a",
+    "skills/wp-performance/references/autoload-options.md": "42d8465c18f87d2676281ce09534562d7f8f4a4c39342fab012c1b391458fbc8",
+    "skills/wp-performance/references/cron.md": "54c56935bfd4845515df28c8d6ea801aedd2d5710980ba2f0c3829bf61bd74ff",
+    "skills/wp-performance/references/database.md": "ffc6dc561228f2967f939ff4052711103a010f6c60bca442621ad94a051125de",
+    "skills/wp-performance/references/http-api.md": "bb6a36c4e8287ea589e9c9571822729d6f005ccb1268a7212b21a346cbb22ba3",
+    "skills/wp-performance/references/measurement.md": "906d0a8501b11cffc6bb86fd333bc7e96245124fbcc16a8d398e52ed7059b37e",
+    "skills/wp-performance/references/object-cache.md": "9ee1ffc154564645b60772c1994a7080e376fbebc461ce5e277d92f1c7af8d2a",
+    "skills/wp-performance/references/query-monitor-headless.md": "4985fc2eccfefd3c3e12531972d0a76813b2d8f1935203a1003b4ff2ecb317d1",
+    "skills/wp-performance/references/server-timing.md": "a0f4886d5842cae8b36ff8b801c210fda760f8cb5c0eb958ca11035f499ae341",
+    "skills/wp-performance/references/wp-cli-doctor.md": "0fa33e780f97d246a4db30092bd480ce7487a20d5fe1a558c0068cd822473b77",
+    "skills/wp-performance/references/wp-cli-profile.md": "74f51a3caccde9a2deef9071bef0c70735868bff8a5e51cf9737308cdf59eac6",
+    "skills/wp-performance/scripts/perf_inspect.mjs": "ffaf07a655adf273aa75880150d771743b0c903f0e3b584ba690c3843be7fc2f",
+    "skills/wp-performance/SKILL.md": "ca89b62d6abdb7da16372f2315ab539cd3eae36ec916dadb68553e08fafb329b",
+    "skills/wp-phpstan/references/configuration.md": "444869ffacca37ea38eb79b01a0ec0ffc8cd68a701282232b058d490fb83aeb7",
+    "skills/wp-phpstan/references/third-party-classes.md": "5cc8488188cdb917e6998f77ded6da136c6fe24a8b0f991efd06d2a03855ab0e",
+    "skills/wp-phpstan/references/wordpress-annotations.md": "340b6299d539ab7fc34357842cd67187ef0ebdcfdca44f5439794f5c3148199a",
+    "skills/wp-phpstan/scripts/phpstan_inspect.mjs": "657d2c8c3b36808785e92131c3db62b4c12e0fd9436cb7a7d2045ed9a2d5789a",
+    "skills/wp-phpstan/SKILL.md": "52bcefdc8d870849089459b39a3f1a25053fff54bed70c2816835cfc7a452cf1",
+    "skills/wp-playground/references/cli.md": "4d29d1196d2d2517ffdb21c3ea8f754558580970a8ccb5e6fd35a59f98e808a6",
+    "skills/wp-playground/references/debugging.md": "54c1c3ae28b9e277545ab6bfec46d71083d88863251fc8a8f21d65e8d822959a",
+    "skills/wp-playground/references/mcp.md": "a1c306bfa02494fa464f3c47bb46b5fc488319c81b677e2d599af7be9e6a7937",
+    "skills/wp-playground/references/sites-api.md": "c5ab005cc25df97c7d713dffe77c99623722f9896bd9161b288b880ba87cad98",
+    "skills/wp-playground/references/webmcp.md": "227eca2a6edf25f92e58d88735c23bfa09ee2beea4dae3745f7673f053fb1903",
+    "skills/wp-playground/references/website.md": "e589d822b5b40c17772c71bb98dfd4d68072b3945e01fb1960a6f4191bedc297",
+    "skills/wp-playground/SKILL.md": "0ffddc24810f6161a1b3da0748857646f294d5f52b8d17aad5e39cfb117338be",
+    "skills/wp-plugin-development/references/data-and-cron.md": "6a21d6a919b536ca8c748649450031ec71b7606845cabb089540dddb0313626f",
+    "skills/wp-plugin-development/references/debugging.md": "045e6cfe9bfc77ddec277d4ce9b2ca3e90d3047281dbe4a58f18b4406c59cb6f",
+    "skills/wp-plugin-development/references/lifecycle.md": "231fb911cff2402b6701591a10e202e86cef0c4ea4d7053168fdd7ba02d0a91e",
+    "skills/wp-plugin-development/references/security.md": "8b673d60948932a00099664a79b1f92094e1ed2af9c6b3f80d637db8315ddaa5",
+    "skills/wp-plugin-development/references/settings-api.md": "535fde7f0194f6f14e999d6d691f3e9b696d0da2425fa737254628c9c5d20ceb",
+    "skills/wp-plugin-development/references/structure.md": "00ae05f608a594e7be557d41aa8bf3b9240a4ce84986cbf11ab7a419f48fdb03",
+    "skills/wp-plugin-development/scripts/detect_plugins.mjs": "da5ad06830e94c9d7757db100da2bf2f10ecc5450f723e342fa2ffd86cd9d2a0",
+    "skills/wp-plugin-development/SKILL.md": "e38e9437356f9cd2bbbceec5c5b821b09b40321fe54921e386f23cfc878e26de",
+    "skills/wp-plugin-directory-guidelines/references/gpl-compliance.md": "bb24a50ea6b310cafa985129ed81a285f2d8c8da8720d7a1945a9bccbe601e11",
+    "skills/wp-plugin-directory-guidelines/references/guideline-review-checklist.md": "0de6cbee18eb3fb60348219a35e6b9b3fc2acd68bd4cc7e6884efc9a3ff0f41e",
+    "skills/wp-plugin-directory-guidelines/references/naming-rules.md": "48b8358b5fa78eadb150394c7e6e9defd9a1a98c3bd0a1b745cc82a89f5920b2",
+    "skills/wp-plugin-directory-guidelines/SKILL.md": "4f10944476623523753426fbbe3790b9775c0be580bc5a700c8982a30b64d1c0",
+    "skills/wp-project-triage/references/triage.schema.json": "4a411e0c9f64b8c9bcabd64c61df033126aa5baa1d04688013ca65f4ecba3049",
+    "skills/wp-project-triage/scripts/detect_wp_project.mjs": "fd90b38a08d51f48cfad33e5fbbd136372721755f5520f08531ab34b657d4613",
+    "skills/wp-project-triage/SKILL.md": "a49735822a9717e43ce0247370608a86faa3baf0b6080fef45dc86ead4afb19e",
+    "skills/wp-rest-api/references/authentication.md": "5ec3a866c0d4e956779f1048703835b70f5ba183442ad6a2239d4c1313ae4703",
+    "skills/wp-rest-api/references/custom-content-types.md": "a14caa1cc672022f9773e7fa9fec97f524b59e0a6fe62ea4aa4dcafd53780a75",
+    "skills/wp-rest-api/references/discovery-and-params.md": "7fd320f42b0b3d75f750a84c91d15281eec273701fe4b89fe194a2c323d3f71b",
+    "skills/wp-rest-api/references/responses-and-fields.md": "1a10fe4b8b73d82421456a9e864590bb061d96dc5f4a79c236e74445f404df54",
+    "skills/wp-rest-api/references/routes-and-endpoints.md": "abcb570b61bc114337db7845f6da72d9f3c581d9b3a32997d703be0b586f0b35",
+    "skills/wp-rest-api/references/schema.md": "05e2c9557d9d8a89010ac1b0f7b17dadbdf596490bcecedfc62c3c4a28333a4e",
+    "skills/wp-rest-api/SKILL.md": "48a042f52d2974b5f9e96ac7515e1b31e1268756967d17e02b1ef0e967832d65",
+    "skills/wp-wpcli-and-ops/references/automation.md": "06b967e13ad5f6e02df1a520987c06dc0b6ffcb289ea4e92bf1df66169bd70aa",
+    "skills/wp-wpcli-and-ops/references/cron-and-cache.md": "670c3a996fba891b64589e419265ae27b95705aebed3eeee3bfb331f0762bffe",
+    "skills/wp-wpcli-and-ops/references/debugging.md": "50105f756f8562d6bef454623c196614fba914c23136b7f4c0653ac550c4a388",
+    "skills/wp-wpcli-and-ops/references/multisite.md": "44e4322ce8fec4a4f5ed65b7cf7509b958fb314f756fc3e0d5ed4453fe229413",
+    "skills/wp-wpcli-and-ops/references/packages-and-updates.md": "6b619fc294734078b758121e6bfab6e36e7de119a6a3a50bf3d004749136420d",
+    "skills/wp-wpcli-and-ops/references/safety.md": "74628dbc5b0a6b78df40e2bcc4a1c2f9038ad2f0fe08734591868d944aa2d3fb",
+    "skills/wp-wpcli-and-ops/references/search-replace.md": "12b8f7d8aea1dfbca5610ab1680dca761c0512ee4ff628a4894e7bd56453b8ee",
+    "skills/wp-wpcli-and-ops/scripts/wpcli_inspect.mjs": "05bed325b17a5e0fe092542ead4cb3d87417b6d09b013346dea65c335e1298d7",
+    "skills/wp-wpcli-and-ops/SKILL.md": "bba8a8ea43a8b7743d3ab4a2b139b3912b555a1825ef3d05764093d633a9c84e",
+    "skills/wpds/SKILL.md": "f65c575dd89b5647023fe8d839a47d23c34e5e5a075efaaaf66c9b4dc3fde73f"
+  },
+  "regressionReproductions": {
+    "originalAudit": {
+      "failedBefore": 6,
+      "passedAfter": 6
+    },
+    "detectors": {
+      "failedBefore": 14,
+      "totalBefore": 15,
+      "passedAfter": 17
+    },
+    "workflowGates": {
+      "failedBefore": 3,
+      "passedAfter": 7
+    },
+    "maintenancePreview": {
+      "failedBefore": 3,
+      "passedAfter": 7
+    },
+    "guidance": {
+      "permissionGuaranteeFailedBefore": true,
+      "legacyGuidelinesAssertionsFailedBefore": 3,
+      "unreleasedAiAssertionFailedBefore": true,
+      "passedAfter": true
+    }
+  }
+}

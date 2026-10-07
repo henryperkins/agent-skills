@@ -1,0 +1,7 @@
+{
+  "wordpressVersion": "7.1.3",
+  "license": "GPL-2.0-or-later",
+  "source": "https://raw.githubusercontent.com/WordPress/wordpress-develop/7.1.3/src/wp-includes/abilities-api/class-wp-ability.php",
+  "sha256Lf": "0c0aa1db27f284cb9942865e6fbed0610178439430e2ac9a9f6a7dd209df049e",
+  "scope": "Unmodified upstream WP_Ability class; PHP runner shims host functions. Direct execution order only, without a live WordPress, REST, or MCP server."
+}

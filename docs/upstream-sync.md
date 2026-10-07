@@ -36,13 +36,15 @@ Run:
 
 ```bash
 node shared/scripts/update-upstream-indices.mjs
-node eval/harness/run.mjs --skip-upstream-drift
+node eval/harness/run.mjs --skip-upstream-drift --index-preview
 node shared/scripts/check-upstream-drift.mjs --format markdown --allow-drift
 ```
 
 The updater fetches every source concurrently and normalizes every payload before writing any index. When `GITHUB_TOKEN` is present, requests to `api.github.com` receive `Authorization: Bearer <token>`; the token is never attached to WordPress.org, Packagist, or handbook requests and is never logged. Tokenless local runs remain supported. GitHub error objects, empty stable-release arrays, missing Packagist packages, and an unparseable mapping all fail before the first write. Drafts and prereleases are excluded, versions sort numerically, and output is bounded and deterministic.
 
 `--skip-upstream-drift` skips only the expected “index advanced before skill marker” failure. Frontmatter, scenario, parser, registry, release-conformance, and quality checks still run. The default harness remains strict.
+
+`--index-preview` separately allows refreshed indices to differ from the recorded maintenance baseline. It still validates the recorded state's schema, complete fingerprints, versions, and checksum, and validates all refreshed indices. It never changes `last-sync.json` or claims source alignment. Use both flags for a deterministic refresh awaiting review; ordinary CI uses neither and requires the recorded baseline to match. After reviewing the affected tagged source, record the new baseline and run strict validation before merging.
 
 ### Reading a red drift report
 

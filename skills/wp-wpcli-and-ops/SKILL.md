@@ -29,6 +29,8 @@ Use this skill when the task involves WordPress operational work via WP-CLI, inc
 
 ## Procedure
 
+Resolve helper paths from this installed skill directory; replace example absolute paths with the real location and keep the working directory at the target project root.
+
 ### 0) Guardrails: confirm environment and blast radius
 
 WP-CLI commands can be destructive. Before running anything that writes:
@@ -44,7 +46,7 @@ Read:
 
 Run the inspector:
 
-- `node scripts/wpcli_inspect.mjs --path=<path> [--url=<url>]`
+- `node "/absolute/path/to/wp-wpcli-and-ops/scripts/wpcli_inspect.mjs" --path=<path> [--url=<url>]`
 
 If WP-CLI isn’t available, fall back to installing it via the project’s documented tooling (Composer, container, or system package), or ask for the expected execution environment.
 

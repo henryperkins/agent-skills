@@ -1,12 +1,18 @@
 {
   "source": "https://api.github.com/repos/WordPress/ai-provider-for-anthropic/releases?per_page=30",
   "latest": {
-    "tag": "1.0.4",
-    "name": "1.0.4",
-    "publishedAt": "2026-08-18T02:07:48Z",
-    "url": "https://github.com/WordPress/ai-provider-for-anthropic/releases/tag/1.0.4"
+    "tag": "1.0.5",
+    "name": "1.0.5",
+    "publishedAt": "2026-10-01T18:09:59Z",
+    "url": "https://github.com/WordPress/ai-provider-for-anthropic/releases/tag/1.0.5"
   },
   "recent": [
+    {
+      "tag": "1.0.5",
+      "name": "1.0.5",
+      "publishedAt": "2026-10-01T18:09:59Z",
+      "url": "https://github.com/WordPress/ai-provider-for-anthropic/releases/tag/1.0.5"
+    },
     {
       "tag": "1.0.4",
       "name": "1.0.4",

@@ -35,9 +35,15 @@ jobs:
             git diff --stat shared/references/
           fi
 
+      - uses: shivammathur/setup-php@v2
+        if: steps.changes.outputs.changed == 'true'
+        with:
+          php-version: "8.3"
+          coverage: none
+
       - name: Run complete non-drift validation
         if: steps.changes.outputs.changed == 'true'
-        run: node eval/harness/run.mjs --skip-upstream-drift
+        run: node eval/harness/run.mjs --skip-upstream-drift --index-preview
 
       - name: Generate registry source inventory
         if: steps.changes.outputs.changed == 'true'

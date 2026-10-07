@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Dry run (don't write files)"
+        description: "Preview only: upload reports without creating branches or pull requests"
         type: boolean
         default: false
       force:
@@ -51,6 +51,17 @@ jobs:
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
             git diff --stat shared/references/
           fi
+
+      - name: Build upstream drift preview
+        run: node shared/scripts/check-upstream-drift.mjs --format markdown --allow-drift > .github/state/upstream-drift-preview.md
+
+      - name: Upload upstream drift preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-drift-preview
+          path: .github/state/upstream-drift-preview.md
+          include-hidden-files: true
+          if-no-files-found: error
 
       # Publish the snapshot identity, not the snapshot. Consuming jobs rebuild
       # the same indices from the same upstreams and must land on this hash.
@@ -175,7 +186,7 @@ jobs:
 
   create-index-pr:
     needs: [refresh-indices, generate-updates]
-    if: always() && needs.refresh-indices.outputs.has_index_changes == 'true'
+    if: always() && needs.refresh-indices.result == 'success' && needs.refresh-indices.outputs.has_index_changes == 'true' && inputs.dry_run != true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -204,8 +215,13 @@ jobs:
             exit 1
           fi
 
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          coverage: none
+
       - name: Run non-drift validation
-        run: node eval/harness/run.mjs --skip-upstream-drift
+        run: node eval/harness/run.mjs --skip-upstream-drift --index-preview
 
       - name: Build drift report for reviewers
         run: node shared/scripts/check-upstream-drift.mjs --format markdown --allow-drift > .github/state/upstream-drift.md
@@ -238,6 +254,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Create Pull Request
+        if: inputs.dry_run != true
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.UPSTREAM_SYNC_TOKEN || secrets.GITHUB_TOKEN }}

@@ -275,7 +275,9 @@ rewrite `meta.public` during registration, and no filter priority is guaranteed 
 which is why the adapter resolves exposure from the stored ability *after* registration rather
 than during it (`McpAbilityExposure`, verified in v0.6.1). An explicit `mcp.public` is immune to
 another plugin's filter moving the ability across the MCP boundary. Exposure is still not
-authorization: `permission_callback` runs on every execution, but discovery is a real surface —
+authorization: the normal execution path calls `permission_callback` after input validation;
+invalid input and a `wp_pre_execute_ability` replacement return earlier. REST/MCP handlers
+also perform independent outer permission checks. Discovery is a real surface —
 see `mcp-exposure.md` for the default server's capability floors.
 
 Older guidance you may encounter in existing plugins — "`meta.public` is not a core key" or

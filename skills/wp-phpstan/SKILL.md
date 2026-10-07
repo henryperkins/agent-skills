@@ -24,9 +24,11 @@ Use this skill when working on PHPStan in a WordPress codebase, for example:
 
 ## Procedure
 
+Resolve helper paths from this installed skill directory; replace example absolute paths with the real location and keep the working directory at the target project root.
+
 ### 0) Discover PHPStan entrypoints (deterministic)
 1. Inspect PHPStan setup (config, baseline, scripts):
-   - `node scripts/phpstan_inspect.mjs`
+   - `node "/absolute/path/to/wp-phpstan/scripts/phpstan_inspect.mjs"`
 
 Prefer the repo’s existing `composer` script (e.g. `composer run phpstan`) when present.
 

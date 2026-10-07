@@ -1,0 +1,4 @@
+FAIL skills/wp-ai-plugin/references/guidelines-integration.md must not include: `true` if `wp_guideline` CPT is registered
+FAIL skills/wp-ai-plugin/references/guidelines-integration.md must not include: Gutenberg < 23.0, 23.6.0+, or experiment off
+FAIL skills/wp-ai-plugin/references/guidelines-integration.md must not include: The service handles `publish` and `draft`
+FAIL skills/wp-abilities-api/SKILL.md must not include: unreleased 1.4.0

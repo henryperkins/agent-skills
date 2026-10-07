@@ -1,0 +1,31 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: 3/7 maintenance preview cases failed:
+index preview accepts refreshed indices without advancing state: Recorded maintenance hash must match every committed upstream index
+preview rejects a corrupt recorded checksum: The input did not match the regular expression /checksum/. Input:
+
+'Error: Recorded maintenance hash must match every committed upstream index'
+
+preview rejects an incomplete recorded source state: The input did not match the regular expression /fingerprint/. Input:
+
+'Error: Recorded maintenance hash must match every committed upstream index'
+
+
+3 !== 0
+
+    at runMaintenancePreviewRegressions (file:///$CANDIDATE/eval/harness/maintenance-preview-regressions.mjs:52:10)
+    at file:///$CANDIDATE/eval/harness/maintenance-preview-regressions.mjs:57:31
+    at ModuleJob.run (node:internal/modules/esm/module_job:437:25)
+    at async node:internal/modules/esm/loader:639:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 3,
+  expected: 0,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.15.0

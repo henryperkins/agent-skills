@@ -26,12 +26,14 @@ Use this skill for block work such as:
 
 ## Procedure
 
+Resolve helper paths from this installed skill directory; replace example absolute paths with the real location and keep the working directory at the target project root.
+
 ### 0) Triage and locate blocks
 
 1. Run project triage if available:
-   - `node ../wp-project-triage/scripts/detect_wp_project.mjs` when the `wp-project-triage` skill is installed alongside; otherwise classify the project manually.
+   - Resolve the installed `wp-project-triage` directory to its absolute path and keep the process working directory at the target project root: `node "/absolute/path/to/wp-project-triage/scripts/detect_wp_project.mjs"`. If unavailable, classify manually.
 2. List blocks (deterministic scan):
-   - `node scripts/list_blocks.mjs`
+   - `node "/absolute/path/to/wp-block-development/scripts/list_blocks.mjs"`
 3. Identify the block root (directory containing `block.json`) you’re changing.
 
 If this repo is a full site (`wp-content/` present), be explicit about *which* plugin/theme contains the block.

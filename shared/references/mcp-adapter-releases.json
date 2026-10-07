@@ -1,12 +1,18 @@
 {
   "source": "https://api.github.com/repos/WordPress/mcp-adapter/releases?per_page=30",
   "latest": {
-    "tag": "v0.6.1",
-    "name": "v0.6.1",
-    "publishedAt": "2026-08-13T05:23:25Z",
-    "url": "https://github.com/WordPress/mcp-adapter/releases/tag/v0.6.1"
+    "tag": "v0.7.0",
+    "name": "v0.7.0",
+    "publishedAt": "2026-10-02T14:39:48Z",
+    "url": "https://github.com/WordPress/mcp-adapter/releases/tag/v0.7.0"
   },
   "recent": [
+    {
+      "tag": "v0.7.0",
+      "name": "v0.7.0",
+      "publishedAt": "2026-10-02T14:39:48Z",
+      "url": "https://github.com/WordPress/mcp-adapter/releases/tag/v0.7.0"
+    },
     {
       "tag": "v0.6.1",
       "name": "v0.6.1",

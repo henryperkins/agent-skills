@@ -30,10 +30,12 @@ If the task is to write a *provider plugin* (e.g., adding a new AI service), rou
 
 ## Procedure
 
+Resolve helper paths from this installed skill directory; replace example absolute paths with the real location and keep the working directory at the target project root.
+
 ### 0) Triage and confirm WP 7.0+
 
-1. Run project triage if available (`node ../wp-project-triage/scripts/detect_wp_project.mjs` when the `wp-project-triage` skill is installed alongside); otherwise classify the project manually.
-2. Detect AI Client availability: `node scripts/detect_ai_client.mjs`
+1. Resolve the installed `wp-project-triage` skill directory and run `node "/absolute/path/to/wp-project-triage/scripts/detect_wp_project.mjs"` while keeping the working directory at the target project root; otherwise classify the project manually.
+2. Detect AI Client availability: `node "/absolute/path/to/wp-ai-client/scripts/detect_ai_client.mjs"`
 
 If the project's `Requires at least` is `< 7.0`, decide: bump the requirement (recommended), depend on the deprecated WP AI Client plugin for its remaining compatibility surface, or ship a prefixed standalone SDK. Read `references/prompt-builder.md#migration` before choosing.
 
@@ -237,13 +239,13 @@ The filter fires during builder construction. Scope or remove it when the timeou
 
 ## Bundled versus standalone PHP AI Client
 
-WordPress 7.0 and 7.1 bundle PHP AI Client 1.3.1 — verified through 7.0.6 and 7.1.2 (`AiClient::VERSION` in `src/wp-includes/php-ai-client/src/AiClient.php`; check it on the site itself). Composer's standalone latest is PHP AI Client 1.5.0. Treat the Core-bundled version as the compatibility boundary: an API added only in the standalone package cannot be assumed available through Core until WordPress updates its bundled dependency.
+WordPress 7.0 and 7.1 bundle PHP AI Client 1.3.1 — verified through 7.0.6 and 7.1.3 (`AiClient::VERSION` in `src/wp-includes/php-ai-client/src/AiClient.php`; check it on the site itself). Composer's standalone latest is PHP AI Client 1.5.0. Treat the Core-bundled version as the compatibility boundary: an API added only in the standalone package cannot be assumed available through Core until WordPress updates its bundled dependency.
 
 **What the standalone package added, and therefore what Core does not yet expose:** embedding generation. Core's bundled `src/Builders/` holds only `MessageBuilder` and `PromptBuilder`. Embeddings use a dedicated `EmbeddingBuilder` (`withInput()`, `usingDimensions()`, `generateEmbedding()`, `generateEmbeddings()`, `generateEmbeddingResult()`, `isSupported()`) plus the static `AiClient::generateEmbedding()`, `AiClient::generateEmbeddings()`, and `AiClient::generateEmbeddingResult()` entry points. It returns concrete `Embedding` / `EmbeddingResult` DTOs and dispatches `BeforeGenerateEmbeddingEvent` / `AfterGenerateEmbeddingEvent` when a PSR event dispatcher is configured. `EmbeddingList` is a PHPStan alias for `list<float|int>`, not a value-object class. Inputs are message parts — strings, `File`s, or parts — not conversations, matching how providers treat embeddings as a separate API. Upstream says embedding generation lands in **Core 7.2** ([wordpress-develop#12530](https://github.com/WordPress/wordpress-develop/pull/12530)); that PR is still open and was written against the 1.4 builder API, so expect its surface to change before it merges.
 
 **1.5.0 made the model mandatory.** The `EmbeddingBuilder` no longer resolves a model — vectors are only comparable within one model, so an automatic choice could silently invalidate a stored corpus. Name the model with `usingProviderModel( $provider_id, $model_id )` or `usingModel( $instance )`; omitting it throws, including from `isSupported()`. `usingModelPreference()` and `usingProvider()` were **removed from this builder** (they remain on the prompt builder), and the static entry points now take `$model` as a required second argument ahead of an optional `ModelConfig`.
 
-If a task calls for embeddings (semantic search, clustering, similarity), you cannot reach them through `wp_ai_client_prompt()` on any 7.0 or 7.1 release. Do not load an unprefixed standalone package beside Core's 1.3.1 copy; mixing those SDK versions and their scoped/unscoped PSR namespaces is not a supported override path. Wait for Core to bump, isolate/prefix the newer dependency, or move embedding work to a separate service. The canonical AI plugin is not a shortcut either: `WordPress/ai` 1.3.0 ships `WordPress\AI\generate_embeddings()` but leaves its vendored SDK overlay deliberately unregistered (`ai.php:85`), so the helper returns `WP_Error( 'ai_embeddings_unsupported' )` on a stock install.
+If a task calls for embeddings (semantic search, clustering, similarity), you cannot reach them through `wp_ai_client_prompt()` on any 7.0 or 7.1 release. Do not load an unprefixed standalone package beside Core's 1.3.1 copy; mixing those SDK versions and their scoped/unscoped PSR namespaces is not a supported override path. Wait for Core to bump, isolate/prefix the newer dependency, or move embedding work to a separate service. The canonical AI plugin is a version-specific alternative: 1.3.0 leaves its overlay unregistered and returns `ai_embeddings_unsupported` on stock Core, while 1.4.0 registers a conditional overlay and requires an explicit embedding `model` plus `provider` for a model ID. Gate on `WordPress\AI\supports_embedding_generation()` and use that plugin's helper; do not load a competing unprefixed standalone SDK alongside Core. See `wp-ai-plugin` for its current helper contract.
 
 In a standalone PHP application where Core is not loading the SDK, the entry point is `AiClient::input()`:
 

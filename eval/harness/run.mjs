@@ -5,6 +5,10 @@ import { runSkillQuality, validateSkillBounds } from "./skill-quality.mjs";
 import { runReleaseConformance } from "./release-conformance.mjs";
 import { CORE_AI_UPSTREAMS } from "../../shared/scripts/core-ai-upstreams.mjs";
 import { getBlockingUpstreamFailures } from "../../shared/scripts/upstream-drift-lib.mjs";
+import { runDetectorRegressions } from "./detector-regressions.mjs";
+import { runWorkflowRegressions } from "./workflow-regressions.mjs";
+import { runAbilityExecutionRegression } from "./ability-execution.mjs";
+import { runMaintenancePreviewRegressions } from "./maintenance-preview-regressions.mjs";
 
 function readUtf8(filePath) {
   return fs.readFileSync(filePath, "utf8");
@@ -75,9 +79,9 @@ function validatePortableTriageCommand({ repoRoot, skillPath, expectedName, mark
   const nonPortableCommands = [
     "`node scripts/detect_wp_project.mjs`",
     "`node skills/wp-project-triage/scripts/detect_wp_project.mjs`",
+    "`node ../wp-project-triage/scripts/detect_wp_project.mjs`",
   ];
   if (
-    expectedName !== "wp-project-triage" &&
     nonPortableCommands.some((command) => markdown.includes(command))
   ) {
     throw new Error(
@@ -100,9 +104,10 @@ function runJsonCommand(command, args, cwd) {
 }
 
 function main(args = process.argv.slice(2)) {
-  const unknownArgs = args.filter((argument) => argument !== "--skip-upstream-drift");
+  const unknownArgs = args.filter((argument) => !["--skip-upstream-drift", "--index-preview"].includes(argument));
   assert(unknownArgs.length === 0, `Unknown harness argument(s): ${unknownArgs.join(", ")}`);
   const skipDrift = args.includes("--skip-upstream-drift");
+  const indexPreview = args.includes("--index-preview");
   const repoRoot = process.cwd();
   const upstreamIndexLib = path.join(
     repoRoot,
@@ -114,7 +119,12 @@ function main(args = process.argv.slice(2)) {
     fs.existsSync(upstreamIndexLib),
     "Missing shared/scripts/upstream-index-lib.mjs"
   );
-  runReleaseConformance(repoRoot);
+  runReleaseConformance(repoRoot, { indexPreview });
+  process.stdout.write(`OK: ${runMaintenancePreviewRegressions(repoRoot)} maintenance preview regressions passed.\n`);
+  const detectorChecks = runDetectorRegressions(repoRoot);
+  process.stdout.write(`OK: ${detectorChecks} detector and installed-launch regressions passed.\n`);
+  process.stdout.write(`OK: ${runWorkflowRegressions(repoRoot)} workflow write-gate regressions passed.\n`);
+  runAbilityExecutionRegression(repoRoot);
 
   const skillDirs = listSkillDirs(repoRoot);
   assert(skillDirs.length > 0, "No skills found under ./skills");

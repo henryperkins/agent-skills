@@ -67,10 +67,12 @@ function findFilesRecursive(repoRoot, predicate, { maxFiles = 6000, maxDepth = 1
   return { results, truncated: false };
 }
 
-function summarizeTheme(repoRoot, themeJsonPath) {
+function summarizeTheme(repoRoot, rootPath) {
+  const themeJsonPath = path.join(rootPath, "theme.json");
   const json = readJsonSafe(themeJsonPath);
-  const rel = path.relative(repoRoot, themeJsonPath);
-  const rootDir = path.dirname(rel);
+  const hasThemeJson = statSafe(themeJsonPath)?.isFile() ?? false;
+  const rel = hasThemeJson ? path.relative(repoRoot, themeJsonPath).split(path.sep).join("/") : null;
+  const rootDir = path.relative(repoRoot, rootPath).split(path.sep).join("/") || ".";
 
   const templatesDir = path.join(repoRoot, rootDir, "templates");
   const partsDir = path.join(repoRoot, rootDir, "parts");
@@ -79,6 +81,25 @@ function summarizeTheme(repoRoot, themeJsonPath) {
 
   const hasTemplates = existsDir(templatesDir);
   const hasParts = existsDir(partsDir);
+  let parentRoot = null;
+  try {
+    const header = fs.readFileSync(path.join(rootPath, "style.css"), "utf8").slice(0, 8192);
+    const parentName = header.match(/^[\s*#]*Template\s*:\s*([^\r\n]+)/im)?.[1]?.trim();
+    if (parentName) {
+      const candidate = path.resolve(path.dirname(rootPath), parentName);
+      const relative = path.relative(repoRoot, candidate);
+      if (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)) {
+        const parentHeader = fs.readFileSync(path.join(candidate, "style.css"), "utf8").slice(0, 8192);
+        if (/^[\s*#]*Theme Name\s*:\s*\S/im.test(parentHeader)) parentRoot = candidate;
+      }
+    }
+  } catch { /* Parent files outside the scan or missing from disk remain unverified. */ }
+  const indexTemplate = ["templates/index.html", "block-templates/index.html"].find((candidate) => {
+    const ownTemplate = path.join(rootPath, candidate);
+    const template = statSafe(ownTemplate) || parentRoot === null ? ownTemplate : path.join(parentRoot, candidate);
+    if (!statSafe(template)?.isFile()) return false;
+    try { fs.accessSync(template, fs.constants.R_OK); return true; } catch { return false; }
+  });
 
   return {
     themeRoot: rootDir,
@@ -88,20 +109,22 @@ function summarizeTheme(repoRoot, themeJsonPath) {
     hasParts,
     hasPatterns: existsDir(patternsDir),
     hasStyles: existsDir(stylesDir),
-    isBlockTheme: hasTemplates || hasParts,
+    isBlockTheme: Boolean(indexTemplate),
+    indexTemplate: indexTemplate ?? null,
   };
 }
 
 function usage() {
   process.stdout.write(
     [
-      "detect_block_themes — scan the current working directory (repo root) for theme.json files.",
+      "detect_block_themes — inventory theme roots in the current working directory (repo root).",
       "",
       "Usage:",
       "  node scripts/detect_block_themes.mjs [--help]",
       "",
       "Behavior:",
-      "  - Recursively scans the current working directory for block theme roots (theme.json).",
+      "  - Finds Theme Name headers in style.css and theme.json roots, including classic themes.",
+      "  - Classifies block themes using a readable templates/index.html or block-templates/index.html.",
       "  - Prints a structured JSON report to stdout; diagnostics (if any) go to stderr.",
       "  - Read-only and non-interactive. Exit code 0 on success.",
       "",
@@ -119,15 +142,24 @@ function main() {
   }
   const repoRoot = process.cwd();
 
-  const { results: themeJsonFiles, truncated } = findFilesRecursive(repoRoot, (p) => path.basename(p) === "theme.json", {
+  const { results: candidates, truncated } = findFilesRecursive(repoRoot, (p) => ["theme.json", "style.css"].includes(path.basename(p)), {
     maxFiles: 8000,
     maxDepth: 12,
   });
 
-  const themes = themeJsonFiles.map((p) => summarizeTheme(repoRoot, p));
+  const roots = new Set();
+  for (const candidate of candidates) {
+    if (path.basename(candidate) === "style.css") {
+      let header;
+      try { header = fs.readFileSync(candidate, "utf8").slice(0, 8192); } catch { continue; }
+      if (!/^[\s*#]*Theme Name\s*:\s*\S/im.test(header)) continue;
+    }
+    roots.add(path.dirname(candidate));
+  }
+  const themes = [...roots].map((root) => summarizeTheme(repoRoot, root));
 
   const report = {
-    tool: { name: "detect_block_themes", version: "0.1.0" },
+    tool: { name: "detect_block_themes", version: "0.2.0" },
     repoRoot,
     truncated,
     count: themes.length,

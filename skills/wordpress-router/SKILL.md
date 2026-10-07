@@ -22,8 +22,10 @@ Use this skill at the start of most WordPress tasks to:
 
 ## Procedure
 
+Resolve helper paths from this installed skill directory; replace example absolute paths with the real location and keep the working directory at the target project root.
+
 1. Run the project triage script if available:
-   - `node ../wp-project-triage/scripts/detect_wp_project.mjs` when the `wp-project-triage` skill is installed alongside; otherwise classify the project manually.
+   - Resolve the installed `wp-project-triage` directory to its absolute path and keep the process working directory at the target project root: `node "/absolute/path/to/wp-project-triage/scripts/detect_wp_project.mjs"`. If unavailable, classify manually.
 2. Read the triage output and classify:
    - primary project kind(s),
    - tooling available (PHP/Composer, Node, @wordpress/scripts),

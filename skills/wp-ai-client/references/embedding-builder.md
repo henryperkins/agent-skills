@@ -26,7 +26,13 @@ Carried over from 1.4.0 and now wrong:
 - In a standalone PHP application where WordPress Core is not loading the SDK, require the tested `wordpress/php-ai-client:1.5.0` release — this API already broke once between minors (1.4 → 1.5) — and register a configured provider before using `AiClient::input()`. The SDK ships neither piece: it requires only PSR interfaces and `php-http/discovery`, so also install a PSR-18/HTTPlug client that discovery can find, and a provider package (for example `wordpress/ai-provider-for-openai`) that you `registerProvider()` explicitly.
 - For a future Core build, verify `AiClient::VERSION`, `class_exists( \WordPress\AiClient\Builders\EmbeddingBuilder::class )`, the Core wrapper surface, and provider availability independently. A standalone release does not prove Core availability.
 
-### The canonical AI plugin does not close the gap yet
+### The canonical AI plugin: active overlay in 1.4.0
+
+In [AI plugin 1.4.0](https://github.com/WordPress/ai/tree/1.4.0), the conditional `SDK_Overlay::register()` is active. It supplies embedding classes missing from stock Core; an incompatible SDK class already loaded by another component can prevent that overlay from activating. Feature-detect `WordPress\AI\supports_embedding_generation()` before using this plugin-specific path.
+
+`WordPress\AI\generate_embeddings( $input, $args )` requires `model`; when it is a model ID, `provider` is also required. Missing values produce `ai_embeddings_missing_model` and `ai_embeddings_missing_provider`. The helper uses `usingModel()` or `usingProviderModel()`, and no longer uses model preference. See `../../wp-ai-plugin/references/hooks-and-filters.md` for the plugin contract. This does not add an embedding method to Core's `WP_AI_Client_Prompt_Builder`.
+
+### Legacy 1.3.0: staged but inactive
 
 `WordPress/ai` 1.3.0 ships `WordPress\AI\supports_embedding_generation()` and `WordPress\AI\generate_embeddings( $input, $args )` (`includes/helpers.php`), plus a vendored 1.4-era `EmbeddingBuilder` under `includes/Vendor/AiClient/`. The changelog advertises embeddings. **The released code does not load them:** `ai.php:85` has `SDK_Overlay::register()` commented out, with an inline note that upstream embedding changes are still landing and "we don't want anyone to start building on top of things."
 
@@ -35,7 +41,7 @@ Consequences to check before recommending this path:
 - `supports_embedding_generation()` is `class_exists( AiClient::class ) && class_exists( EmbeddingBuilder::class )`. With the overlay disabled and Core on 1.3.1, it returns `false` and `generate_embeddings()` returns `WP_Error( 'ai_embeddings_unsupported' )`.
 - The wrapper calls `usingProvider()` and `usingModelPreference()` — the methods 1.5.0 removed from `EmbeddingBuilder`. It is written against the vendored 1.4 overlay, not against standalone 1.5.
 
-Treat AI plugin embeddings as staged-but-inactive, and do not load a second unprefixed SDK to work around that boundary. Re-read `ai.php` and the vendor README at the installed version rather than trusting the changelog; see `../../wp-ai-plugin/references/hooks-and-filters.md` for the plugin-specific contract.
+Treat 1.3.0's embeddings as staged but inactive. Do not load a second unprefixed SDK to work around that boundary. Re-read `ai.php` and the vendor README at the installed version rather than trusting the changelog.
 
 ## Entry point and builder
 
@@ -160,4 +166,5 @@ Configure a PSR event dispatcher with `AiClient::setEventDispatcher()` before co
 
 - `WordPress/php-ai-client` 1.5.0: `README.md`, `src/AiClient.php`, `src/Builders/EmbeddingBuilder.php`, `src/Builders/Traits/ModelConfigurationTrait.php`, `src/Providers/ModelResolver.php`, `src/Providers/Models/DTO/ModelRequirements.php`, `src/Events/BeforeGenerateEmbeddingEvent.php`, `src/Events/AfterGenerateEmbeddingEvent.php`, `src/Results/DTO/Embedding.php`, `src/Results/DTO/EmbeddingResult.php`
 - `WordPress/ai` 1.3.0: `ai.php`, `includes/helpers.php`, `includes/Vendor/AiClient/README.md`
+- `WordPress/ai` 1.4.0: `ai.php`, `includes/SDK_Overlay.php`, `includes/helpers.php`
 - WordPress 7.1: `src/wp-includes/php-ai-client/src/AiClient.php`

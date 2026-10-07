@@ -11,7 +11,7 @@ license: GPL-2.0-or-later
 
 This skill works best with the **WordPress Design System MCP server** (`@wordpress/design-system-mcp`) installed. It provides tools for component documentation and design tokens.
 
-The repository's `.mcp.json` configures the server for plugin clients that support local stdio servers. The configuration:
+The source repository's `.mcp.json` configures the server for plugin clients that support local stdio servers. The skills-only OpenAI distribution intentionally omits that configuration; installing the skill there does not install or connect the MCP server. Discover the tools actually available in the current host before choosing a source. The repository configuration:
 
 - runs a package whose `engines` field requires Node.js 20.10.0 or newer;
 - disables package lifecycle scripts; and
@@ -68,9 +68,8 @@ Before working on any WPDS-related task, follow the source decision above and re
 
 ## Verification
 
-- Every component used was returned by `get_components`; no invented or deprecated components.
-- Every component API was checked with `get_component_details`.
-- Design values reference tokens returned by `get_design_tokens` rather than hard-coded colors, spacing, or font sizes.
+- With MCP available: components, APIs, and tokens were checked with `get_components`, `get_component_details`, and `get_design_tokens`.
+- In fallback mode: every component API and design value has cited official documentation or matching installed package source/type evidence; MCP-only records remain unverified.
 - Accessibility affordances (labels, roles, keyboard handling) follow each component's documented guidance.
 - If the local project provides lint scripts, they pass on the proposed code.
 

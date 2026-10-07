@@ -60,15 +60,15 @@ Route by intent even if repo kind is broad (like `wp-site`):
 - **WP-CLI / wp-cli.yml / commands**
   - Route → `wp-wpcli-and-ops`.
 - **Build tooling / @wordpress/scripts / webpack / Vite / npm scripts**
-  - Route → `wp-build-tooling` (planned).
+  - Use `wp-project-triage` to inspect existing package scripts, then `wp-block-development` and its `references/tooling-and-testing.md` for WordPress block builds. Preserve the project's configured build system for non-block work.
 - **Testing / PHPUnit / Playwright**
-  - Route → `wp-testing` (planned). To run PHPUnit inside a wp-env environment, route → `wp-env`.
+  - Use `wp-project-triage` for declared/installed tooling and existing test commands; use `wp-env` to run PHPUnit or E2E tests in the project's WordPress environment. For block-specific checks, read `wp-block-development`'s `references/tooling-and-testing.md`.
 - **PHPStan / static analysis / phpstan.neon / phpstan-baseline.neon**
   - Route → `wp-phpstan`.
 - **Performance / caching / query profiling / editor slowness**
   - Route → `wp-performance`.
 - **Security / nonces / capabilities / sanitization/escaping / uploads**
-  - Route → `wp-security` (planned).
+  - Route → `wp-plugin-development` and its `references/security.md`; for endpoint authorization, use `wp-rest-api` and its `references/authentication.md`.
 
 ## Step 3: guardrails checklist (always)
 

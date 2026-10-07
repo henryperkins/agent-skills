@@ -180,8 +180,7 @@ alongside `public => true`), never drop it.
 ### Exposure is not authorization
 
 `public` and `show_in_rest` decide **whether a client can see and address the ability**. They
-decide nothing about **who may run it**. Every invocation still runs `permission_callback`,
-through REST, PHP, WP-CLI, and MCP alike.
+decide nothing about **who may run it**. The normal execution path runs `permission_callback` after input validation. On WordPress 7.1+, a `wp_pre_execute_ability` replacement skips those inner checks; its filter must authorize the caller and validate data itself. REST and MCP handlers perform separate outer permission checks. Direct PHP and WP-CLI callers must account for the inner short-circuit behavior themselves.
 
 Two failure shapes follow, and coding agents produce both:
 

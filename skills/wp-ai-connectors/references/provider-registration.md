@@ -2,19 +2,21 @@
 
 The end-to-end shape of a WordPress AI provider plugin in WP 7.0+.
 
-Verified release baselines: `ai-provider-for-anthropic` v1.0.4, Google 1.2.0, and OpenAI 1.2.0.
+Verified release baselines: `ai-provider-for-anthropic` v1.0.5, Google 1.2.0, and OpenAI 1.2.0.
+
+Anthropic 1.0.5 restores provider-availability compatibility with Core's PHP AI Client 1.3.1 via `ListModelsApiBasedProviderAvailability`. Its text model preserves thinking-block signatures across conversation turns and raises `TokenLimitReachedException` on `max_tokens`; preserve message parts and handle that error instead of treating truncated generation as success. These behaviors are verified in the [1.0.5 source](https://github.com/WordPress/ai-provider-for-anthropic/tree/1.0.5).
 
 ## Two registries, one flow
 
 There are two registries involved. You only register against the first one:
 
 1. **`AiClient::defaultRegistry()`** — the PHP AI Client's provider registry (lives in the `wordpress/php-ai-client` package, bundled into Core). This is where your provider declares itself.
-2. **`WP_Connector_Registry`** — Core's connector registry, populated automatically by the priority-15 discovery callback (`_wp_connectors_init()` in Core or `_gutenberg_connectors_init()` with Gutenberg) reading from registry #1. You only touch this if you need to *override* metadata on an existing connector via the `wp_connectors_init` action.
+2. **`WP_Connector_Registry`** — Core's connector registry, populated automatically by the priority-15 discovery callback (`_wp_connectors_init()` in Core or `_gutenberg_connectors_init()` with Gutenberg) reading from registry #1 (current Gutenberg 24.1.0 uses Core; older Gutenberg 23.6–24.0 supplied `_gutenberg_connectors_init()`). You only touch this if you need to *override* metadata on an existing connector via the `wp_connectors_init` action.
 
 The auto-discovery flow:
 
 ```
-init priority 15 → active Core/Gutenberg connector-discovery callback runs:
+init priority 15 → Core `_wp_connectors_init()` runs (Gutenberg 24.1.0 no longer replaces it):
   1. Creates the WP_Connector_Registry singleton.
   2. If wp_supports_ai(): registers the built-in AI providers (Anthropic, Google,
      OpenAI) with hardcoded defaults, then iterates the providers registered in
@@ -58,7 +60,7 @@ array(
 | `none` | 7.0 | No authentication. Registers fine, but Settings → Connectors renders no card for it — see below. |
 | `application_password` | **7.1** | A `username` + `password` pair. Env var / constant hold one `username:password` string; the DB setting is an `object`. Auto-generated `setting_name` is `connectors_{$type}_{$id}_application_password`. |
 
-`application_password` requires WordPress 7.1. Gutenberg 23.6+ ships a guarded compatibility copy under `lib/compat/wordpress-7.0/`, but WordPress 7.0 loads its own registry before plugins and that registry rejects the method; Gutenberg cannot replace it. The copy can supply a registry on WordPress 6.9 only when an SDK-providing plugin is present. The method is aimed at non-AI connector types such as `content_source` (a remote WordPress), not at `ai_provider`. Unlike `api_key`, the values are masked in REST but never validated against the remote.
+`application_password` requires WordPress 7.1. Gutenberg 23.6–24.0 ships a guarded compatibility copy under `lib/compat/wordpress-7.0/`, but WordPress 7.0 loads its own registry before plugins and that registry rejects the method; Gutenberg cannot replace it. The copy can supply a registry on WordPress 6.9 only when an SDK-providing plugin is present. The method is aimed at non-AI connector types such as `content_source` (a remote WordPress), not at `ai_provider`. Unlike `api_key`, the values are masked in REST but never validated against the remote.
 
 Get the provenance right, because it is easy to over-claim: **the registry class itself is `@since 7.0.0`** — every `@since` tag in `src/wp-includes/class-wp-connector-registry.php` reads 7.0.0, and the class is not new in 7.1. What 7.1 added is `application_password` support, tagged `@since 7.1.0` on the implementing functions in `src/wp-includes/connectors.php` (`wp_connectors_parse_application_password_credentials()`, `wp_connectors_get_application_password_credentials()`, `wp_connectors_sanitize_application_password_credentials()`). On the 7.0 branch the string `application_password` does not appear in either file.
 
@@ -173,7 +175,7 @@ What each part does:
 
 ## Hook timing — what works and what doesn't
 
-The Connectors API runs discovery on `init` priority 15: Core hooks `_wp_connectors_init()`, while current Gutenberg replaces it with `_gutenberg_connectors_init()`. Your provider must be registered before the active callback.
+The Connectors API runs discovery on `init` priority 15: Core hooks `_wp_connectors_init()`, which Gutenberg 24.1.0 retains; Gutenberg 23.6–24.0 replaced it with `_gutenberg_connectors_init()`. Your provider must be registered before the active callback.
 
 | Hook | Priority | Works? |
 | --- | --- | --- |

@@ -25,14 +25,18 @@ Use this skill for block theme work such as:
 
 ## Procedure
 
+Resolve helper paths from this installed skill directory; replace example absolute paths with the real location and keep the working directory at the target project root.
+
 ### 0) Triage and locate block theme roots
 
 1. Run project triage if available:
-   - `node ../wp-project-triage/scripts/detect_wp_project.mjs` when the `wp-project-triage` skill is installed alongside; otherwise classify the project manually.
+   - Resolve the installed `wp-project-triage` directory to its absolute path and keep the process working directory at the target project root: `node "/absolute/path/to/wp-project-triage/scripts/detect_wp_project.mjs"`. If unavailable, classify manually.
 2. Detect theme roots + key folders:
-   - `node scripts/detect_block_themes.mjs`
+   - `node "/absolute/path/to/wp-block-themes/scripts/detect_block_themes.mjs"`
 
 If multiple themes exist, pick one and scope all changes to that theme root.
+
+A readable `templates/index.html` or legacy `block-templates/index.html` establishes block-theme classification; `theme.json` is optional. In-scope parent themes may supply the index. Filesystem checks cannot evaluate runtime path filters or parents outside the scanned root.
 
 ### 1) Create a new block theme (if needed)
 

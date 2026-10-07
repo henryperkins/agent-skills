@@ -1,0 +1,104 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: 14/15 detector regressions failed:
+templates/index.html: triage without theme.json: Expected values to be strictly equal:
++ actual - expected
+
++ 'wp-theme'
+- 'wp-block-theme'
+      ^
+
+templates/index.html: inventory without theme.json: Expected values to be strictly equal:
+
+0 !== 1
+
+block-templates/index.html: triage without theme.json: Expected values to be strictly equal:
++ actual - expected
+
++ 'wp-theme'
+- 'wp-block-theme'
+      ^
+
+block-templates/index.html: inventory without theme.json: Expected values to be strictly equal:
+
+0 !== 1
+
+classic with parts and theme.json stays classic: Expected values to be strictly equal:
++ actual - expected
+
++ 'wp-block-theme'
+- 'wp-theme'
+      ^
+
+nested theme uses its own root: Expected values to be strictly equal:
++ actual - expected
+
++ 'wp-theme'
+- 'wp-block-theme'
+      ^
+
+wrapper templates do not relabel nested classic theme: Expected values to be strictly equal:
++ actual - expected
+
++ 'wp-block-theme'
+- 'wp-theme'
+      ^
+
+PHPUnit in require is declared but not installed: Expected values to be strictly equal:
+
+false !== true
+
+PHPUnit in require-dev is declared but not installed: Expected values to be strictly equal:
+
+false !== true
+
+installed PHPUnit executable is reported separately: Expected values to be strictly equal:
++ actual - expected
+
++ undefined
+- true
+
+a non-Composer phpunit key is not a PHPUnit dependency: Expected values to be strictly equal:
+
+true !== false
+
+installed wp-project-triage scans the target cwd with spaces: Expected values to be strictly equal:
++ actual - expected
+
++ 'wp-theme'
+- 'wp-block-theme'
+      ^
+
+installed wp-block-themes scans the target cwd with spaces: Expected values to be strictly equal:
++ actual - expected
+
++ undefined
+- true
+
+AI detector reports portable feature paths: Expected values to be strictly deep-equal:
++ actual - expected
+
+  [
++   'assets\\sdk.php'
+-   'assets/sdk.php'
+  ]
+
+
+14 !== 0
+
+    at runDetectorRegressions (file:///$CANDIDATE/eval/harness/detector-regressions.mjs:116:10)
+    at file:///$CANDIDATE/eval/harness/detector-regressions.mjs:121:18
+    at ModuleJob.run (node:internal/modules/esm/module_job:437:25)
+    at async node:internal/modules/esm/loader:639:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 14,
+  expected: 0,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.15.0
