@@ -24,6 +24,7 @@ Agent Skills solve this by giving AI assistants **expert-level WordPress knowled
 | **wp-project-triage** | Detects project type, tooling, and versions automatically |
 | **wp-block-development** | Gutenberg blocks: `block.json`, attributes, rendering, deprecations |
 | **wp-block-themes** | Block themes: `theme.json`, templates, patterns, style variations |
+| **wp-patterns** | Block patterns: registration, markup, design tokens, accessibility, and i18n |
 | **wp-plugin-development** | Plugin architecture, hooks, settings API, security |
 | **wp-rest-api** | REST API routes/endpoints, schema, auth, and response shaping |
 | **wp-interactivity-api** | Frontend interactivity with `data-wp-*` directives and stores |
@@ -74,23 +75,74 @@ You can use both at the same time. When a skill exists in both scopes, the proje
 
 ## Quick Start
 
-The fastest way to install a skill is with a single command:
+### Install via CLI harness marketplace controls
+
+Most CLI harnesses can add this repository directly as a **plugin marketplace** — no cloning, no build step. For this fork, enter `henryperkins/agent-skills` (or `WordPress/agent-skills` for the upstream repository):
+
+#### Claude Code
 
 ```bash
-npx skills add WordPress/agent-skills --skill wp-plugin-development
+/plugin marketplace add henryperkins/agent-skills
+/plugin install wordpress-skills@wordpress-skills
+```
+
+Or from the shell:
+
+```bash
+claude plugin marketplace add henryperkins/agent-skills
+claude plugin install wordpress-skills@wordpress-skills
+```
+
+All skills are installed and namespaced as `/wordpress-skills:<skill-name>` (e.g. `/wordpress-skills:wp-block-development`), and Claude automatically invokes them when relevant. Keep them up to date with `/plugin marketplace update wordpress-skills`, or remove with `/plugin uninstall wordpress-skills@wordpress-skills`.
+
+#### Codex CLI
+
+```bash
+codex plugin marketplace add henryperkins/agent-skills
+codex plugin add wordpress-skills@wordpress-skills
+```
+
+#### GitHub Copilot CLI, Grok Build CLI, and Factory Droid
+
+```bash
+# GitHub Copilot CLI
+copilot plugin marketplace add henryperkins/agent-skills
+copilot plugin install wordpress-skills@wordpress-skills
+
+# Grok Build CLI
+grok plugin marketplace add henryperkins/agent-skills
+grok plugin install wordpress-skills@wordpress-skills
+
+# Factory Droid
+droid plugin marketplace add henryperkins/agent-skills
+droid plugin install wordpress-skills@wordpress-skills
+```
+
+#### Cursor
+
+Open **Customize → Plugins → From GitHub Repository** and enter `https://github.com/henryperkins/agent-skills` (or `https://github.com/WordPress/agent-skills`).
+
+### Install with the `skills` CLI
+
+The fastest way to install individual skills across harnesses is with `npx skills`:
+
+```bash
+npx skills add henryperkins/agent-skills --skill wp-plugin-development
 ```
 
 To see all available skills:
 
 ```bash
-npx skills add WordPress/agent-skills --list
+npx skills add henryperkins/agent-skills --list
 ```
 
 To install multiple skills at once:
 
 ```bash
-npx skills add WordPress/agent-skills --skill wp-plugin-development wp-abilities-api wp-playground
+npx skills add henryperkins/agent-skills --skill wp-plugin-development wp-abilities-api wp-playground
 ```
+
+*(Using the upstream repository directly? Substitute `WordPress/agent-skills` for `henryperkins/agent-skills`.)*
 
 #### Choosing a scope
 
@@ -99,14 +151,16 @@ npx skills add WordPress/agent-skills --skill wp-plugin-development wp-abilities
 Installing **globally** makes the skill available to your user (across **all** your projects). Adding the `-g` / `--global` flag, it will install your skill with global scope:
 
 ```bash
-npx skills add WordPress/agent-skills --skill wp-plugin-development --global
+npx skills add henryperkins/agent-skills --skill wp-plugin-development --global
 ```
 
-### Install globally for Claude Code
+### Install globally for Claude Code (manual, unnamespaced)
+
+Prefer the [marketplace method](#install-via-cli-harness-marketplace-controls) above for a zero-clone install. If you'd rather vendor plain, unnamespaced skills (invoked as `/wp-block-development` instead of `/wordpress-skills:wp-block-development`), install them as files instead:
 
 ```bash
 # Clone agent-skills
-git clone https://github.com/WordPress/agent-skills.git
+git clone https://github.com/henryperkins/agent-skills.git
 cd agent-skills
 
 # Build the distribution
@@ -125,7 +179,7 @@ This installs skills to `~/.claude/skills/` where Claude Code will automatically
 
 ```bash
 # Clone agent-skills
-git clone https://github.com/WordPress/agent-skills.git
+git clone https://github.com/henryperkins/agent-skills.git
 cd agent-skills
 
 # Build the distribution

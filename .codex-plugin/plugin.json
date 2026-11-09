@@ -1,0 +1,50 @@
+{
+  "name": "wordpress-skills",
+  "version": "1.0.0",
+  "description": "Expert WordPress development knowledge for AI coding assistants: Gutenberg blocks, block themes, patterns, plugin architecture, REST API, Interactivity API, Abilities API, WP-CLI, performance, PHPStan, Playground, Design System, Blueprints, and wp-env.",
+  "author": {
+    "name": "WordPress Contributors",
+    "url": "https://github.com/WordPress/agent-skills"
+  },
+  "homepage": "https://github.com/WordPress/agent-skills",
+  "repository": "https://github.com/henryperkins/agent-skills",
+  "license": "GPL-2.0-or-later",
+  "keywords": [
+    "wordpress",
+    "gutenberg",
+    "blocks",
+    "block-themes",
+    "patterns",
+    "plugin-development",
+    "rest-api",
+    "interactivity-api",
+    "abilities-api",
+    "wp-cli",
+    "performance",
+    "phpstan",
+    "playground",
+    "wpds",
+    "blueprint",
+    "wp-env"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Agent Skills for WordPress",
+    "shortDescription": "Expert WordPress development skills for coding agents",
+    "longDescription": "Portable WordPress development skills covering Gutenberg blocks, block themes, patterns, plugin architecture, REST API, Interactivity API, Abilities API, WP-CLI, performance, PHPStan, Playground, Design System, Blueprints, and wp-env.",
+    "developerName": "WordPress Contributors",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/WordPress/agent-skills",
+    "defaultPrompt": [
+      "Build or refactor a WordPress plugin following current best practices.",
+      "Review a Gutenberg block implementation and its deprecations.",
+      "Audit or verify WordPress Abilities API registrations.",
+      "Spin up or debug a local WordPress Playground or wp-env environment."
+    ]
+  }
+}

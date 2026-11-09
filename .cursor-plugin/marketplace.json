@@ -1,0 +1,17 @@
+{
+  "name": "wordpress-skills",
+  "owner": {
+    "name": "WordPress Contributors",
+    "url": "https://github.com/henryperkins/agent-skills"
+  },
+  "metadata": {
+    "description": "Agent Skills for WordPress."
+  },
+  "plugins": [
+    {
+      "name": "wordpress-skills",
+      "source": "./",
+      "description": "Expert WordPress development knowledge for AI coding assistants: Gutenberg blocks, block themes, patterns, plugin architecture, REST API, Interactivity API, Abilities API, WP-CLI, performance, PHPStan, Playground, Design System, Blueprints, and wp-env."
+    }
+  ]
+}

@@ -77,8 +77,72 @@ function runJsonCommand(command, args, cwd) {
   }
 }
 
+function readJson(repoRoot, relPath) {
+  const fullPath = path.join(repoRoot, relPath);
+  assert(fs.existsSync(fullPath), `Missing manifest: ${relPath}`);
+  try {
+    return JSON.parse(readUtf8(fullPath));
+  } catch (err) {
+    throw new Error(`Invalid JSON in ${relPath}: ${err.message}`);
+  }
+}
+
+function validateMarketplaceManifests(repoRoot) {
+  const rootPlugin = readJson(repoRoot, "plugin.json");
+  const claudePlugin = readJson(repoRoot, ".claude-plugin/plugin.json");
+  const claudeMarketplace = readJson(repoRoot, ".claude-plugin/marketplace.json");
+  const codexPlugin = readJson(repoRoot, ".codex-plugin/plugin.json");
+  const codexMarketplace = readJson(repoRoot, ".agents/plugins/marketplace.json");
+  const cursorPlugin = readJson(repoRoot, ".cursor-plugin/plugin.json");
+  const cursorMarketplace = readJson(repoRoot, ".cursor-plugin/marketplace.json");
+
+  const expectedName = "wordpress-skills";
+  for (const [label, manifest] of [
+    ["plugin.json", rootPlugin],
+    [".claude-plugin/plugin.json", claudePlugin],
+    [".codex-plugin/plugin.json", codexPlugin],
+    [".cursor-plugin/plugin.json", cursorPlugin],
+  ]) {
+    assert(manifest.name === expectedName, `${label} must have name '${expectedName}'`);
+    assert(typeof manifest.version === "string" && manifest.version.length > 0, `${label} must declare a version`);
+    assert(
+      manifest.version === claudePlugin.version,
+      `Version mismatch in ${label}: expected '${claudePlugin.version}', got '${manifest.version}'`
+    );
+    assert(manifest.license === "GPL-2.0-or-later", `${label} must declare license 'GPL-2.0-or-later'`);
+  }
+
+  for (const [label, manifest] of [
+    [".codex-plugin/plugin.json", codexPlugin],
+    [".cursor-plugin/plugin.json", cursorPlugin],
+  ]) {
+    assert(manifest.skills === "./skills/", `${label} must point skills to './skills/'`);
+  }
+
+  const claudeEntry = claudeMarketplace.plugins?.find((p) => p?.name === expectedName);
+  assert(claudeEntry, `.claude-plugin/marketplace.json must list '${expectedName}'`);
+  assert(claudeEntry.source === "./", ".claude-plugin/marketplace.json plugin source must be './'");
+  assert(
+    claudeEntry.version === claudePlugin.version,
+    `.claude-plugin/marketplace.json version must match .claude-plugin/plugin.json (${claudePlugin.version})`
+  );
+
+  const codexEntry = codexMarketplace.plugins?.find((p) => p?.name === expectedName);
+  assert(codexEntry, `.agents/plugins/marketplace.json must list '${expectedName}'`);
+  assert(
+    codexEntry.source?.source === "local" && codexEntry.source?.path === "./",
+    ".agents/plugins/marketplace.json plugin source must resolve to './'"
+  );
+
+  const cursorEntry = cursorMarketplace.plugins?.find((p) => p?.name === expectedName);
+  assert(cursorEntry, `.cursor-plugin/marketplace.json must list '${expectedName}'`);
+  assert(cursorEntry.source === "./", ".cursor-plugin/marketplace.json plugin source must be './'");
+}
+
 function main() {
   const repoRoot = process.cwd();
+
+  validateMarketplaceManifests(repoRoot);
 
   const skillDirs = listSkillDirs(repoRoot);
   assert(skillDirs.length > 0, "No skills found under ./skills");
